@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zero Effect Explorer — 2nd-Order Systems</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0; --accent2: #06d6a0;
+  --warn: #f72585; --orange: #f77f00; --baseline: #666688; --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar plot1" "sidebar plot2" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 12px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 16px;
+           display: flex; flex-direction: column; gap: 14px; }
+.plot-step, .plot-pzmap { position: relative; min-height: 0; background: var(--surface); }
+.plot-step { grid-area: plot1; } .plot-pzmap { grid-area: plot2; }
+.plot-step canvas, .plot-pzmap canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; z-index: 2; pointer-events: none; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 2px; }
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.param-row label { font-size: 13px; width: 36px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--surface); }
+.param-row .val { width: 42px; text-align: right; font-size: 13px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+.zero-card { background: var(--surface2); border-radius: var(--radius); padding: 10px 14px; border-left: 3px solid var(--border); transition: border-color 0.2s; }
+.zero-card.enabled.z1 { border-left-color: var(--accent); }
+.zero-card.enabled.z2 { border-left-color: var(--accent2); }
+.zero-card.enabled.z3 { border-left-color: var(--warn); }
+.zero-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.zero-header .z-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); transition: background 0.2s; }
+.zero-card.enabled.z1 .z-dot { background: var(--accent); }
+.zero-card.enabled.z2 .z-dot { background: var(--accent2); }
+.zero-card.enabled.z3 .z-dot { background: var(--warn); }
+.zero-header span { font-size: 13px; font-weight: 500; }
+.toggle { position: relative; width: 38px; height: 20px; flex-shrink: 0; margin-left: auto; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle .slider { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: background 0.2s; }
+.toggle .slider::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #555; border-radius: 50%; transition: transform 0.2s, background 0.2s; }
+.toggle input:checked + .slider { background: var(--accent); }
+.toggle input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+.zero-pos-row { display: flex; align-items: center; gap: 8px; }
+.zero-pos-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 3px; border-radius: 2px; background: var(--border); outline: none; }
+.zero-pos-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid var(--surface); }
+.z1.enabled .zero-pos-row input[type="range"]::-webkit-slider-thumb { background: var(--accent); }
+.z2.enabled .zero-pos-row input[type="range"]::-webkit-slider-thumb { background: var(--accent2); }
+.z3.enabled .zero-pos-row input[type="range"]::-webkit-slider-thumb { background: var(--warn); }
+.zero-pos-row .zp-val { width: 48px; text-align: right; font-size: 12px; font-family: var(--mono); flex-shrink: 0; }
+.zero-card.z1.enabled .zp-val { color: var(--accent); }
+.zero-card.z2.enabled .zp-val { color: var(--accent2); }
+.zero-card.z3.enabled .zp-val { color: var(--warn); }
+.zero-card:not(.enabled) .zp-val { color: var(--text-dim); }
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn { font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(76,201,240,0.08); }
+.preset-btn.active { border-color: var(--accent); color: #fff; background: rgba(76,201,240,0.18); }
+.metrics { position: absolute; top: 8px; right: 14px; display: flex; gap: 8px; z-index: 2; pointer-events: none; }
+.metric { font-size: 11px; font-family: var(--mono); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; color: var(--text-dim); }
+
+@media (max-width: 800px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
+  .plot-step, .plot-pzmap { height: 300px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header"><div class="dot"></div>Zero Effect Explorer &mdash; 2nd-Order Systems</div>
+
+  <div class="sidebar">
+    <div class="param-group">
+      <div class="section-title">System Parameters</div>
+      <div class="param-row">
+        <label>&zeta;</label>
+        <input type="range" id="zeta" min="0.05" max="2" step="0.01" value="0.5">
+        <span class="val" id="zetaVal">0.50</span>
+      </div>
+      <div class="param-row">
+        <label>&omega;<sub>n</sub></label>
+        <input type="range" id="wn" min="0.3" max="8" step="0.1" value="2">
+        <span class="val" id="wnVal">2.0</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">Zeros &nbsp;<span style="font-weight:400;text-transform:none;letter-spacing:0">(negative = LHP, positive = RHP)</span></div>
+      <div class="zero-card z1 enabled" id="zCard1">
+        <div class="zero-header"><div class="z-dot"></div><span>Zero 1</span>
+          <label class="toggle"><input type="checkbox" id="z1enabled" checked><span class="slider"></span></label>
+        </div>
+        <div class="zero-pos-row">
+          <span style="font-size:10px;color:var(--text-dim)">LHP&blacktriangleleft;</span>
+          <input type="range" id="z1pos" min="-15" max="15" step="0.05" value="-4">
+          <span style="font-size:10px;color:var(--text-dim)">&blacktriangleright;RHP</span>
+          <span class="zp-val" id="z1posVal">s=&minus;4.0</span>
+        </div>
+      </div>
+      <div class="zero-card z2" id="zCard2">
+        <div class="zero-header"><div class="z-dot"></div><span>Zero 2</span>
+          <label class="toggle"><input type="checkbox" id="z2enabled"><span class="slider"></span></label>
+        </div>
+        <div class="zero-pos-row">
+          <span style="font-size:10px;color:var(--text-dim)">LHP&blacktriangleleft;</span>
+          <input type="range" id="z2pos" min="-15" max="15" step="0.05" value="-1.5">
+          <span style="font-size:10px;color:var(--text-dim)">&blacktriangleright;RHP</span>
+          <span class="zp-val" id="z2posVal">s=&minus;1.5</span>
+        </div>
+      </div>
+      <div class="zero-card z3" id="zCard3">
+        <div class="zero-header"><div class="z-dot"></div><span>Zero 3</span>
+          <label class="toggle"><input type="checkbox" id="z3enabled"><span class="slider"></span></label>
+        </div>
+        <div class="zero-pos-row">
+          <span style="font-size:10px;color:var(--text-dim)">LHP&blacktriangleleft;</span>
+          <input type="range" id="z3pos" min="-15" max="15" step="0.05" value="2.5">
+          <span style="font-size:10px;color:var(--text-dim)">&blacktriangleright;RHP</span>
+          <span class="zp-val" id="z3posVal">s=+2.5</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">Presets</div>
+      <div class="preset-row">
+        <button class="preset-btn active" data-preset="baseline">Baseline</button>
+        <button class="preset-btn" data-preset="lhpFar">LHP: far (z=&minus;10)</button>
+        <button class="preset-btn" data-preset="lhpNear">LHP: near (z=&minus;0.8)</button>
+        <button class="preset-btn" data-preset="rhpFar">RHP: far (z=+6)</button>
+        <button class="preset-btn" data-preset="rhpNear">RHP: near (z=+0.7)</button>
+        <button class="preset-btn" data-preset="twoZeros">Two LHP zeros</button>
+        <button class="preset-btn" data-preset="mixed">LHP + RHP mix</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plot-step" id="plotStep">
+    <div class="plot-label">Step Response</div>
+    <div class="metrics" id="metricsStep"></div>
+    <canvas id="canvasStep"></canvas>
+  </div>
+
+  <div class="plot-pzmap" id="plotPZ">
+    <div class="plot-label">Pole&ndash;Zero Map</div>
+    <canvas id="canvasPZ"></canvas>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span>💡</span> <span id="insightText">Drag the sliders to explore how zeros change the step response.</span>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ZERO EFFECT EXPLORER — single-file, zero dependencies
+   State-space (controllable canonical) + RK4 simulation in vanilla JS.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const $ = id => document.getElementById(id);
+
+const sliders = { zeta: $('zeta'), wn: $('wn'), z1pos: $('z1pos'), z2pos: $('z2pos'), z3pos: $('z3pos') };
+const toggles = { z1: $('z1enabled'), z2: $('z2enabled'), z3: $('z3enabled') };
+const canvasStep = $('canvasStep'), canvasPZ = $('canvasPZ');
+const ctxStep = canvasStep.getContext('2d'), ctxPZ = canvasPZ.getContext('2d');
+
+const presets = {
+  baseline:  { zeta:0.5, wn:2, zeros:[] },
+  lhpFar:    { zeta:0.5, wn:2, zeros:[{pos:-10}] },
+  lhpNear:   { zeta:0.5, wn:2, zeros:[{pos:-0.8}] },
+  rhpFar:    { zeta:0.5, wn:2, zeros:[{pos:6}] },
+  rhpNear:   { zeta:0.5, wn:2, zeros:[{pos:0.7}] },
+  twoZeros:  { zeta:0.5, wn:2, zeros:[{pos:-3},{pos:-1.5}] },
+  mixed:     { zeta:0.5, wn:2, zeros:[{pos:-4},{pos:2}] },
+};
+
+let currentPreset = 'baseline';
+const traceColors = ['#4cc9f0', '#06d6a0', '#f72585'];
+const zeroCards = [
+  { card: $('zCard1'), pos: sliders.z1pos, toggle: toggles.z1, val: $('z1posVal'), color: traceColors[0] },
+  { card: $('zCard2'), pos: sliders.z2pos, toggle: toggles.z2, val: $('z2posVal'), color: traceColors[1] },
+  { card: $('zCard3'), pos: sliders.z3pos, toggle: toggles.z3, val: $('z3posVal'), color: traceColors[2] },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLYNOMIAL CONVOLUTION
+   ═══════════════════════════════════════════════════════════════════════ */
+function convolve(a, b) {
+  const r = new Array(a.length + b.length - 1).fill(0);
+  for (let i = 0; i < a.length; i++)
+    for (let j = 0; j < b.length; j++)
+      r[i + j] += a[i] * b[j];
+  return r;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TF → STATE-SPACE (controllable canonical form)
+   zeros: array of {pos} objects (pos < 0 = LHP, pos > 0 = RHP)
+   ═══════════════════════════════════════════════════════════════════════ */
+function buildSystem(zeta, wn, zeros) {
+  let num = [wn * wn];
+  let den = [1, 2 * zeta * wn, wn * wn];
+
+  for (const z of zeros) {
+    const p = typeof z === 'object' ? z.pos : z;
+    num = convolve(num, [-1 / p, 1]);  // (1 - s/p)
+  }
+
+  // Keep transfer function proper: add fast poles s=-10 as needed
+  const nZeros = zeros.length;
+  if (nZeros > 1) {
+    for (let i = 0; i < nZeros - 1; i++) {
+      den = convolve(den, [1, 10]);
+      num = convolve(num, [10]);  // preserve DC gain = 1
+    }
+  }
+
+  const n = den.length - 1;
+
+  const A = Array.from({ length: n }, (_, i) => {
+    const row = new Array(n).fill(0);
+    if (i < n - 1) row[i + 1] = 1;
+    return row;
+  });
+  for (let j = 0; j < n; j++) A[n - 1][j] = -den[n - j];
+
+  const B = new Array(n).fill(0); B[n - 1] = 1;
+
+  const numLoHi = [...num].reverse();  // b₀, b₁, …
+  const C = new Array(n).fill(0);
+  for (let i = 0; i < Math.min(numLoHi.length, n); i++) C[i] = numLoHi[i];
+
+  return { A, B, C, n, den, num };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RK4 STEP-RESPONSE SIMULATION
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateStep(sys, tMax, nPts) {
+  const { A, C, n } = sys;
+  const dt = tMax / (nPts - 1);
+  const t = new Array(nPts), y = new Array(nPts);
+  const x = new Array(n).fill(0);
+
+  function f(xv) {
+    const dx = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) dx[i] = A[i].reduce((s, a, j) => s + a * xv[j], 0);
+    dx[n - 1] += 1;  // step input u=1
+    return dx;
+  }
+
+  for (let k = 0; k < nPts; k++) {
+    t[k] = k * dt;
+    y[k] = C.reduce((s, c, i) => s + c * x[i], 0);
+
+    const k1 = f(x);
+    const x2 = x.map((xi, i) => xi + 0.5 * dt * k1[i]);
+    const k2 = f(x2);
+    const x3 = x.map((xi, i) => xi + 0.5 * dt * k2[i]);
+    const k3 = f(x3);
+    const x4 = x.map((xi, i) => xi + dt * k3[i]);
+    const k4 = f(x4);
+
+    for (let i = 0; i < n; i++) x[i] += (dt / 6) * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i]);
+  }
+
+  return { t, y };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ANALYTIC POLE/ZERO COMPUTATION
+   ═══════════════════════════════════════════════════════════════════════ */
+function computePoles(zeta, wn, extraPoles) {
+  const sigma = zeta * wn;
+  const disc = sigma * sigma - wn * wn;
+  let poles2;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    poles2 = [{ re: -sigma + sd, im: 0 }, { re: -sigma - sd, im: 0 }];
+  } else {
+    const wd = wn * Math.sqrt(1 - zeta * zeta);
+    poles2 = [{ re: -sigma, im: wd }, { re: -sigma, im: -wd }];
+  }
+  const extra = Array.from({ length: extraPoles }, () => ({ re: -10, im: 0 }));
+  return [...poles2, ...extra];
+}
+
+function computeZeros(sys) {
+  const { num } = sys;
+  if (num.length === 1) return [];
+  if (num.length === 2) return [{ re: -num[1] / num[0], im: 0 }];
+  if (num.length >= 3) {
+    const [b2, b1, b0] = num;
+    const disc = b1 * b1 - 4 * b2 * b0;
+    if (disc >= 0) {
+      const sd = Math.sqrt(disc);
+      return [{ re: (-b1 + sd) / (2 * b2), im: 0 }, { re: (-b1 - sd) / (2 * b2), im: 0 }];
+    }
+    const sd = Math.sqrt(-disc);
+    return [{ re: -b1/(2*b2), im: sd/(2*b2) }, { re: -b1/(2*b2), im: -sd/(2*b2) }];
+  }
+  return [];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE PLOT
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepPlot() {
+  const container = document.getElementById('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  const margin = { top: 30, right: 30, bottom: 38, left: 50 };
+  const pw = w - margin.left - margin.right;
+  const ph = h - margin.top - margin.bottom;
+  const tMax = 10;
+
+  // 1. Read parameters
+  const zeta = parseFloat(sliders.zeta.value);
+  const wn = parseFloat(sliders.wn.value);
+  const activeZeros = zeroCards
+    .filter(zc => zc.toggle.checked)
+    .map(zc => ({ pos: parseFloat(zc.pos.value), color: zc.color }));
+
+  // 2. Simulate all systems first
+  const sysBase = buildSystem(zeta, wn, []);
+  const resBase = simulateStep(sysBase, tMax, 800);
+
+  const results = activeZeros.map(z => ({
+    res: simulateStep(buildSystem(zeta, wn, [{ pos: z.pos }]), tMax, 800),
+    color: z.color,
+    pos: z.pos,
+  }));
+
+  let resCombined = null;
+  if (activeZeros.length >= 2) {
+    const sysAll = buildSystem(zeta, wn, activeZeros.map(z => ({ pos: z.pos })));
+    resCombined = simulateStep(sysAll, tMax, 800);
+  }
+
+  // 3. Determine y-range from data
+  let yMin = -0.2, yMax = 2.0;
+  const allY = [resBase, ...results.map(r => r.res), resCombined]
+    .filter(Boolean)
+    .flatMap(r => r.y);
+  const dataMin = Math.min(...allY), dataMax = Math.max(...allY);
+  if (dataMin < 0) yMin = Math.min(yMin, dataMin * 1.3);
+  if (dataMax > 2.0) yMax = Math.max(yMax, dataMax * 1.15);
+
+  function tx(t) { return margin.left + (t / tMax) * pw; }
+  function ty(y) { return margin.top + ph - ((y - yMin) / (yMax - yMin)) * ph; }
+
+  // 4. Draw background and grid
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = '#2a2a48';
+  ctx.lineWidth = 0.5;
+  for (let t = 0; t <= tMax; t += 1) {
+    const x = tx(t);
+    ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, margin.top + ph); ctx.stroke();
+  }
+  const yStep = yMax - yMin > 3 ? 0.5 : 0.25;
+  for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) {
+    if (Math.abs(y - 1) < 0.001) continue;
+    const yy = ty(y);
+    ctx.beginPath(); ctx.moveTo(margin.left, yy); ctx.lineTo(margin.left + pw, yy); ctx.stroke();
+  }
+  // y=1 dashed line
+  ctx.strokeStyle = '#444466';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, ty(1)); ctx.lineTo(margin.left + pw, ty(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#555577';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top + ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top + ph); ctx.lineTo(margin.left + pw, margin.top + ph); ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa';
+  ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let t = 0; t <= tMax; t += 2) ctx.fillText(t, tx(t), margin.top + ph + 16);
+  ctx.fillText('Time [s]', margin.left + pw / 2, margin.top + ph + 34);
+
+  ctx.textAlign = 'right';
+  for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep)
+    ctx.fillText(y.toFixed(yStep < 0.5 ? 2 : 1), margin.left - 8, ty(y) + 4);
+
+  ctx.save();
+  ctx.translate(14, margin.top + ph / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Output', 0, 0);
+  ctx.restore();
+
+  // 5. Draw traces
+
+  // Baseline
+  ctx.strokeStyle = '#555577';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 4]);
+  ctx.beginPath();
+  for (let i = 0; i < resBase.t.length; i++) {
+    const sx = tx(resBase.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, resBase.y[i])));
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#666688';
+  ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  const lblIdx = Math.floor(7 / tMax * (resBase.t.length - 1));
+  ctx.fillText('baseline (no zeros)', tx(7) + 6, ty(Math.max(yMin, Math.min(yMax, resBase.y[lblIdx]))) - 4);
+
+  // Individual zero traces
+  for (const r of results) {
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = r.color;
+    ctx.shadowBlur = 3;
+    ctx.beginPath();
+    for (let i = 0; i < r.res.t.length; i++) {
+      const sx = tx(r.res.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, r.res.y[i])));
+      i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Combined trace (2+ zeros)
+  if (resCombined) {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    for (let i = 0; i < resCombined.t.length; i++) {
+      const sx = tx(resCombined.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, resCombined.y[i])));
+      i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Metrics
+  updateMetrics(resBase, results, activeZeros);
+  if (resCombined) {
+    const m = Math.max(...resCombined.y), mn = Math.min(...resCombined.y);
+    $('metricsStep').innerHTML +=
+      `<span class="metric" style="color:#fff">combined: OS=${m>1?((m-1)*100).toFixed(1)+'%':'0%'}${mn<-0.01?' US='+(mn*100).toFixed(1)+'%':''}</span>`;
+  }
+
+  ctx.restore();  // undo DPR scaling
+  return { zeta, wn, activeZeros, resBase, results };
+}
+
+function updateMetrics(base, results, zeros) {
+  let html = `<span class="metric">baseline OS: ${Math.max(...base.y)>1?((Math.max(...base.y)-1)*100).toFixed(1)+'%':'0%'}</span>`;
+  if (results.length > 0) {
+    const r = results[0];
+    const mx = Math.max(...r.res.y), mn = Math.min(...r.res.y);
+    html += `<span class="metric" style="color:${r.color}">z=${r.pos.toFixed(1)}: OS=${mx>1?((mx-1)*100).toFixed(1)+'%':'0%'}${mn<-0.01?' US='+(mn*100).toFixed(1)+'%':''}</span>`;
+  }
+  $('metricsStep').innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLE–ZERO MAP
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawPZMap(stepInfo) {
+  const container = document.getElementById('plotPZ');
+  const { w, h, dpr } = resizeCanvas(canvasPZ, container);
+  const ctx = ctxPZ;
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  const margin = 40;
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - margin) / 10;
+
+  function px(re) { return cx + re * scale; }
+  function py(im) { return cy - im * scale; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48';
+  ctx.lineWidth = 0.5;
+  for (let i = -10; i <= 10; i += 2) {
+    ctx.beginPath(); ctx.moveTo(px(i), margin); ctx.lineTo(px(i), h - margin); ctx.stroke();
+  }
+  for (let i = -8; i <= 8; i += 2) {
+    ctx.beginPath(); ctx.moveTo(margin, py(i)); ctx.lineTo(w - margin, py(i)); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(margin, cy); ctx.lineTo(w - margin, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, margin); ctx.lineTo(cx, h - margin); ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa';
+  ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let i = -10; i <= 10; i += 2) { if (i !== 0) ctx.fillText(i, px(i), cy + 14); }
+  ctx.textAlign = 'right';
+  for (let i = -8; i <= 8; i += 2) { if (i !== 0) ctx.fillText(i, cx - 5, py(i) + 4); }
+  ctx.fillText('Re', w - margin + 6, cy + 14);
+  ctx.fillText('Im', cx - 5, margin - 5);
+
+  // Damping lines
+  const { zeta, wn, activeZeros } = stepInfo;
+  const ang = Math.acos(zeta);
+  const lr = 7 * scale;
+  ctx.strokeStyle = '#444466';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - lr * zeta, cy + lr * Math.sqrt(1 - zeta*zeta)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - lr * zeta, cy - lr * Math.sqrt(1 - zeta*zeta)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#666688';
+  ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  ctx.fillText('ζ=' + zeta.toFixed(2), cx - lr * zeta + 6, cy + 40);
+
+  // Poles & zeros
+  const sys = buildSystem(zeta, wn, activeZeros.map(z => ({ pos: z.pos })));
+  const nExtra = Math.max(0, activeZeros.length - 1);
+  const poles = computePoles(zeta, wn, nExtra);
+  const zeros = computeZeros(sys);
+
+  for (const p of poles) {
+    const sz = 7;
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re) - sz, py(p.im) - sz); ctx.lineTo(px(p.re) + sz, py(p.im) + sz);
+    ctx.moveTo(px(p.re) + sz, py(p.im) - sz); ctx.lineTo(px(p.re) - sz, py(p.im) + sz);
+    ctx.stroke();
+  }
+
+  for (const z of zeros) {
+    ctx.strokeStyle = z.re >= 0 ? '#f72585' : '#4cc9f0';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(px(z.re), py(z.im), 7, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Legend
+  const lx = w - margin - 110, ly = margin + 10;
+  ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx + 2, ly - 4); ctx.lineTo(lx + 8, ly + 2);
+  ctx.moveTo(lx + 8, ly - 4); ctx.lineTo(lx + 2, ly + 2); ctx.stroke();
+  ctx.fillStyle = '#ff4444'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily; ctx.textAlign = 'left';
+  ctx.fillText('× Pole', lx + 16, ly + 4);
+
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lx + 5, ly + 18, 5, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillStyle = '#4cc9f0';
+  ctx.fillText('○ Zero (LHP)', lx + 16, ly + 22);
+
+  // RHP zero legend
+  ctx.strokeStyle = '#f72585'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lx + 5, ly + 36, 5, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillStyle = '#f72585';
+  ctx.fillText('○ Zero (RHP)', lx + 16, ly + 40);
+
+  ctx.restore();  // undo DPR scaling
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIGHT PANEL
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateInsight(zeta, wn, activeZeros) {
+  const msgs = [];
+  for (const z of activeZeros) {
+    const rel = Math.abs(z.pos) / wn;
+    if (z.pos < 0) {
+      if (rel > 5) msgs.push(`Zero at s=${z.pos.toFixed(1)} is far — negligible effect (|z| = ${rel.toFixed(1)}× ωₙ).`);
+      else if (rel > 1.5) msgs.push(`LHP zero at s=${z.pos.toFixed(1)} adds moderate derivative kick — more overshoot, faster rise.`);
+      else msgs.push(`LHP zero at s=${z.pos.toFixed(1)} is close to origin! Strong derivative kick — aggressive speed/overshoot trade-off.`);
+    } else {
+      if (rel > 5) msgs.push(`RHP zero at s=${z.pos.toFixed(1)} is far — minor effect.`);
+      else if (rel > 1.5) msgs.push(`RHP zero at s=${z.pos.toFixed(1)} causes initial undershoot — output goes the WRONG way first.`);
+      else msgs.push(`RHP zero at s=${z.pos.toFixed(1)} is close to origin — severe undershoot! Hard bandwidth limit ≈ |z|/2.`);
+    }
+  }
+  if (activeZeros.length === 0) msgs.push('Baseline 2nd-order system with no zeros. Response determined entirely by the two poles.');
+  if (activeZeros.length >= 2) msgs.push('Multiple zeros compound — each adds its own derivative kick.');
+  if (activeZeros.some(z => z.pos > 0 && Math.abs(z.pos) / wn < 5))
+    msgs.push('Real-world RHP zero: boiler drum level — adding cold feedwater drops the level before it rises.');
+  if (activeZeros.some(z => z.pos < 0 && Math.abs(z.pos) / wn < 1.5))
+    msgs.push('PID derivative action adds an LHP zero — placement determines helpful speed boost vs. destructive overshoot.');
+  $('insightText').textContent = msgs.join(' · ');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESET HIGHLIGHT
+   ═══════════════════════════════════════════════════════════════════════ */
+function updatePresetHighlight() {
+  const zeta = parseFloat(sliders.zeta.value);
+  const wn = parseFloat(sliders.wn.value);
+  const az = zeroCards.filter(zc => zc.toggle.checked).map(zc => ({ pos: parseFloat(zc.pos.value) }));
+  let matched = null;
+  for (const [name, p] of Object.entries(presets)) {
+    if (Math.abs(p.zeta - zeta) < 0.005 && Math.abs(p.wn - wn) < 0.05 && p.zeros.length === az.length &&
+        p.zeros.every((pz, i) => Math.abs(pz.pos - az[i].pos) < 0.03)) { matched = name; break; }
+  }
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === matched));
+  currentPreset = matched;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN UPDATE
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateAll() {
+  const zeta = parseFloat(sliders.zeta.value);
+  const wn = parseFloat(sliders.wn.value);
+  $('zetaVal').textContent = zeta.toFixed(2);
+  $('wnVal').textContent = wn.toFixed(1);
+
+  zeroCards.forEach((zc, i) => {
+    const en = zc.toggle.checked;
+    const pos = parseFloat(zc.pos.value);
+    zc.val.textContent = 's=' + (pos >= 0 ? '+' : '−') + Math.abs(pos).toFixed(1);
+    zc.card.classList.toggle('enabled', en);
+  });
+
+  const activeZeros = zeroCards.filter(zc => zc.toggle.checked)
+    .map(zc => ({ pos: parseFloat(zc.pos.value), color: zc.color }));
+
+  const stepInfo = drawStepPlot();
+  drawPZMap(stepInfo);
+  updateInsight(zeta, wn, activeZeros);
+  updatePresetHighlight();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT BINDINGS
+   ═══════════════════════════════════════════════════════════════════════ */
+Object.values(sliders).forEach(s => s.addEventListener('input', updateAll));
+Object.values(toggles).forEach(t => t.addEventListener('change', updateAll));
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const p = presets[btn.dataset.preset];
+    if (!p) return;
+    sliders.zeta.value = p.zeta;
+    sliders.wn.value = p.wn;
+    zeroCards.forEach((zc, i) => {
+      zc.toggle.checked = i < p.zeros.length;
+      if (i < p.zeros.length) zc.pos.value = p.zeros[i].pos;
+    });
+    updateAll();
+  });
+});
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateAll, 100); });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════ */
+updateAll();
+</script>
+</body>
+</html>
