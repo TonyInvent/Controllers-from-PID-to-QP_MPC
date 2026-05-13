@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Servo Motor PID — Brushed DC Motor Position Control</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0; --accent2: #06d6a0;
+  --warn: #f72585; --orange: #f77f00; --baseline: #666688; --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --pink: #f72585; --green: #06d6a0; --cyan: #4cc9f0;
+  --copper: #e07b50; --amber: #f0c040; --steel: #8899aa;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar plot1" "sidebar plot2" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 12px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 16px;
+           display: flex; flex-direction: column; gap: 10px; }
+.plot-step, .plot-pzmap { position: relative; min-height: 0; background: var(--surface); }
+.plot-step { grid-area: plot1; } .plot-pzmap { grid-area: plot2; }
+.plot-step canvas, .plot-pzmap canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; z-index: 2; pointer-events: none; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 2px; }
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.param-row label { font-size: 13px; width: 38px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid var(--surface); }
+.param-row .val { width: 50px; text-align: right; font-size: 13px; font-family: var(--mono); flex-shrink: 0; }
+
+/* PID slider colors */
+.pid-row.p-kp input[type="range"]::-webkit-slider-thumb { background: var(--pink); }
+.pid-row.p-kd input[type="range"]::-webkit-slider-thumb { background: var(--cyan); }
+.pid-row.p-ki input[type="range"]::-webkit-slider-thumb { background: var(--green); }
+.pid-row.p-kp .val { color: var(--pink); }
+.pid-row.p-kd .val { color: var(--cyan); }
+.pid-row.p-ki .val { color: var(--green); }
+.pid-row.p-kp label { color: var(--pink); }
+.pid-row.p-kd label { color: var(--cyan); }
+.pid-row.p-ki label { color: var(--green); }
+
+/* Motor slider colors */
+.motor-row.m-r input[type="range"]::-webkit-slider-thumb { background: var(--copper); }
+.motor-row.m-l input[type="range"]::-webkit-slider-thumb { background: var(--copper); }
+.motor-row.m-kt input[type="range"]::-webkit-slider-thumb { background: var(--amber); }
+.motor-row.m-j input[type="range"]::-webkit-slider-thumb { background: var(--steel); }
+.motor-row.m-b input[type="range"]::-webkit-slider-thumb { background: var(--steel); }
+.motor-row.m-r .val, .motor-row.m-l .val { color: var(--copper); }
+.motor-row.m-kt .val { color: var(--amber); }
+.motor-row.m-j .val, .motor-row.m-b .val { color: var(--steel); }
+.motor-row.m-r label, .motor-row.m-l label { color: var(--copper); }
+.motor-row.m-kt label { color: var(--amber); }
+.motor-row.m-j label, .motor-row.m-b label { color: var(--steel); }
+
+.readout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.readout-item { background: var(--surface2); border-radius: 6px; padding: 8px 10px; text-align: center; }
+.readout-item .rv { font-family: var(--mono); font-size: 18px; color: var(--accent); }
+.readout-item .rl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn { font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(76,201,240,0.08); }
+.preset-btn.active { border-color: var(--accent); color: #fff; background: rgba(76,201,240,0.18); }
+
+.warning-badge { display: none; font-size: 11px; background: rgba(247,37,133,0.2); color: var(--warn); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(247,37,133,0.3); margin-left: 4px; }
+.warning-badge.show { display: inline-block; }
+
+.sat-badge { display: none; font-size: 11px; background: rgba(247,119,0,0.2); color: var(--orange); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(247,119,0,0.3); margin-left: 4px; }
+.sat-badge.show { display: inline-block; }
+
+.metrics { position: absolute; top: 8px; right: 14px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; pointer-events: none; max-width: 60%; justify-content: flex-end; }
+.metric { font-size: 11px; font-family: var(--mono); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; color: var(--text-dim); }
+
+/* Motor schematic SVG */
+.motor-svg { width: 100%; height: auto; }
+.motor-svg .m-label { font-family: var(--mono); font-size: 8px; fill: var(--text-dim); }
+.motor-svg .m-line { stroke: var(--border); stroke-width: 1.5; fill: none; }
+.motor-svg .m-fill { fill: var(--surface2); stroke: var(--border); stroke-width: 1; }
+.motor-svg .m-arrow { stroke: var(--accent); stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+
+@media (max-width: 800px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
+  .plot-step, .plot-pzmap { height: 300px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <div class="dot"></div>
+    Servo Motor PID — Brushed DC Motor Position Control
+    <span class="warning-badge" id="warnBadge">UNSTABLE</span>
+    <span class="sat-badge" id="satBadge">SATURATED</span>
+  </div>
+
+  <div class="sidebar">
+    <!-- Motor Schematic -->
+    <div class="param-group">
+      <div class="section-title">Brushed DC Motor Model</div>
+      <svg class="motor-svg" viewBox="0 0 300 130" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4cc9f0"/></marker>
+          <marker id="arrowhead2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#8888aa"/></marker>
+        </defs>
+        <!-- Motor body -->
+        <rect x="60" y="25" width="140" height="80" rx="10" class="m-fill"/>
+        <circle cx="130" cy="65" r="25" stroke="#444466" stroke-width="1" fill="none"/>
+        <text x="130" y="69" text-anchor="middle" font-size="10" fill="#666688" font-family="var(--mono)">M</text>
+        <!-- Rotor shaft -->
+        <line x1="200" y1="65" x2="270" y2="65" class="m-line"/>
+        <polyline points="260,55 275,65 260,75" class="m-arrow"/>
+        <text x="268" y="55" class="m-label">θ, ω</text>
+        <!-- Input terminals -->
+        <line x1="20" y1="40" x2="60" y2="40" class="m-line"/>
+        <line x1="20" y1="90" x2="60" y2="90" class="m-line"/>
+        <text x="15" y="44" text-anchor="end" class="m-label">V⁺</text>
+        <text x="15" y="94" text-anchor="end" class="m-label">V⁻</text>
+        <!-- R+L zigzag between top terminal and motor -->
+        <polyline points="30,40 36,30 42,50 48,30 54,50 60,40" stroke="#e07b50" stroke-width="1.2" fill="none"/>
+        <text x="8" y="32" class="m-label" fill="#e07b50">R, L</text>
+        <!-- Labels inside/around -->
+        <text x="100" y="116" class="m-label">J (rotor inertia)</text>
+        <text x="190" y="116" class="m-label">B (friction)</text>
+        <text x="130" y="20" class="m-label">Kt, Kb (coupling)</text>
+        <!-- Load on shaft -->
+        <rect x="275" y="52" width="18" height="26" rx="3" fill="none" stroke="#666688" stroke-width="1"/>
+        <text x="284" y="80" text-anchor="middle" font-size="7" fill="#666688">load</text>
+        <!-- Disturbance arrow -->
+        <polyline points="284,52 284,40 284,52" stroke="#f72585" stroke-width="1" fill="none" marker-end="url(#arrowhead2)"/>
+        <text x="292" y="42" class="m-label" fill="#f72585">τdist</text>
+      </svg>
+    </div>
+
+    <!-- Motor Parameters -->
+    <div class="param-group">
+      <div class="section-title">Motor Parameters</div>
+      <div class="param-row motor-row m-r">
+        <label>R</label>
+        <input type="range" id="R" min="0.1" max="20" step="0.1" value="4">
+        <span class="val" id="RVal">4.0 Ω</span>
+      </div>
+      <div class="param-row motor-row m-l">
+        <label>L</label>
+        <input type="range" id="L" min="0.001" max="0.1" step="0.001" value="0.02">
+        <span class="val" id="LVal">0.020 H</span>
+      </div>
+      <div class="param-row motor-row m-kt">
+        <label>K<sub>t</sub></label>
+        <input type="range" id="Kt" min="0.01" max="0.3" step="0.005" value="0.06">
+        <span class="val" id="KtVal">0.060</span>
+      </div>
+      <div class="param-row motor-row m-j">
+        <label>J</label>
+        <input type="range" id="J" min="0" max="100" step="1" value="77">
+        <span class="val" id="JVal">2.0e-3</span>
+      </div>
+      <div class="param-row motor-row m-b">
+        <label>B</label>
+        <input type="range" id="B" min="0" max="100" step="1" value="77">
+        <span class="val" id="BVal">2.0e-4</span>
+      </div>
+    </div>
+
+    <!-- PID Parameters -->
+    <div class="param-group">
+      <div class="section-title">PID Controller &nbsp; C(s)=Kp + Kd·s + Ki/s</div>
+      <div class="param-row pid-row p-kp">
+        <label>K<sub>p</sub></label>
+        <input type="range" id="kp" min="0" max="50" step="0.1" value="10">
+        <span class="val" id="kpVal">10.0</span>
+      </div>
+      <div class="param-row pid-row p-kd">
+        <label>K<sub>d</sub></label>
+        <input type="range" id="kd" min="0" max="3" step="0.01" value="1">
+        <span class="val" id="kdVal">1.000</span>
+      </div>
+      <div class="param-row pid-row p-ki">
+        <label>K<sub>i</sub></label>
+        <input type="range" id="ki" min="0" max="100" step="0.1" value="6">
+        <span class="val" id="kiVal">15.0</span>
+      </div>
+    </div>
+
+    <!-- Amplifier & Load -->
+    <div class="param-group">
+      <div class="section-title">Amplifier &amp; Load</div>
+      <div class="param-row">
+        <label>V<sub>max</sub></label>
+        <input type="range" id="Vmax" min="3" max="48" step="1" value="12">
+        <span class="val" id="VmaxVal" style="color:var(--orange)">12 V</span>
+      </div>
+      <div class="param-row">
+        <label>&tau;<sub>dist</sub></label>
+        <input type="range" id="tauDist" min="0" max="0.05" step="0.001" value="0">
+        <span class="val" id="tauDistVal" style="color:var(--warn)">0.000</span>
+      </div>
+      <div class="param-row">
+        <label>t<sub>on</sub></label>
+        <input type="range" id="tDistOn" min="0" max="5" step="0.1" value="2">
+        <span class="val" id="tDistOnVal" style="color:var(--warn)">2.0 s</span>
+      </div>
+    </div>
+
+    <!-- Performance Readout -->
+    <div class="param-group">
+      <div class="section-title">Performance Metrics</div>
+      <div class="readout-grid">
+        <div class="readout-item"><div class="rv" id="rvBW">—</div><div class="rl">&omega;<sub>BW</sub> [rad/s]</div></div>
+        <div class="readout-item"><div class="rv" id="rvZeta">—</div><div class="rl">&zeta;<sub>eff</sub></div></div>
+        <div class="readout-item"><div class="rv" id="rvOS" style="font-size:14px">—</div><div class="rl">Overshoot</div></div>
+        <div class="readout-item"><div class="rv" id="rvSSE" style="font-size:14px">—</div><div class="rl">SS Error</div></div>
+        <div class="readout-item"><div class="rv" id="rvVpk" style="font-size:14px;color:var(--orange)">—</div><div class="rl">Peak Voltage</div></div>
+        <div class="readout-item"><div class="rv" id="rvTs" style="font-size:14px">—</div><div class="rl">Settle t<sub>s</sub> [s]</div></div>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="param-group">
+      <div class="section-title">Presets</div>
+      <div class="preset-row">
+        <button class="preset-btn" data-preset="noControl">No Control</button>
+        <button class="preset-btn" data-preset="pOnly">P Only</button>
+        <button class="preset-btn" data-preset="pd">PD</button>
+        <button class="preset-btn active" data-preset="pidTuned">Factory Tune</button>
+        <button class="preset-btn" data-preset="highInertia">High Inertia</button>
+        <button class="preset-btn" data-preset="saturated">Saturated</button>
+        <button class="preset-btn" data-preset="disturbance">Disturbance</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plot-step" id="plotStep">
+    <div class="plot-label">Step Response — Angle &amp; Control Voltage</div>
+    <div class="metrics" id="metricsStep"></div>
+    <canvas id="canvasStep"></canvas>
+  </div>
+
+  <div class="plot-pzmap" id="plotPZ">
+    <div class="plot-label">Pole–Zero Map</div>
+    <canvas id="canvasPZ"></canvas>
+    <div class="plot-label" style="left:auto;right:14px;top:8px;" id="pzLegend">
+      <span style="color:#ff6644">× CL poles</span>&nbsp;
+      <span style="color:#555577">× OL poles</span>&nbsp;
+      <span style="color:#4cc9f0">○ zeros</span>
+    </div>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span id="insightIcon">💡</span> <span id="insightText">Adjust motor parameters and PID gains to tune the servo position controller. Kd acts as electronic damping — it feeds back motor velocity to reduce overshoot.</span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const canvasStep = $('canvasStep'), canvasPZ = $('canvasPZ');
+const ctxStep = canvasStep.getContext('2d'), ctxPZ = canvasPZ.getContext('2d');
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPLEX NUMBER HELPERS (reused from pid_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+function C(re, im) { return { re, im }; }
+function cAdd(a, b) { return C(a.re + b.re, a.im + b.im); }
+function cSub(a, b) { return C(a.re - b.re, a.im - b.im); }
+function cMul(a, b) { return C(a.re*b.re - a.im*b.im, a.re*b.im + a.im*b.re); }
+function cDiv(a, b) { const d = b.re*b.re + b.im*b.im; return C((a.re*b.re + a.im*b.im)/d, (a.im*b.re - a.re*b.im)/d); }
+function cAbs(a) { return Math.sqrt(a.re*a.re + a.im*a.im); }
+function cSqrt(a) {
+  const r = cAbs(a);
+  if (a.im >= 0) return C(Math.sqrt((r + a.re)/2), Math.sqrt((r - a.re)/2));
+  return C(Math.sqrt((r + a.re)/2), -Math.sqrt((r - a.re)/2));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CUBIC SOLVER: s³ + a₂s² + a₁s + a₀ = 0   (Cardano's method)
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveCubic(a2, a1, a0) {
+  const p = a1 - (a2 * a2) / 3;
+  const q = a0 - (a2 * a1) / 3 + (2 * a2 * a2 * a2) / 27;
+  const disc = (q * q) / 4 + (p * p * p) / 27;
+  const shift = a2 / 3;
+  const EPS = 1e-12;
+
+  if (Math.abs(disc) < EPS) {
+    if (Math.abs(p) < EPS && Math.abs(q) < EPS) return [C(-shift,0), C(-shift,0), C(-shift,0)];
+    const u = Math.cbrt(-q / 2);
+    return [C(2*u-shift,0), C(-u-shift,0), C(-u-shift,0)];
+  }
+
+  if (disc > 0) {
+    const sd = Math.sqrt(disc);
+    const u = Math.cbrt(-q/2 + sd);
+    const v = Math.cbrt(-q/2 - sd);
+    return [C(u+v-shift,0), C(-(u+v)/2-shift,(u-v)*Math.sqrt(3)/2), C(-(u+v)/2-shift,-(u-v)*Math.sqrt(3)/2)];
+  }
+
+  const arg = Math.max(-1, Math.min(1, -q/2 / Math.sqrt(-(p*p*p)/27)));
+  const phi = Math.acos(arg);
+  const r = 2 * Math.sqrt(-p/3);
+  return [
+    C(r*Math.cos(phi/3)-shift, 0),
+    C(r*Math.cos((phi+2*Math.PI)/3)-shift, 0),
+    C(r*Math.cos((phi+4*Math.PI)/3)-shift, 0)
+  ];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   QUADRATIC SOLVER: s² + a₁s + a₀ = 0
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveQuadratic(a1, a0) {
+  const disc = a1*a1 - 4*a0;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    return [C((-a1+sd)/2,0), C((-a1-sd)/2,0)];
+  }
+  const sd = Math.sqrt(-disc);
+  return [C(-a1/2, sd/2), C(-a1/2, -sd/2)];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   QUARTIC SOLVER: s⁴ + a₃s³ + a₂s² + a₁s + a₀ = 0   (Ferrari's method)
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveQuartic(a3, a2, a1, a0) {
+  // Depress: substitute s = y - a3/4
+  const a32 = a3*a3;
+  const p = a2 - 3*a32/8;
+  const q = a1 - a2*a3/2 + a3*a32/8;
+  const r = a0 - a1*a3/4 + a2*a32/16 - 3*a32*a32/256;
+  const shift = a3/4;
+
+  // Biquadratic special case: y⁴ + p y² + r = 0
+  if (Math.abs(q) < 1e-12) {
+    const disc2 = p*p - 4*r;
+    if (disc2 >= 0) {
+      const sd = Math.sqrt(disc2);
+      const z1 = (-p + sd) / 2, z2 = (-p - sd) / 2;
+      const roots = [];
+      for (const zz of [z1, z2]) {
+        if (zz >= 0) {
+          const y = Math.sqrt(zz);
+          roots.push(C(y - shift, 0), C(-y - shift, 0));
+        } else {
+          const yi = Math.sqrt(-zz);
+          roots.push(C(-shift, yi), C(-shift, -yi));
+        }
+      }
+      return roots;
+    } else {
+      const sd = Math.sqrt(-disc2);
+      // z1,2 = (-p ± i*sd)/2  (complex pair)
+      const z1 = C(-p/2, sd/2), z2 = C(-p/2, -sd/2);
+      const roots = [];
+      for (const zi of [z1, z2]) {
+        const yi = cSqrt(zi);
+        roots.push(cSub(yi, C(shift, 0)), cSub(C(-yi.re, -yi.im), C(shift, 0)));
+      }
+      return roots;
+    }
+  }
+
+  // Resolvent cubic: m³ + 2p·m² + (p²-4r)·m - q² = 0
+  const b2 = 2*p;
+  const b1 = p*p - 4*r;
+  const b0 = -(q*q);
+  const cubicRoots = solveCubic(b2, b1, b0);
+
+  // Pick the largest real root for numerical stability
+  let m = -Infinity;
+  for (const cr of cubicRoots) {
+    if (Math.abs(cr.im) < 1e-10 && cr.re > m) m = cr.re;
+  }
+  if (m < 0 || !isFinite(m)) {
+    // Fallback: any real root, even if negative
+    for (const cr of cubicRoots) {
+      if (Math.abs(cr.im) < 1e-10 && isFinite(cr.re)) { m = cr.re; break; }
+    }
+  }
+  if (m < 0) m = 1e-10; // Safety: should not happen for well-posed problems
+
+  const alpha = Math.sqrt(m);
+  if (alpha < 1e-12) {
+    // Degenerate: treat as biquadratic
+    const disc = p*p - 4*r;
+    const sd = disc >= 0 ? Math.sqrt(disc) : 0;
+    const z1 = (-p + sd) / 2, z2 = (-p - sd) / 2;
+    const roots = [];
+    for (const zz of [z1, z2]) {
+      if (zz >= 0) {
+        const y = Math.sqrt(zz);
+        roots.push(C(y - shift, 0), C(-y - shift, 0));
+      } else if (zz > -1e-12) {
+        roots.push(C(-shift, 0), C(-shift, 0));
+      } else {
+        const yi = Math.sqrt(-zz);
+        roots.push(C(-shift, yi), C(-shift, -yi));
+      }
+    }
+    return roots;
+  }
+
+  // Factor quartic as (y² + αy + β)(y² - αy + γ) = 0
+  const beta = (p + m - q/alpha) / 2;
+  const gamma = (p + m + q/alpha) / 2;
+
+  const q1 = solveQuadratic(alpha, beta);
+  const q2 = solveQuadratic(-alpha, gamma);
+
+  return [...q1, ...q2].map(y => C(y.re - shift, y.im));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTOR MODEL: Pole & Zero Computation
+   Plant:  G(s) = Kt / [LJ·s³ + (LB+RJ)·s² + (RB+K²)·s]    (K = Kt)
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeMotorPoles(R, L, Kt, J, B) {
+  const LJ = L * J;
+  if (LJ < 1e-20) return { olPoles: [C(0,0)], den: { a2:0, a1:0, a0:0 } };
+  const denA2 = (L*B + R*J) / LJ;
+  const denA1 = (R*B + Kt*Kt) / LJ;
+  // Open-loop denominator: s³ + denA2·s² + denA1·s = s(s² + denA2·s + denA1)
+  const mechRoots = solveQuadratic(denA2, denA1);
+  return {
+    olPoles: [C(0,0), ...mechRoots],
+    den: { a2: denA2, a1: denA1 }
+  };
+}
+
+function computeClosedLoopPoles(R, L, Kt, J, B, Kp, Kd, Ki) {
+  const LJ = L * J;
+  if (LJ < 1e-20) return [];
+  const K2 = Kt * Kt;
+  const a3 = (L*B + R*J) / LJ;
+  const a2 = (R*B + K2 + Kt*Kd) / LJ;
+  const a1 = (Kt * Kp) / LJ;
+  const a0 = (Kt * Ki) / LJ;
+
+  // When Ki=0, s=0 is a root (cancels with controller zero). Solve cubic for rest.
+  if (Math.abs(Ki) < 1e-12) {
+    const cubicRoots = solveCubic(a3, a2, a1);
+    return [
+      C(0, 0),
+      ...cubicRoots.filter(r => !(Math.abs(r.re) < 1e-8 && Math.abs(r.im) < 1e-8)).slice(0, 3)
+    ];
+  }
+
+  return solveQuartic(a3, a2, a1, a0);
+}
+
+function computeControllerZeros(Kp, Kd, Ki) {
+  let zeros = [];
+  if (Math.abs(Kd) > 1e-12) {
+    zeros = solveQuadratic(Kp/Kd, Ki/Kd);
+  } else if (Math.abs(Kp) > 1e-12) {
+    zeros = [C(-Ki/Kp, 0)];
+  }
+  // Filter zero at s=0 when Ki=0 (cancels with absent integrator)
+  if (Math.abs(Ki) < 1e-12) {
+    zeros = zeros.filter(z => !(Math.abs(z.re) < 1e-8 && Math.abs(z.im) < 1e-8));
+  }
+  return zeros;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DOMINANT POLE ANALYSIS → ζ_eff, ω_n_eff
+   ═══════════════════════════════════════════════════════════════════════ */
+function analyzeDominantPoles(poles) {
+  if (poles.length === 0) return { zetaEff: null, wnEff: null, isComplex: false, dominant: null };
+
+  let bestPair = null, bestDist = Infinity;
+  const complex = poles.filter(p => Math.abs(p.im) > 1e-8);
+
+  for (let i = 0; i < complex.length; i++) {
+    for (let j = i + 1; j < complex.length; j++) {
+      if (Math.abs(complex[i].re - complex[j].re) < 1e-6 &&
+          Math.abs(complex[i].im + complex[j].im) < 1e-6) {
+        const dist = cAbs(complex[i]);
+        if (dist < bestDist) { bestDist = dist; bestPair = [complex[i], complex[j]]; }
+      }
+    }
+  }
+
+  if (bestPair) {
+    const p = bestPair[0];
+    const sigma = -p.re;
+    const wnEff = cAbs(p);
+    const zetaEff = sigma / wnEff;
+    return { zetaEff, wnEff, isComplex: true, dominant: p };
+  }
+
+  const stableReal = poles.filter(p => Math.abs(p.im) < 1e-8 && p.re < 0);
+  if (stableReal.length > 0) {
+    stableReal.sort((a, b) => b.re - a.re);
+    const dom = stableReal[0];
+    return { zetaEff: 1, wnEff: Math.abs(dom.re), isComplex: false, dominant: dom };
+  }
+
+  return { zetaEff: null, wnEff: null, isComplex: false, dominant: null };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RK4 SIMULATION with Saturation & Anti-Windup
+   State: [θ, ω, i, ∫e]ᵀ
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateServo(motor, pid, amp, tMax, nPts) {
+  const { R, L, Kt, J, B } = motor;
+  const { Kp, Kd, Ki } = pid;
+  const { Vmax, tauDist, tDistOn } = amp;
+  const thetaRef = 1.0;
+
+  const dt = tMax / (nPts - 1);
+  const n = nPts;
+  const t = new Array(n), theta = new Array(n), omega = new Array(n);
+  const current = new Array(n), voltage = new Array(n), intErr = new Array(n);
+  const isSat = new Int8Array(n);
+
+  // Detect stiff electrical dynamics: use reduced-order model when τ_e << dt
+  const tauE = L / Math.max(R, 1e-6);
+  // Switch to reduced-order when τ_e is too small for explicit RK4 to
+  // integrate stably (RK4 real-axis stability limit is dt/τ_e < ~2.785).
+  const useReduced = tauE < dt;
+
+  if (useReduced) {
+    // Reduced-order model: instantaneous current i = (V - Kb·ω)/R
+    const x = [0, 0, 0]; // [θ, ω, ∫e]
+
+    for (let k = 0; k < n; k++) {
+      const tk = k * dt;
+      t[k] = tk;
+      theta[k] = x[0];
+      omega[k] = x[1];
+      intErr[k] = x[2];
+
+      const e = thetaRef - x[0];
+      const Vcmd = Kp*e - Kd*x[1] + Ki*x[2];
+      const Vapplied = Math.max(-Vmax, Math.min(Vmax, Vcmd));
+      voltage[k] = Vapplied;
+      isSat[k] = Math.abs(Vcmd - Vapplied) > 1e-10 ? 1 : 0;
+      const iInst = (Vapplied - Kt*x[1]) / R;  // Kb = Kt
+      current[k] = iInst;
+
+      if (k === n - 1) break;
+
+      function f(xv, tSub) {
+        const ev = thetaRef - xv[0];
+        const Vc = Kp*ev - Kd*xv[1] + Ki*xv[2];
+        const V = Math.max(-Vmax, Math.min(Vmax, Vc));
+        const sat = Math.abs(Vc - V) > 1e-10;
+        const tau = (tSub >= tDistOn) ? tauDist : 0;
+        const ii = (V - Kt*xv[1]) / R;
+        return [
+          xv[1],
+          (Kt*ii - B*xv[1] - tau) / J,
+          sat ? 0 : ev
+        ];
+      }
+
+      const k1 = f(x, tk);
+      const x2 = x.map((xi,i) => xi + 0.5*dt*k1[i]);
+      const k2 = f(x2, tk + 0.5*dt);
+      const x3 = x.map((xi,i) => xi + 0.5*dt*k2[i]);
+      const k3 = f(x3, tk + 0.5*dt);
+      const x4 = x.map((xi,i) => xi + dt*k3[i]);
+      const k4 = f(x4, tk + dt);
+
+      for (let i = 0; i < 3; i++) x[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+    }
+
+    return {
+      t, theta, omega, current, voltage, intErr, isSat,
+      anySat: isSat.some(s => s === 1),
+      thetaRef
+    };
+  }
+
+  // Full 4th-order model with electrical dynamics
+  const x = [0, 0, 0, 0]; // [θ, ω, i, ∫e]
+
+  for (let k = 0; k < n; k++) {
+    const tk = k * dt;
+    t[k] = tk;
+    theta[k] = x[0];
+    omega[k] = x[1];
+    current[k] = x[2];
+    intErr[k] = x[3];
+
+    const e = thetaRef - x[0];
+    const Vcmd = Kp*e - Kd*x[1] + Ki*x[3];
+    const Vapplied = Math.max(-Vmax, Math.min(Vmax, Vcmd));
+    voltage[k] = Vapplied;
+    isSat[k] = Math.abs(Vcmd - Vapplied) > 1e-10 ? 1 : 0;
+
+    if (k === n - 1) break;
+
+    function g(xv, tSub) {
+      const ev = thetaRef - xv[0];
+      const Vc = Kp*ev - Kd*xv[1] + Ki*xv[3];
+      const V = Math.max(-Vmax, Math.min(Vmax, Vc));
+      const sat = Math.abs(Vc - V) > 1e-10;
+      const tau = (tSub >= tDistOn) ? tauDist : 0;
+      return [
+        xv[1],
+        (Kt*xv[2] - B*xv[1] - tau) / J,
+        (V - R*xv[2] - Kt*xv[1]) / L,
+        sat ? 0 : ev
+      ];
+    }
+
+    const k1 = g(x, tk);
+    const x2 = x.map((xi,i) => xi + 0.5*dt*k1[i]);
+    const k2 = g(x2, tk + 0.5*dt);
+    const x3 = x.map((xi,i) => xi + 0.5*dt*k2[i]);
+    const k3 = g(x3, tk + 0.5*dt);
+    const x4 = x.map((xi,i) => xi + dt*k3[i]);
+    const k4 = g(x4, tk + dt);
+
+    for (let i = 0; i < 4; i++) x[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+  }
+
+  return {
+    t, theta, omega, current, voltage, intErr, isSat,
+    anySat: isSat.some(s => s === 1),
+    thetaRef
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SIMULATE OPEN-LOOP (no controller, just voltage step to motor)
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateOL(motor, amp, tMax, nPts) {
+  const { R, L, Kt, J, B } = motor;
+  const Vstep = 2;
+
+  const dt = tMax / (nPts - 1);
+  const n = nPts;
+  const t = new Array(n), theta = new Array(n);
+
+  const tauE = L / Math.max(R, 1e-6);
+  const useReduced = tauE < dt;
+
+  if (useReduced) {
+    const x = [0, 0]; // [θ, ω]
+    for (let k = 0; k < n; k++) {
+      t[k] = k * dt;
+      theta[k] = x[0];
+      if (k === n - 1) break;
+      const tau = 0;
+      function g(xv) {
+        const ic = (Vstep - Kt * xv[1]) / R;
+        return [
+          xv[1],
+          (Kt * ic - B * xv[1] - tau) / J
+        ];
+      }
+      const k1 = g(x);
+      const x2 = [x[0] + 0.5*dt*k1[0], x[1] + 0.5*dt*k1[1]];
+      const k2 = g(x2);
+      const x3 = [x[0] + 0.5*dt*k2[0], x[1] + 0.5*dt*k2[1]];
+      const k3 = g(x3);
+      const x4 = [x[0] + dt*k3[0], x[1] + dt*k3[1]];
+      const k4 = g(x4);
+      x[0] += (dt/6)*(k1[0]+2*k2[0]+2*k3[0]+k4[0]);
+      x[1] += (dt/6)*(k1[1]+2*k2[1]+2*k3[1]+k4[1]);
+    }
+  } else {
+    const x = [0, 0, 0]; // [θ, ω, i]
+    function f(xv) {
+      const tau = 0;
+      return [
+        xv[1],
+        (Kt*xv[2] - B*xv[1] - tau) / J,
+        (Vstep - R*xv[2] - Kt*xv[1]) / L
+      ];
+    }
+    for (let k = 0; k < n; k++) {
+      t[k] = k * dt;
+      theta[k] = x[0];
+      if (k === n - 1) break;
+      const k1 = f(x);
+      const x2 = x.map((xi,i) => xi + 0.5*dt*k1[i]);
+      const k2 = f(x2);
+      const x3 = x.map((xi,i) => xi + 0.5*dt*k2[i]);
+      const k3 = f(x3);
+      const x4 = x.map((xi,i) => xi + dt*k3[i]);
+      const k4 = f(x4);
+      for (let i = 0; i < 3; i++) x[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+    }
+  }
+
+  return { t, theta };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   METRICS
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeMetrics(t, theta, voltage, anySat, thetaRef) {
+  const ref = thetaRef || 1;
+  const yMax = Math.max(...theta), yMin = Math.min(...theta);
+  const yEnd = theta[theta.length - 1];
+  const osPct = yMax > ref ? (yMax - ref) / ref * 100 : 0;
+  const ssErr = Math.abs(yEnd - ref) / ref * 100;
+  const vPeak = Math.max(...voltage.map(Math.abs));
+
+  // Rise time 10-90%
+  let t10 = -1, t90 = -1;
+  for (let i = 0; i < theta.length; i++) {
+    if (theta[i] >= 0.1*ref && t10 < 0) t10 = t[i];
+    if (theta[i] >= 0.9*ref && t90 < 0) t90 = t[i];
+  }
+  const tr = (t10 >= 0 && t90 >= 0) ? (t90 - t10) : null;
+
+  // Settling time (2%)
+  let ts = null;
+  for (let i = theta.length - 1; i >= 0; i--) {
+    if (Math.abs(theta[i] - ref) > 0.02*ref) { ts = i + 1 < theta.length ? t[i + 1] : t[i]; break; }
+  }
+
+  return { osPct, ssErr, tr, ts, yMax, yMin, yEnd, vPeak, anySat };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  }
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE PLOT — Dual Y-Axis (θ left, V right)
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepPlot(motor, pid, amp, clResult, olResult) {
+  const { Vmax } = amp;
+  const container = document.getElementById('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const margin = { top: 30, right: 52, bottom: 38, left: 52 };
+  const pw = w - margin.left - margin.right, ph = h - margin.top - margin.bottom;
+
+  const metrics = computeMetrics(clResult.t, clResult.theta, clResult.voltage, clResult.anySat);
+
+  // Y range for angle (left axis)
+  let yMin = -0.3, yMax = 2.2;
+  if (olResult) {
+    const olMax = Math.max(...olResult.theta);
+    if (olMax > 10) { yMax = 10; } // clamp ramp display
+    else if (olMax > yMax) yMax = Math.ceil(olMax * 1.1);
+  }
+  if (clResult.anySat) yMin = Math.min(yMin, -0.5);
+  const allTheta = [...clResult.theta];
+  if (olResult) allTheta.push(...olResult.theta);
+  const dMinT = Math.min(...allTheta), dMaxT = Math.max(...allTheta);
+  if (dMinT < yMin) yMin = Math.min(yMin, dMinT * 1.2);
+  if (dMaxT > yMax && dMaxT <= 10) yMax = Math.max(yMax, dMaxT * 1.15);
+
+  // Y range for voltage (right axis)
+  const vMin = -(Vmax * 1.3), vMax = Vmax * 1.3;
+
+  function tx(t) { return margin.left + (t/clResult.tMax)*pw; }
+  function tyTheta(y) { return margin.top + ph - ((y-yMin)/(yMax-yMin))*ph; }
+  function tyVolt(y) { return margin.top + ph - ((y-vMin)/(vMax-vMin))*ph; }
+
+  // Background
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Saturation fill regions (light red overlay)
+  const simData = clResult;
+  let satStart = -1;
+  for (let i = 0; i < simData.isSat.length; i++) {
+    if (simData.isSat[i] && satStart < 0) satStart = i;
+    if (!simData.isSat[i] && satStart >= 0) {
+      const sx = tx(simData.t[satStart]), ex = tx(simData.t[i - 1]);
+      ctx.fillStyle = 'rgba(247,37,133,0.06)';
+      ctx.fillRect(sx, margin.top, ex - sx, ph);
+      satStart = -1;
+    }
+  }
+  if (satStart >= 0) {
+    const sx = tx(simData.t[satStart]), ex = tx(simData.t[simData.t.length - 1]);
+    ctx.fillStyle = 'rgba(247,37,133,0.06)';
+    ctx.fillRect(sx, margin.top, ex - sx, ph);
+  }
+
+  // Grid (left axis)
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const tMax = clResult.tMax;
+  const nGrid = Math.ceil(tMax / 2);
+  for (let i = 0; i <= tMax; i += nGrid > 4 ? 2 : 1) {
+    ctx.beginPath(); ctx.moveTo(tx(i), margin.top); ctx.lineTo(tx(i), margin.top+ph); ctx.stroke();
+  }
+  const yStep = (yMax - yMin) > 5 ? 0.5 : 0.25;
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    ctx.beginPath(); ctx.moveTo(margin.left, tyTheta(yv)); ctx.lineTo(margin.left+pw, tyTheta(yv)); ctx.stroke();
+  }
+
+  // θ=1 reference line
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, tyTheta(1)); ctx.lineTo(margin.left+pw, tyTheta(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // V = ±Vmax saturation lines (right axis)
+  ctx.strokeStyle = 'rgba(247,37,133,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([2,4]);
+  ctx.beginPath(); ctx.moveTo(margin.left, tyVolt(Vmax)); ctx.lineTo(margin.left+pw, tyVolt(Vmax)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, tyVolt(-Vmax)); ctx.lineTo(margin.left+pw, tyVolt(-Vmax)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left+pw, margin.top); ctx.lineTo(margin.left+pw, margin.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top+ph); ctx.lineTo(margin.left+pw, margin.top+ph); ctx.stroke();
+
+  // Left axis labels (θ)
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+  ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    ctx.fillText(yv.toFixed(yStep<0.5?2:1), margin.left-8, tyTheta(yv)+4);
+  }
+  ctx.save();
+  ctx.translate(12, margin.top+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle = '#4cc9f0'; ctx.fillText('Angle θ [rad]', 0, 0);
+  ctx.restore();
+
+  // Right axis labels (V)
+  ctx.textAlign = 'left'; ctx.fillStyle = '#f77f00';
+  const vStep = Vmax > 24 ? 10 : (Vmax > 12 ? 5 : 3);
+  for (let vv = -Math.floor(Vmax/vStep)*vStep; vv <= Vmax; vv += vStep) {
+    ctx.fillText(vv.toFixed(0), margin.left+pw+8, tyVolt(vv)+4);
+  }
+  ctx.save();
+  ctx.translate(w - 14, margin.top+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('Voltage [V]', 0, 0);
+  ctx.restore();
+
+  // Time axis labels
+  ctx.fillStyle = '#8888aa'; ctx.textAlign = 'center';
+  for (let i = 0; i <= tMax; i += (tMax > 15 ? 4 : (tMax > 6 ? 2 : 1)))
+    ctx.fillText(i.toFixed(0), tx(i), margin.top+ph+16);
+  ctx.fillText('Time [s]', margin.left+pw/2, margin.top+ph+34);
+
+  // Open-loop trace (ghosted grey)
+  if (olResult) {
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 2; ctx.setLineDash([8,4]);
+    ctx.beginPath();
+    for (let i = 0; i < olResult.t.length; i++) {
+      const sx = tx(olResult.t[i]), sy = tyTheta(Math.max(yMin, Math.min(yMax, olResult.theta[i])));
+      i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#555577'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+    ctx.textAlign = 'left';
+    const li = Math.floor(0.45 * olResult.t.length);
+    ctx.fillText('open-loop (V=2V step)', tx(olResult.t[li])+4, tyTheta(Math.max(yMin,Math.min(yMax,olResult.theta[li])))-4);
+  }
+
+  // Closed-loop θ trace
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5; ctx.shadowColor = '#4cc9f0'; ctx.shadowBlur = 3;
+  ctx.beginPath();
+  for (let i = 0; i < clResult.t.length; i++) {
+    const sx = tx(clResult.t[i]), sy = tyTheta(Math.max(yMin, Math.min(yMax, clResult.theta[i])));
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Voltage trace (right axis)
+  ctx.strokeStyle = '#f77f00'; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (let i = 0; i < clResult.t.length; i++) {
+    const sx = tx(clResult.t[i]), sy = tyVolt(Math.max(vMin, Math.min(vMax, clResult.voltage[i])));
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke();
+
+  // Saturation indicator dots on voltage trace
+  for (let i = 0; i < clResult.isSat.length; i++) {
+    if (clResult.isSat[i]) {
+      const sx = tx(clResult.t[i]), sy = tyVolt(Math.max(vMin, Math.min(vMax, clResult.voltage[i])));
+      ctx.fillStyle = '#f72585'; ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 2*Math.PI); ctx.fill();
+    }
+  }
+
+  // Disturbance marker
+  if (amp.tauDist > 0) {
+    const dx = tx(amp.tDistOn);
+    ctx.strokeStyle = '#f72585'; ctx.lineWidth = 1; ctx.setLineDash([3,5]);
+    ctx.beginPath(); ctx.moveTo(dx, margin.top); ctx.lineTo(dx, margin.top+ph); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f72585'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+    ctx.textAlign = 'center';
+    ctx.fillText('τdist ON', dx, margin.top - 6);
+  }
+
+  // Legend
+  ctx.textAlign = 'left'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = '#4cc9f0'; ctx.fillText(clResult.label || 'θ(t) CL', margin.left+4, margin.top+12);
+  ctx.fillStyle = '#f77f00'; ctx.fillText('V(t)', margin.left+80, margin.top+12);
+
+  // Metrics overlay
+  let mHtml = '';
+  if (metrics.osPct > 0.1) mHtml += `<span class="metric" style="color:var(--warn)">OS ${metrics.osPct.toFixed(1)}%</span>`;
+  if (metrics.ssErr > 0.3) mHtml += `<span class="metric" style="color:var(--orange)">SS err ${metrics.ssErr.toFixed(2)}%</span>`;
+  if (metrics.tr !== null) mHtml += `<span class="metric">tᵣ ${metrics.tr.toFixed(3)}s</span>`;
+  if (metrics.ts !== null) mHtml += `<span class="metric">tₛ ${metrics.ts.toFixed(3)}s</span>`;
+  if (clResult.anySat) mHtml += `<span class="metric" style="color:var(--warn)">SATURATED</span>`;
+  $('metricsStep').innerHTML = mHtml;
+
+  ctx.restore();
+  return { metrics, yMin, yMax };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLE–ZERO MAP
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawPZMap(motor, pid) {
+  const { R, L, Kt, J, B } = motor;
+  const { Kp, Kd, Ki } = pid;
+  const container = document.getElementById('plotPZ');
+  const { w, h, dpr } = resizeCanvas(canvasPZ, container);
+  const ctx = ctxPZ;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const { olPoles } = computeMotorPoles(R, L, Kt, J, B);
+  const clPoles = computeClosedLoopPoles(R, L, Kt, J, B, Kp, Kd, Ki);
+  const zeros = computeControllerZeros(Kp, Kd, Ki);
+  const { zetaEff, wnEff, isComplex, dominant } = analyzeDominantPoles(clPoles);
+  const hasUnstable = clPoles.some(p => p.re > 0.01);
+  const noControl = Math.abs(Kp) < 1e-10 && Math.abs(Kd) < 1e-10 && Math.abs(Ki) < 1e-10;
+
+  // Auto-scale: include all points, symmetric around Re=0
+  const allPts = [...(noControl ? olPoles : clPoles), ...olPoles, ...zeros];
+  let maxExtent = 5;
+  if (allPts.length > 0) {
+    const res = allPts.map(p => Math.abs(p.re)).reduce((a,b)=>Math.max(a,b), 0);
+    const ims = allPts.map(p => Math.abs(p.im)).reduce((a,b)=>Math.max(a,b), 0);
+    // Cap the fast electrical pole from blowing up the view
+    const capRe = Math.max(res * 1.4, 8);
+    maxExtent = Math.max(capRe, ims * 1.4);
+    // Symmetric
+    maxExtent = Math.max(6, maxExtent);
+  }
+
+  const span = maxExtent;
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 40) / span;
+
+  function px(re) { return cx + re * scale; }
+  function py(im) { return cy - im * scale; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const gridStep = Math.max(1, Math.ceil(span / 6));
+  for (let i = Math.ceil(-span/gridStep)*gridStep; i <= span; i += gridStep) {
+    ctx.beginPath(); ctx.moveTo(px(i), 8); ctx.lineTo(px(i), h-8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8, py(i)); ctx.lineTo(w-8, py(i)); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8, cy); ctx.lineTo(w-8, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h-8); ctx.stroke();
+
+  // Stability boundary
+  ctx.strokeStyle = 'rgba(247,37,133,0.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h-8); ctx.stroke();
+  ctx.setLineDash([]);
+  if (hasUnstable) {
+    ctx.fillStyle = 'rgba(247,37,133,0.12)';
+    ctx.fillRect(cx, 8, px(span)-cx, h-16);
+  }
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+  ctx.textAlign = 'center';
+  for (let i = Math.ceil(-span/gridStep)*gridStep; i <= span; i += gridStep)
+    if (i !== 0) ctx.fillText(i, px(i), cy+14);
+  ctx.textAlign = 'right';
+  for (let i = -Math.floor(span/gridStep)*gridStep; i <= span; i += gridStep)
+    if (i !== 0) ctx.fillText(i, cx-5, py(i)+4);
+  ctx.fillText('Re', w - 16, cy + 14);
+  ctx.fillText('Im', cx - 5, 16);
+
+  // Damping lines from dominant poles
+  if (zetaEff !== null && isComplex && !hasUnstable) {
+    const ang = Math.acos(Math.max(0, Math.min(1, zetaEff)));
+    const lr = cAbs(dominant || clPoles[0]) * scale * 1.5;
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - lr*zetaEff, cy + lr*Math.sqrt(1-zetaEff*zetaEff)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - lr*zetaEff, cy - lr*Math.sqrt(1-zetaEff*zetaEff)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#666688'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+    ctx.textAlign = 'left';
+    ctx.fillText('ζ_eff='+zetaEff.toFixed(2), px(-lr*zetaEff)+6, cy+35);
+  }
+
+  // Open-loop plant poles (grey ghost ×)
+  for (const p of olPoles) {
+    const sz = 6;
+    ctx.strokeStyle = 'rgba(85,85,119,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+    ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+    ctx.stroke();
+    // Label the s=0 integrator pole
+    if (Math.abs(p.re) < 1e-8 && Math.abs(p.im) < 1e-8) {
+      ctx.fillStyle = '#555577'; ctx.font = '9px ' + "'Segoe UI', system-ui, -apple-system, sans-serif";
+      ctx.textAlign = 'left';
+      ctx.fillText('OL ∫', px(p.re)+10, py(p.im)-10);
+    }
+  }
+
+  // Closed-loop poles (red × or filled for unstable)
+  if (!noControl) {
+    const { zetaEff: ze, isComplex: ic } = analyzeDominantPoles(clPoles);
+    for (const p of clPoles) {
+      const isDominant = ic && Math.abs(cAbs(p) - (wnEff||0)) < 1e-6;
+      const sz = isDominant ? 8 : 6;
+      const unstable = p.re > 0.01;
+      ctx.strokeStyle = unstable ? '#f72585' : '#ff6644';
+      ctx.fillStyle = unstable ? 'rgba(247,37,133,0.3)' : 'rgba(255,102,68,0.2)';
+      ctx.lineWidth = isDominant ? 3 : 2;
+      if (unstable) {
+        ctx.beginPath(); ctx.arc(px(p.re), py(p.im), sz+2, 0, 2*Math.PI); ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+      ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+      ctx.stroke();
+    }
+  }
+
+  // Controller zeros (circles)
+  for (const z of zeros) {
+    ctx.strokeStyle = z.re >= 0 ? '#f72585' : '#4cc9f0';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(px(z.re), py(z.im), 7, 0, 2*Math.PI);
+    ctx.stroke();
+  }
+
+  // Legend
+  const lx = Math.max(16, px(span) - 140), ly = 22;
+  // CL poles
+  ctx.strokeStyle = '#ff6644'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx+1, ly-4); ctx.lineTo(lx+7, ly+2);
+  ctx.moveTo(lx+7, ly-4); ctx.lineTo(lx+1, ly+2); ctx.stroke();
+  ctx.fillStyle = '#ff6644'; ctx.font = '10px ' + "'Segoe UI', system-ui, -apple-system, sans-serif"; ctx.textAlign = 'left';
+  ctx.fillText('CL poles', lx+14, ly+4);
+  // OL poles
+  ctx.strokeStyle = 'rgba(85,85,119,0.7)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(lx+1, ly+16-4); ctx.lineTo(lx+7, ly+16+2);
+  ctx.moveTo(lx+7, ly+16-4); ctx.lineTo(lx+1, ly+16+2); ctx.stroke();
+  ctx.fillStyle = '#8888aa';
+  ctx.fillText('OL poles', lx+14, ly+16+4);
+  // Zeros
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lx+4, ly+32, 5, 0, 2*Math.PI); ctx.stroke();
+  ctx.fillStyle = '#4cc9f0';
+  ctx.fillText('Ctr zeros', lx+14, ly+32+4);
+
+  ctx.restore();
+  return { clPoles, olPoles, zeros, zetaEff, wnEff, isComplex, hasUnstable, noControl };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIGHT PANEL
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateInsight(motor, pid, amp, pzInfo, metrics, clResult) {
+  const { R, L, Kt, J, B } = motor;
+  const { Kp, Kd, Ki } = pid;
+  const { Vmax, tauDist } = amp;
+  const { zetaEff, wnEff, isComplex, hasUnstable, noControl } = pzInfo;
+  const msgs = [];
+
+  if (hasUnstable) {
+    msgs.push('RHP poles detected — system is UNSTABLE. Reduce Kp or increase Kd to add damping.');
+    $('warnBadge').classList.add('show');
+  } else {
+    $('warnBadge').classList.remove('show');
+  }
+
+  if (clResult && clResult.anySat) {
+    msgs.push('Amplifier is SATURATING — the voltage command exceeds ±'+Vmax+'V. While saturated, the integrator is frozen (anti-windup) to prevent error accumulation that would cause large overshoot when desaturating.');
+    $('satBadge').classList.add('show');
+  } else {
+    $('satBadge').classList.remove('show');
+  }
+
+  if (noControl) {
+    msgs.push('No controller active. The motor acts as a Type 1 system — a voltage step produces an ever-increasing ramp in angle (position = integral of velocity). Feedback is needed for position control.');
+  } else {
+    // Kp effect
+    if (Kp > 0.1) {
+      const wnInfo = wnEff ? ' ('+wnEff.toFixed(1)+' rad/s bandwidth)' : '';
+      msgs.push('Kp provides proportional position feedback — it raises stiffness and bandwidth'+wnInfo+'. Higher Kp = faster response but less damping.');
+    }
+    // Kd effect
+    if (Kd > 0.001) {
+      msgs.push('Kd acts as electronic viscous damping — it feeds back motor velocity to reduce overshoot. Physically, this is like adding virtual friction without energy loss from real friction.');
+    }
+    // Ki effect
+    if (Ki > 0.01) {
+      if (tauDist > 0.001) {
+        msgs.push('Ki rejects the disturbance torque — watch the angle recover to the setpoint after the disturbance hits. Without integral action, the disturbance would cause persistent steady-state error.');
+      } else {
+        msgs.push('Ki eliminates steady-state error by integrating position error over time. It adds a pole at s=0 (integrator) to the controller.');
+      }
+    }
+    // PD combination
+    if (Kd > 0.001 && Ki < 0.01 && Kp > 0.1) {
+      msgs.push('PD control gives independent tuning: Kp sets response speed, Kd sets damping. The SS error from load torque remains unless Ki is added.');
+    }
+  }
+
+  if (tauDist > 0.001 && !noControl) {
+    msgs.push('Load torque τ_dist='+tauDist.toFixed(3)+' N·m applied at t='+amp.tDistOn.toFixed(1)+'s. The integrator works to reject this disturbance and restore zero position error.');
+  }
+
+  if (zetaEff !== null && !isComplex && !hasUnstable && !noControl) {
+    msgs.push('Dominant poles are real — overdamped response (ζ_eff ≥ 1). Increase Kp for more speed or reduce Kd if the response is too sluggish.');
+  }
+
+  if (zetaEff !== null && zetaEff < 0.3 && !hasUnstable && !noControl) {
+    msgs.push('Low damping — the response is very oscillatory. Increase Kd to add electronic damping, or reduce Kp for a less aggressive response.');
+  }
+
+  $('insightText').textContent = msgs.join(' · ');
+  $('insightIcon').textContent = hasUnstable ? '⚠️' : '💡';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LOGARITHMIC SLIDER HELPERS for J and B
+   ═══════════════════════════════════════════════════════════════════════ */
+function logFromSlider(sv, minVal, maxVal) {
+  const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
+  const exp = minExp + (sv / 100) * (maxExp - minExp);
+  return Math.pow(10, exp);
+}
+function logToSlider(val, minVal, maxVal) {
+  const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
+  return ((Math.log10(val) - minExp) / (maxExp - minExp)) * 100;
+}
+
+const J_MIN = 1e-5, J_MAX = 1e-2;
+const B_MIN = 1e-6, B_MAX = 1e-3;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESETS
+   ═══════════════════════════════════════════════════════════════════════ */
+const presets = {
+  noControl: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:0, Kd:0, Ki:0, Vmax:12, tauDist:0, tDistOn:2
+  },
+  pOnly: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:6, Kd:0, Ki:0, Vmax:12, tauDist:0, tDistOn:2
+  },
+  pd: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:8, Kd:0.8, Ki:0, Vmax:12, tauDist:0, tDistOn:2
+  },
+  pidTuned: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:10, Kd:1.0, Ki:6, Vmax:12, tauDist:0, tDistOn:2
+  },
+  highInertia: {
+    R:4, L:0.02, Kt:0.06, J:0.01, B:2e-4,
+    Kp:10, Kd:1.0, Ki:6, Vmax:12, tauDist:0, tDistOn:2
+  },
+  saturated: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:40, Kd:0.5, Ki:30, Vmax:12, tauDist:0, tDistOn:2
+  },
+  disturbance: {
+    R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4,
+    Kp:10, Kd:1.0, Ki:6, Vmax:12, tauDist:0.02, tDistOn:0.5
+  }
+};
+
+let currentPreset = 'pidTuned';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   READ ALL CURRENT PARAMETERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function readParams() {
+  const R = $('R').valueAsNumber;
+  const L = $('L').valueAsNumber;
+  const Kt = $('Kt').valueAsNumber;
+  const J = logFromSlider($('J').valueAsNumber, J_MIN, J_MAX);
+  const B = logFromSlider($('B').valueAsNumber, B_MIN, B_MAX);
+  const Kp = $('kp').valueAsNumber;
+  const Kd = $('kd').valueAsNumber;
+  const Ki = $('ki').valueAsNumber;
+  const Vmax = $('Vmax').valueAsNumber;
+  const tauDist = $('tauDist').valueAsNumber;
+  const tDistOn = $('tDistOn').valueAsNumber;
+  return {
+    motor: { R, L, Kt, J, B },
+    pid: { Kp, Kd, Ki },
+    amp: { Vmax, tauDist, tDistOn }
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN UPDATE
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateAll() {
+  const p = readParams();
+  const { motor, pid, amp } = p;
+
+  // Update display values
+  $('RVal').textContent = motor.R.toFixed(1) + ' Ω';
+  $('LVal').textContent = motor.L.toFixed(3) + ' H';
+  $('KtVal').textContent = motor.Kt.toFixed(3) + ' N·m/A';
+  $('JVal').textContent = motor.J.toExponential(1) + ' kg·m²';
+  $('BVal').textContent = motor.B.toExponential(1) + ' N·m·s';
+  $('kpVal').textContent = pid.Kp.toFixed(1);
+  $('kdVal').textContent = pid.Kd.toFixed(3);
+  $('kiVal').textContent = pid.Ki.toFixed(1);
+  $('VmaxVal').textContent = amp.Vmax + ' V';
+  $('tauDistVal').textContent = amp.tauDist.toFixed(3);
+  $('tDistOnVal').textContent = amp.tDistOn.toFixed(1) + ' s';
+
+  // Determine simulation duration based on dominant CL poles
+  const { zetaEff, wnEff } = analyzeDominantPoles(
+    computeClosedLoopPoles(motor.R, motor.L, motor.Kt, motor.J, motor.B, pid.Kp, pid.Kd, pid.Ki)
+  );
+  const noControl = Math.abs(pid.Kp) < 1e-10 && Math.abs(pid.Kd) < 1e-10 && Math.abs(pid.Ki) < 1e-10;
+  let tMax;
+  if (noControl) {
+    tMax = 2.0;
+  } else if (zetaEff !== null && wnEff !== null && zetaEff > 0.01) {
+    const tsEst = 4 / (zetaEff * wnEff);
+    tMax = Math.max(0.6, Math.min(8, tsEst * 2.5));
+  } else {
+    tMax = 4;
+  }
+  // Extend time window if disturbance is after normal settling
+  if (amp.tauDist > 0) tMax = Math.max(tMax, amp.tDistOn + 1.5);
+
+  // Build systems and simulate
+  let clResult, olResult;
+  if (noControl) {
+    // For no-control: show the OL ramp as the main trace
+    const olData = simulateOL(motor, amp, tMax, 800);
+    clResult = {
+      t: olData.t, theta: olData.theta,
+      voltage: new Array(olData.t.length).fill(0),
+      isSat: new Int8Array(olData.t.length),
+      anySat: false, tMax: tMax, thetaRef: 1.0,
+      label: 'θ(t) — V=2V open-loop'
+    };
+    olResult = null;
+  } else {
+    clResult = simulateServo(motor, pid, amp, tMax, 800);
+    clResult.tMax = tMax;
+    clResult.label = 'θ(t) — PID';
+    olResult = null;
+  }
+
+  // Draw
+  const stepResult = drawStepPlot(motor, pid, amp, clResult, olResult);
+  const pzInfo = drawPZMap(motor, pid);
+  updateInsight(motor, pid, amp, pzInfo, stepResult.metrics, clResult);
+  updatePresetHighlight();
+
+  // Update readout panel
+  if (pzInfo.zetaEff !== null && !pzInfo.noControl) {
+    $('rvZeta').textContent = pzInfo.zetaEff.toFixed(3);
+    $('rvZeta').style.color = pzInfo.zetaEff < 0.2 ? 'var(--warn)' : 'var(--accent)';
+
+    // Bandwidth approximation from dominant pole pair
+    const z = Math.max(0, Math.min(1, pzInfo.zetaEff)), wn = pzInfo.wnEff;
+    if (pzInfo.isComplex) {
+      const bw = wn * Math.sqrt(1 - 2*z*z + Math.sqrt(4*z*z*z*z - 4*z*z + 2));
+      $('rvBW').textContent = bw.toFixed(1);
+    } else {
+      $('rvBW').textContent = wn.toFixed(1);
+    }
+    $('rvBW').style.color = 'var(--accent)';
+  } else if (pzInfo.noControl) {
+    $('rvZeta').textContent = '—';
+    $('rvBW').textContent = '—';
+    $('rvZeta').style.color = 'var(--text-dim)';
+    $('rvBW').style.color = 'var(--text-dim)';
+  } else {
+    $('rvZeta').textContent = '—';
+    $('rvBW').textContent = '—';
+    $('rvZeta').style.color = 'var(--text-dim)';
+    $('rvBW').style.color = 'var(--text-dim)';
+  }
+
+  $('rvOS').textContent = stepResult.metrics.osPct > 0.1 ? stepResult.metrics.osPct.toFixed(1)+'%' : '~0%';
+  $('rvOS').style.color = stepResult.metrics.osPct > 15 ? 'var(--warn)' : 'var(--accent)';
+
+  $('rvSSE').textContent = stepResult.metrics.ssErr > 0.1 ? stepResult.metrics.ssErr.toFixed(2)+'%' : '~0%';
+  $('rvSSE').style.color = stepResult.metrics.ssErr > 1 ? 'var(--orange)' : 'var(--accent)';
+
+  $('rvVpk').textContent = stepResult.metrics.vPeak.toFixed(1) + 'V';
+  $('rvVpk').style.color = stepResult.metrics.vPeak >= amp.Vmax ? 'var(--warn)' : 'var(--orange)';
+
+  if (stepResult.metrics.ts !== null) {
+    $('rvTs').textContent = stepResult.metrics.ts.toFixed(3) + 's';
+  } else {
+    $('rvTs').textContent = '—';
+  }
+  $('rvTs').style.color = 'var(--accent)';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESET HIGHLIGHT
+   ═══════════════════════════════════════════════════════════════════════ */
+function updatePresetHighlight() {
+  const p = readParams();
+  let matched = null;
+  const EPS = 0.03;
+  for (const [name, pr] of Object.entries(presets)) {
+    if (Math.abs(pr.R - p.motor.R) < 0.15 && Math.abs(pr.L - p.motor.L) < 0.002 &&
+        Math.abs(pr.Kt - p.motor.Kt) < 0.01 &&
+        Math.abs(pr.Vmax - p.amp.Vmax) < 1 && Math.abs(pr.tauDist - p.amp.tauDist) < 0.002 &&
+        Math.abs(pr.tDistOn - p.amp.tDistOn) < 0.15) {
+      // Check J and B with relative tolerance since log-mapped
+      const jRel = Math.abs(pr.J - p.motor.J) / Math.max(pr.J, 1e-8);
+      const bRel = Math.abs(pr.B - p.motor.B) / Math.max(pr.B, 1e-8);
+      if (jRel < 0.05 && bRel < 0.05 &&
+          Math.abs(pr.Kp - p.pid.Kp) < EPS && Math.abs(pr.Kd - p.pid.Kd) < EPS*0.02 &&
+          Math.abs(pr.Ki - p.pid.Ki) < EPS) {
+        matched = name; break;
+      }
+    }
+  }
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === matched));
+  currentPreset = matched;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SET SLIDERS FROM PRESET
+   ═══════════════════════════════════════════════════════════════════════ */
+function applyPreset(name) {
+  const pr = presets[name];
+  if (!pr) return;
+  $('R').value = pr.R;
+  $('L').value = pr.L;
+  $('Kt').value = pr.Kt;
+  $('J').value = Math.round(logToSlider(pr.J, J_MIN, J_MAX));
+  $('B').value = Math.round(logToSlider(pr.B, B_MIN, B_MAX));
+  $('kp').value = pr.Kp;
+  $('kd').value = pr.Kd;
+  $('ki').value = pr.Ki;
+  $('Vmax').value = pr.Vmax;
+  $('tauDist').value = pr.tauDist;
+  $('tDistOn').value = pr.tDistOn;
+  updateAll();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT BINDINGS
+   ═══════════════════════════════════════════════════════════════════════ */
+$('R').addEventListener('input', updateAll);
+$('L').addEventListener('input', updateAll);
+$('Kt').addEventListener('input', updateAll);
+$('J').addEventListener('input', updateAll);
+$('B').addEventListener('input', updateAll);
+$('kp').addEventListener('input', updateAll);
+$('kd').addEventListener('input', updateAll);
+$('ki').addEventListener('input', updateAll);
+$('Vmax').addEventListener('input', updateAll);
+$('tauDist').addEventListener('input', updateAll);
+$('tDistOn').addEventListener('input', updateAll);
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateAll, 100); });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════ */
+updateAll();
+</script>
+</body>
+</html>

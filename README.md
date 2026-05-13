@@ -8,6 +8,7 @@ Interactive tools to understand how **zeros** change the step response of a seco
 |------|-----------|-----------|
 | `zero_effect_explorer.html` | Self-contained interactive web page | Any browser — no server, no install |
 | `pid_explorer.html` | PID controller explorer — see how Kp, Kd, Ki change ζ_eff, ωₙ_eff, and the step response | Any browser — no server, no install |
+| `servo_motor_pid.html` | Servo motor PID demo — concrete DC motor position control with real physics (R, L, Kt, J, B) | Any browser — no server, no install |
 | `zero_effect_demo.py` | Python script that generates the 3 figures | `python3 zero_effect_demo.py` (needs `control`, `matplotlib`) |
 | `zero_effect_video_script.md` | English video script (7 scenes, ~12-15 min) | Any text editor |
 | `zero_effect_video_script_cn.md` | Chinese video script for Bilibili (7 scenes) | Any text editor |
@@ -18,6 +19,7 @@ Interactive tools to understand how **zeros** change the step response of a seco
 # Interactive web pages — just open them:
 open zero_effect_explorer.html   # Zero-effect explorer
 open pid_explorer.html           # PID controller explorer
+open servo_motor_pid.html        # Servo motor PID demo
 
 # Or run the Python demo:
 pip install control matplotlib
@@ -78,6 +80,21 @@ The PID controller has a pole at **s = 0** from the integrator term (Ki/s). In t
 **This is fundamental PID behavior**: integral action pulls the steady-state error to zero, but as Ki increases, the real pole moves left (faster integrator) while the complex pair moves right toward the imaginary axis. Crank Ki too high, and the complex poles cross into the RHP — the system goes unstable.
 
 The root-locus interpretation: the integrator pole at s=0 departs along the negative real axis, while the two plant poles loop toward each other and then break away as Ki grows. The PID explorer shows all of this in real time — watch the pole-zero map as you slide Ki.
+
+## The servo motor PID demo
+
+`servo_motor_pid.html` grounds PID in real physics — a **brushed DC motor** driving a servo position loop:
+
+- **3rd-order motor model** — physical parameters: armature resistance R (Ω), inductance L (H), torque constant Kt (N·m/A), rotor inertia J (kg·m²), viscous friction B (N·m·s/rad)
+- **Real constraints** — voltage saturation (±Vmax) with anti-windup, disturbance torque injection
+- **Dual-axis step response** — angle θ [rad] on the left, applied voltage V [V] on the right, with saturation fill regions
+- **Live pole-zero map** — open-loop motor poles (s=0, mechanical, electrical), closed-loop poles (4th-order via Ferrari's quartic), controller zeros
+- **Stiff ODE handling** — automatically switches to reduced-order model when the electrical time constant is too small for explicit RK4 integration
+- **7 presets** — No Control, P Only, PD, PID Factory Tune, High Inertia, Voltage Saturated, Disturbance Load
+- **SVG motor schematic** in the sidebar — rotor, coil, shaft, terminals
+- **Performance readout** — bandwidth, ζ_eff, overshoot %, steady-state error, peak voltage, settling time
+
+This demo answers: what happens to a real motor when you crank up Kp? Why does derivative gain (Kd) prevent overshoot? How does the integrator (Ki) reject a constant torque disturbance?
 
 ## The interactive zero-effect explorer
 
