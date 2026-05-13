@@ -439,12 +439,19 @@ const R_MIN = 0.001, R_MAX = 10;
 function logFromSlider(sv, minVal, maxVal) {
   if (sv <= 0) return minVal;
   if (sv >= 100) return maxVal;
+  if (minVal <= 0) {
+    // Linear mapping when min is 0
+    return (sv / 100) * maxVal;
+  }
   const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
   return Math.pow(10, minExp + (sv / 100) * (maxExp - minExp));
 }
 function logToSlider(val, minVal, maxVal) {
   if (val <= minVal) return 0;
   if (val >= maxVal) return 100;
+  if (minVal <= 0) {
+    return Math.round((val / maxVal) * 100);
+  }
   const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
   return Math.round(((Math.log10(val) - minExp) / (maxExp - minExp)) * 100);
 }
@@ -470,126 +477,100 @@ function buildLQISystem(Rm, Lm, Kt, Jm, Bm) {
   return { A, B, n: 4 };
 }
 
-let _careDbg = true;
-function solveCARE(A, B, Q, Rval) {
-  const n = A.length;
-  const N = 2 * n;
-  const Rinv = 1 / Rval;
-
-  // Build Hamiltonian H = [A, -B*Rinv*B^T; -Q, -A^T]
-  const H = numeric.rep([N, N], 0);
+// Solve Lyapunov equation: A^T P + P A = -W  for P  (n×n matrices)
+// Uses Kronecker product + numeric.solve — no eigenvalue decomposition needed.
+function solveLyapunov(A, W) {
+  const n = A.length, N = n * n;
+  const M = numeric.rep([N, N], 0);
+  // M = I⊗A^T + A^T⊗I
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      H[i][j] = A[i][j];
-      H[i+n][j] = -Q[i][j];
-      H[i+n][j+n] = -A[j][i];
-    }
-  }
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      let sum = 0;
-      for (let k = 0; k < B[0].length; k++) {
-        sum += B[i][k] * B[j][k];
+      for (let p = 0; p < n; p++) {
+        for (let q = 0; q < n; q++) {
+          const row = p * n + q;
+          const col = i * n + j;
+          if (p === i) M[row][col] += A[j][q]; // I⊗A^T
+          if (q === j) M[row][col] += A[i][p]; // A^T⊗I
+        }
       }
-      H[i][j+n] = -sum * Rinv;
     }
   }
-
+  const b = new Array(N);
+  for (let p = 0; p < n; p++)
+    for (let q = 0; q < n; q++)
+      b[p * n + q] = -W[p][q];
   try {
-    if (typeof numeric.eig !== 'function') {
-      if (_careDbg) { console.warn('CARE: numeric.eig not available'); _careDbg = false; }
-      return null;
-    }
-    const eig = numeric.eig(H);
-    if (!eig || !eig.lambda || !eig.E) {
-      if (_careDbg) { console.warn('CARE: eig returned null/incomplete', eig); _careDbg = false; }
-      return null;
-    }
-
-    const Ntotal = eig.lambda.x.length;
-    if (_careDbg) {
-      console.log('CARE: n=' + n + ' Ntotal=' + Ntotal + ' H eigenvalues (real): ' +
-        Array.from(eig.lambda.x).slice(0, Ntotal).map(function(v){return v.toFixed(2);}).join(', '));
-    }
-
-    // Select stable eigenvectors: Re(λ) < -1e-9
-    const stableIdx = [];
-    for (let k = 0; k < Ntotal; k++) {
-      if (eig.lambda.x[k] < -1e-9) stableIdx.push(k);
-    }
-    if (_careDbg) {
-      console.log('CARE: stableIdx count=' + stableIdx.length + ' (need ' + n + ')');
-    }
-    if (stableIdx.length < n) { _careDbg = false; return null; }
-
-    // Build n real basis vectors from the first n stable eigenvectors
-    const basis = [];
-    const used = new Set();
-    for (const k of stableIdx) {
-      if (used.has(k)) continue;
-      if (basis.length >= n) break;
-      const lamIm = eig.lambda.y ? eig.lambda.y[k] : 0;
-      if (Math.abs(lamIm) < 1e-10) {
-        const v = [];
-        for (let i = 0; i < N; i++) v.push(eig.E.x[i][k]);
-        basis.push(v);
-      } else {
-        let kConj = -1;
-        for (const j of stableIdx) {
-          if (j !== k && !used.has(j) &&
-              Math.abs(eig.lambda.x[j] - eig.lambda.x[k]) < 1e-8 &&
-              Math.abs((eig.lambda.y[j] || 0) + lamIm) < 1e-8) {
-            kConj = j; break;
-          }
-        }
-        used.add(kConj >= 0 ? kConj : k);
-        const vRe = [], vIm = [];
-        for (let i = 0; i < N; i++) {
-          vRe.push(eig.E.x[i][k]);
-          vIm.push(eig.E.y ? eig.E.y[i][k] : 0);
-        }
-        basis.push(vRe);
-        if (basis.length < n) basis.push(vIm);
-      }
-      used.add(k);
-      if (basis.length >= n) break;
-    }
-    if (_careDbg) console.log('CARE: basis count=' + basis.length);
-    if (basis.length < n) { _careDbg = false; return null; }
-
-    const X1 = numeric.rep([n, n], 0);
-    const X2 = numeric.rep([n, n], 0);
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        X1[i][j] = basis[j][i];
-        X2[i][j] = basis[j][i+n];
-      }
-    }
-
-    if (_careDbg) {
-      // Print X1 row norms to check conditioning
-      var x1n = 0;
-      for (var ri = 0; ri < n; ri++)
-        for (var rj = 0; rj < n; rj++)
-          x1n = Math.max(x1n, Math.abs(X1[ri][rj]));
-      console.log('CARE: X1 max|element|=' + x1n.toFixed(6));
-    }
-
-    const X1inv = numeric.inv(X1);
-    if (!X1inv) {
-      if (_careDbg) { console.warn('CARE: X1 is singular'); _careDbg = false; }
-      return null;
-    }
-    let P = numeric.dot(X2, X1inv);
-    for (let i = 0; i < n; i++)
-      for (let j = 0; j < i; j++)
-        P[i][j] = P[j][i] = (P[i][j] + P[j][i]) / 2;
-    if (_careDbg) { console.log('CARE: P computed successfully'); _careDbg = false; }
+    const x = numeric.solve(M, b);
+    if (!x) return null;
+    const P = numeric.rep([n, n], 0);
+    for (let p = 0; p < n; p++)
+      for (let q = 0; q < n; q++)
+        P[p][q] = x[p * n + q];
     return P;
-  } catch (e) {
-    if (_careDbg) { console.error('CARE exception:', e.message || e); _careDbg = false; }
+  } catch(e) {
     return null;
   }
+}
+
+let _careDbg = true;
+// Newton-Kleinman iteration for CARE: A^T P + P A - P B R^{-1} B^T P + Q = 0
+// Converges quadratically using only Lyapunov solves — no eig needed.
+function solveCARE(A, B, Q, Rval) {
+  const n = A.length;
+  const Rinv = 1 / Rval;
+  const maxIter = 12;
+  const tol = 1e-8;
+  // Single-input B is n×1; K is 1×n (row vector)
+  const nb = B[0].length;
+
+  // Initial K0 from heuristic — approximately stabilizes the motor LQI system
+  var K = new Array(n);
+  // Identify state order: [θ, ω, i, ∫e]
+  K[0] = Math.sqrt(Math.max(Q[0][0], 1e-6) / Math.max(Rval, 1e-6));   // kθ
+  K[1] = Math.sqrt(Math.max(Q[1][1], 1e-6) / Math.max(Rval, 1e-6));   // kω
+  K[2] = Math.sqrt(Math.max(Q[2][2], 0) / Math.max(Rval, 1e-6)) * 0.3; // ki
+  K[3] = -Math.sqrt(Math.max(Q[3][3], 1e-6) / Math.max(Rval, 1e-6));   // k∫ (neg for LQI)
+
+  var P = null;
+  for (var iter = 0; iter < maxIter; iter++) {
+    // A_cl = A - B*K
+    const Acl = numeric.rep([n, n], 0);
+    for (var i = 0; i < n; i++) {
+      for (var j = 0; j < n; j++) {
+        Acl[i][j] = A[i][j];
+        for (var k = 0; k < nb; k++) Acl[i][j] -= B[i][k] * K[j];
+      }
+    }
+    // W = Q + K^T R K
+    const W = numeric.rep([n, n], 0);
+    for (var i2 = 0; i2 < n; i2++)
+      for (var j2 = 0; j2 < n; j2++)
+        W[i2][j2] = Q[i2][j2] + K[i2] * Rval * K[j2];
+
+    const Pnew = solveLyapunov(Acl, W);
+    if (!Pnew) return null;
+    P = Pnew;
+
+    // K_new = R^{-1} B^T P
+    const Knew = new Array(n);
+    for (var j3 = 0; j3 < n; j3++) {
+      var sum = 0;
+      for (var i3 = 0; i3 < n; i3++) {
+        for (var k3 = 0; k3 < nb; k3++) sum += B[i3][k3] * P[i3][j3];
+      }
+      Knew[j3] = sum * Rinv;
+    }
+
+    var maxDiff = 0;
+    for (var d = 0; d < n; d++) maxDiff = Math.max(maxDiff, Math.abs(Knew[d] - K[d]));
+    K = Knew;
+    if (maxDiff < tol) {
+      if (_careDbg) { console.log('CARE: Kleinman converged in ' + (iter+1) + ' iterations'); _careDbg = false; }
+      return P;
+    }
+  }
+  if (_careDbg) { console.warn('CARE: Kleinman did not converge in ' + maxIter + ' iters, returning last P'); _careDbg = false; }
+  return P;
 }
 
 function computeLQRGains(motor, qTheta, qOmega, qCur, qInt, Rval) {
@@ -1087,7 +1068,7 @@ function drawPZMap(motor, clPoles, lqrInfo) {
    PRESETS
    ═══════════════════════════════════════════════════════════════════════ */
 const presets = {
-  balanced:     { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, qTheta:100, qOmega:1, qCur:0.1, qInt:10, Rweight:0.1 },
+  balanced:     { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, qTheta:100, qOmega:1, qCur:0.1, qInt:100, Rweight:0.1 },
   cheapCtrl:    { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, qTheta:100, qOmega:1, qCur:0.1, qInt:10, Rweight:0.01 },
   expensiveCtrl:{ R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, qTheta:100, qOmega:1, qCur:0.1, qInt:10, Rweight:5 },
   posFocus:     { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, qTheta:500, qOmega:0.1, qCur:0.1, qInt:10, Rweight:0.1 },
@@ -1159,7 +1140,9 @@ function updateInsight(motor, lqrResult, lqrInfo, metrics, showPid) {
     text += 'Increase <em>q_∫</em> (integral penalty) to strengthen the integral action and drive error to zero faster.';
   } else {
     icon = '✅';
-    text = '<strong>Well-tuned LQR.</strong> ζ_eff=' + (lqrInfo.zetaEff||'?') + ', ω_n_eff=' + (lqrInfo.wnEff||'?').toFixed(1) + ' rad/s. ';
+    var ze = (lqrInfo.zetaEff != null) ? lqrInfo.zetaEff.toFixed(2) : '?';
+    var we = (lqrInfo.wnEff != null) ? lqrInfo.wnEff.toFixed(1) : '?';
+    text = '<strong>Well-tuned LQR.</strong> ζ_eff=' + ze + ', ω_n_eff=' + we + ' rad/s. ';
     text += 'The optimal gains K = [k_θ, k_ω, k_i, k_∫] balance position tracking against control effort. ';
     if (showPid) text += 'Compare with the PID trace (gold) to see how LQR differs from classical tuning.';
   }
@@ -1267,6 +1250,8 @@ function updateAll() {
     $('warnBadge').style.display = hasUnstable ? 'inline' : 'none';
     $('satBadge').style.display = lqrResult.anySat ? 'inline' : 'none';
 
+    // Attach zeta/wn to lqrInfo for insight panel
+    lqrInfo.zetaEff = zetaEff; lqrInfo.wnEff = wnEff;
     drawStepPlot(motor, amp, lqrResult, pidResult, showPid);
     drawPZMap(motor, clPoles, lqrInfo);
     updateInsight(motor, lqrResult, lqrInfo, metrics, showPid);
