@@ -920,7 +920,7 @@ function drawStepPlot(motor, amp, lqrResult, pidResult, showPid) {
   ctx.stroke(); ctx.shadowBlur = 0;
 
   // LQR voltage trace
-  ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#f77f00'; ctx.lineWidth = 1.5;
   ctx.beginPath();
   for (let i = 0; i < lqrResult.t.length; i++) {
     const sx = tx(lqrResult.t[i]), sy = tyVolt(Math.max(vMin, Math.min(vMax, lqrResult.voltage[i])));
