@@ -152,6 +152,30 @@ $$J = \int_0^\infty \left( q_\theta \theta^2 + q_\omega \omega^2 + q_i i^2 + q_{
 
 The CARE solver produces the optimal gain matrix **K** that minimizes J. The closed-loop eigenvalues of (A − BK) are the LQR-optimal pole locations — no manual pole placement needed.
 
+### 🔑 The q_ω speed paradox: faster → slower → faster
+
+Try this in the LQR explorer: set q_θ = 5, then slide q_ω from 0.01 to 100. You'll see the step response go **fast → slow → fast again**. This is correct LQR behavior, caused by **dominant pole switching** as the velocity penalty increases.
+
+At q_θ = 5 with the default motor:
+
+| q_ω | k_θ | k_ω | Dominant poles | ζ_eff | Settling | What happens |
+|-----|-----|-----|---------------|-------|----------|--------------|
+| 0.01 | 9.1 | 1.58 | Complex −5.2 ± j5.0 | 0.72 | 0.78 s | Underdamped, **fast** rise with ringing |
+| 0.1 | 9.4 | 1.86 | Complex −6.2 ± j3.5 | 0.87 | 0.65 s | More damped, clean — quickest settle |
+| 0.3 | 9.9 | 2.36 | **Real** −1.5 (dominant) | ~1.0 | 2.63 s | Pole switch! Overdamped, **sluggish** |
+| 1.0 | 11.1 | 3.59 | Complex −1.7 ± j0.6 | 0.95 | 2.37 s | Underdamped again but slow ωₙ |
+| 10 | 16.0 | 10.2 | Complex −0.8 ± j0.6 | 0.79 | 5.06 s | High k_θ gives strong kick — **fast initial rise**, long tail |
+
+**Why it happens:**
+
+- **Low q_ω** — velocity is cheap to penalize. The LQR solution doesn't damp much, so the dominant poles are a fast, lightly-damped complex pair (ωₙ ≈ 7 rad/s). Response is quick but rings.
+
+- **Medium q_ω (~0.3)** — damping pushes the complex poles so far left that they split into two real poles. Meanwhile the integral-action pole near s = 0 becomes the **slowest** pole. The response becomes overdamped and sluggish — the integrator pole dominates.
+
+- **High q_ω** — the real poles merge back into a slow complex pair, while the proportional gain k_θ grows significantly (from 9 → 26). The large k_θ gives a strong initial "kick" that feels fast, but the dominant poles are slow (ωₙ ≈ 0.6 rad/s), creating a long settling tail.
+
+Watch the pole-zero map as you slide q_ω — you'll see the four closed-loop poles undergo this switching, and the controller zeros (orange ○) tell the same story: one zero stays near the origin (the slow tail) while the other shoots far left (the derivative kick).
+
 ## The interactive zero-effect explorer
 
 `zero_effect_explorer.html` is a single 1180-line HTML file with zero dependencies:
