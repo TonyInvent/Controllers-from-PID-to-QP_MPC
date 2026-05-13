@@ -9,6 +9,7 @@ Interactive tools to understand how **zeros** change the step response of a seco
 | `zero_effect_explorer.html` | Self-contained interactive web page | Any browser — no server, no install |
 | `pid_explorer.html` | PID controller explorer — see how Kp, Kd, Ki change ζ_eff, ωₙ_eff, and the step response | Any browser — no server, no install |
 | `servo_motor_pid.html` | Servo motor PID demo — concrete DC motor position control with real physics (R, L, Kt, J, B) | Any browser — no server, no install |
+| `lqr_explorer.html` | LQR explorer — optimal state feedback design via CARE, compare with PID on the same motor | Any browser — no server, no install |
 | `zero_effect_demo.py` | Python script that generates the 3 figures | `python3 zero_effect_demo.py` (needs `control`, `matplotlib`) |
 | `zero_effect_video_script.md` | English video script (7 scenes, ~12-15 min) | Any text editor |
 | `zero_effect_video_script_cn.md` | Chinese video script for Bilibili (7 scenes) | Any text editor |
@@ -20,6 +21,7 @@ Interactive tools to understand how **zeros** change the step response of a seco
 open zero_effect_explorer.html   # Zero-effect explorer
 open pid_explorer.html           # PID controller explorer
 open servo_motor_pid.html        # Servo motor PID demo
+open lqr_explorer.html           # LQR explorer
 
 # Or run the Python demo:
 pip install control matplotlib
@@ -110,6 +112,45 @@ The $s$ factor in the denominator is the mechanical integrator (angle = ∫ angu
 - **Ki = 0 (PD):** there is no $K_i/s$ to clear. The characteristic equation is directly **3rd-order cubic**: $LJ s^3 + (LB+RJ)s^2 + (K_t^2+RB+K_t K_d)s + K_t K_p = 0$. The motor's open-loop pole at $s=0$ **moves** under PD feedback — $K_p$ and $K_d$ shift it left along the real axis. Three poles.
 
 Multiplying by $s$ when $K_i=0$ would introduce a spurious root at the origin — a mathematical artifact, not a physical pole. The code correctly uses the cubic solver for PD and the quartic solver for full PID.
+
+## The LQR explorer
+
+`lqr_explorer.html` demonstrates **Linear Quadratic Regulator (LQR)** design — the modern, state-space counterpart to PID — on the same brushed DC motor:
+
+- **LQI (LQR + Integral Action)** — augments the 3rd-order motor model with an integral-of-error state for zero steady-state tracking error
+- **Tune weights, not gains** — instead of heuristically adjusting Kp/Kd/Ki, you specify **cost weights** Q (state penalty) and R (control effort penalty); the optimal state-feedback gains K are computed automatically
+- **CARE Solver** — solves the Continuous-time Algebraic Riccati Equation via the Hamiltonian method, using `numeric.eig()` for eigenvalue decomposition of the 8×8 Hamiltonian matrix
+- **Real-time step response** — dual-Y-axis plot with θ [rad] on the left and voltage V [V] on the right; saturation fill regions when V hits ±Vmax
+- **Live pole-zero map** — 4 LQR closed-loop poles (teal ×) vs. 3 open-loop motor poles (grey ×); stability boundary highlighted
+- **Log-mapped cost weights** — sliders for q_θ (position error), q_ω (velocity), q_i (current), q_∫ (integral error), and R (control penalty)
+- **PID comparison toggle** — overlay a PID step response (gold dashed) to contrast classical tuning against optimal LQR
+- **Computed gains readout** — K = [k_θ, k_ω, k_i, k_∫] with color coding mapping to PID concepts: k_θ≈Kp, k_ω≈Kd, k_i (current feedback), k_∫≈Ki
+- **6 presets** — Balanced LQR, Cheap Control, Expensive Control, Position Focus, Heavy Damping, Fast Integrator
+- **Anti-windup** — integrator state freezes when voltage saturates, preventing integral windup
+- **Adaptive time window** — simulation duration auto-scales based on closed-loop settling time (4/(ζ·ωₙ))
+
+### LQR vs. PID: what changes
+
+| Aspect | PID | LQR |
+|--------|-----|-----|
+| Tuning | Heuristic — Kp, Kd, Ki | Systematic — Q, R weights |
+| Gains | 3 scalar gains | 4 gains: k_θ, k_ω, k_i, k_∫ |
+| Current feedback | None (implicit) | Explicit k_i feedback |
+| Design | Try-and-see | One-shot optimal |
+| Guarantees | None (can destabilize) | Guaranteed stability margins (≥60° PM, ≥6 dB GM) |
+| Effort | Shape response directly | Penalize states + effort → optimal trade-off |
+
+### The LQI cost function
+
+$$J = \int_0^\infty \left( q_\theta \theta^2 + q_\omega \omega^2 + q_i i^2 + q_{\int} (\smallint e)^2 + R u^2 \right) dt$$
+
+- **q_θ ↑** — faster position response, more overshoot
+- **q_ω ↑** — more damping, less overshoot
+- **q_i ↑** — less aggressive current draw
+- **q_∫ ↑** — faster steady-state error recovery
+- **R ↑** — smaller, more conservative control (penalizes voltage)
+
+The CARE solver produces the optimal gain matrix **K** that minimizes J. The closed-loop eigenvalues of (A − BK) are the LQR-optimal pole locations — no manual pole placement needed.
 
 ## The interactive zero-effect explorer
 
