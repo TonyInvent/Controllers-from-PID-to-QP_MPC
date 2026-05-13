@@ -817,6 +817,24 @@ function solveCARE(A, B, Q, Rval) {
   return P;
 }
 
+// Compute equivalent controller zeros from the PID-like part of the LQI compensator.
+// The LQI control law u = -(kθ·θ + kω·ω + kCur·i + k∫·∫e) maps to PID concepts:
+//   kθ ≈ Kp,  kω ≈ Kd,  |k∫| ≈ Ki  (k∫ < 0 for motor plants)
+// The equivalent compensator from error e = r-θ to control u is approximately:
+//   C(s) = (kω·s² + kθ·s + |k∫|) / s
+// The zeros are at the roots of kω·s² + kθ·s + |k∫| = 0.
+function computeControllerZeros(lqrGains) {
+  const a = lqrGains.kOmega;
+  const b = lqrGains.kTheta;
+  const c = Math.abs(lqrGains.kInt); // |k∫| since k∫ < 0 for motor plants
+  if (a < 1e-12) {
+    // Pure PI: single zero at s = -c/b
+    if (Math.abs(b) < 1e-12) return [];
+    return [C(-c / b, 0)];
+  }
+  return solveQuadratic(a, b, c);
+}
+
 function computeLQRGains(motor, qTheta, qOmega, qCur, qInt, Rval) {
   const Rm_ = motor.R, Lm = motor.L, Jm = motor.J, Bm = motor.B, Ktv = motor.Kt;
   const { A, B, n } = buildLQISystem(Rm_, Lm, Ktv, Jm, Bm);
@@ -1194,7 +1212,7 @@ function drawStepPlot(motor, amp, lqrResult, pidResult, showPid) {
 /* ═══════════════════════════════════════════════════════════════════════
    POLE-ZERO MAP
    ═══════════════════════════════════════════════════════════════════════ */
-function drawPZMap(motor, clPoles, lqrInfo) {
+function drawPZMap(motor, clPoles, clZeros, lqrInfo) {
   const container = document.getElementById('plotPZ');
   const { w, h, dpr } = resizeCanvas(canvasPZ, container);
   const ctx = ctxPZ;
@@ -1205,7 +1223,7 @@ function drawPZMap(motor, clPoles, lqrInfo) {
   const hasUnstable = clPoles.some(p => p.re > 0.01);
 
   // Auto-scale
-  const allPts = [...clPoles, ...olPoles];
+  const allPts = [...clPoles, ...olPoles, ...clZeros];
   let maxExtent = 5;
   if (allPts.length > 0) {
     const res = allPts.map(p => Math.abs(p.re)).reduce((a,b) => Math.max(a,b), 0);
@@ -1299,13 +1317,23 @@ function drawPZMap(motor, clPoles, lqrInfo) {
     }
   }
 
+  // Controller zeros (orange ○) — from equivalent PID compensator kω·s² + kθ·s + |k∫| = 0
+  for (const z of clZeros) {
+    const sz = 6;
+    ctx.strokeStyle = '#f77f00'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px(z.re), py(z.im), sz, 0, 2*Math.PI); ctx.stroke();
+  }
+
   // Legend
   ctx.fillStyle = '#06d6a0'; ctx.font = '10px ' + FONT; ctx.textAlign = 'left';
-  ctx.fillText('● LQR CL poles', 16, h - 16);
-  ctx.fillStyle = 'rgba(85,85,119,0.7)'; ctx.fillText('× OL motor poles', 16, h - 32);
+  ctx.fillText('× CL poles', 16, h - 16);
+  ctx.strokeStyle = '#f77f00'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(24, h - 29, 5, 0, 2*Math.PI); ctx.stroke();
+  ctx.fillStyle = '#f77f00'; ctx.fillText('○ Controller zeros', 36, h - 26);
+  ctx.fillStyle = 'rgba(85,85,119,0.7)'; ctx.fillText('× OL motor poles', 16, h - 44);
 
   ctx.restore();
-  return { clPoles, olPoles, zetaEff, isComplex, hasUnstable };
+  return { clPoles, olPoles, clZeros, zetaEff, isComplex, hasUnstable };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1496,8 +1524,9 @@ function updateAll() {
 
     // Attach zeta/wn to lqrInfo for insight panel
     lqrInfo.zetaEff = zetaEff; lqrInfo.wnEff = wnEff;
+    const ctrlZeros = lqrInfo ? computeControllerZeros(lqrInfo) : [];
     drawStepPlot(motor, amp, lqrResult, pidResult, showPid);
-    drawPZMap(motor, clPoles, lqrInfo);
+    drawPZMap(motor, clPoles, ctrlZeros, lqrInfo);
     updateInsight(motor, lqrResult, lqrInfo, metrics, showPid);
   } else {
     $('rvZeta').textContent = '—'; $('rvWn').textContent = '—';
@@ -1507,7 +1536,7 @@ function updateAll() {
     $('satBadge').style.display = 'none';
     drawStepPlot(motor, amp, lqrResult, null, false);
     const { olPoles } = computeMotorPoles(motor.R, motor.L, motor.Kt, motor.J, motor.B);
-    drawPZMap(motor, olPoles, null);
+    drawPZMap(motor, olPoles, [], null);
   }
 
   // Metrics overlay
