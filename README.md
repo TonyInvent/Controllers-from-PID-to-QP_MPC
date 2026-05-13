@@ -96,6 +96,21 @@ The root-locus interpretation: the integrator pole at s=0 departs along the nega
 
 This demo answers: what happens to a real motor when you crank up Kp? Why does derivative gain (Kd) prevent overshoot? How does the integrator (Ki) reject a constant torque disturbance?
 
+### Why the CL pole count changes with Ki
+
+A subtle but important detail: switch to the PD preset (Ki=0) and you'll see **3** closed-loop poles. Switch to PID (Ki>0) and you'll see **4**. This is not a bug — it's a direct consequence of the algebra.
+
+The motor's open-loop TF is 3rd order:
+
+$$G(s) = \frac{K_t}{LJ s^3 + (LB+RJ) s^2 + (K_t^2+RB)s}$$
+
+The $s$ factor in the denominator is the mechanical integrator (angle = ∫ angular velocity · dt). The PID controller $C(s) = K_p + K_d s + K_i/s$ adds another integration via $K_i/s$.
+
+- **Ki > 0 (full PID):** clearing the $K_i/s$ term forces a multiply-through by $s$, yielding a **4th-order quartic**: $LJ s^4 + (LB+RJ)s^3 + (K_t^2+RB+K_t K_d)s^2 + K_t K_p s + K_t K_i = 0$. Four poles.
+- **Ki = 0 (PD):** there is no $K_i/s$ to clear. The characteristic equation is directly **3rd-order cubic**: $LJ s^3 + (LB+RJ)s^2 + (K_t^2+RB+K_t K_d)s + K_t K_p = 0$. The motor's open-loop pole at $s=0$ **moves** under PD feedback — $K_p$ and $K_d$ shift it left along the real axis. Three poles.
+
+Multiplying by $s$ when $K_i=0$ would introduce a spurious root at the origin — a mathematical artifact, not a physical pole. The code correctly uses the cubic solver for PD and the quartic solver for full PID.
+
 ## The interactive zero-effect explorer
 
 `zero_effect_explorer.html` is a single 1180-line HTML file with zero dependencies:
