@@ -495,6 +495,12 @@ function solveLyapunov(A, W) {
       }
     }
   }
+  // Tikhonov regularization for numerical stability
+  var diagScale = 0;
+  for (var ri = 0; ri < N; ri++) diagScale = Math.max(diagScale, Math.abs(M[ri][ri]));
+  var reg = diagScale * 1e-10;
+  for (var ri = 0; ri < N; ri++) M[ri][ri] += reg;
+
   const b = new Array(N);
   for (let p = 0; p < n; p++)
     for (let q = 0; q < n; q++)
@@ -506,6 +512,19 @@ function solveLyapunov(A, W) {
     for (let p = 0; p < n; p++)
       for (let q = 0; q < n; q++)
         P[p][q] = x[p * n + q];
+    // Verify residual: ||A^T P + P A + W||_F should be small
+    var residMax = 0;
+    for (var ri2 = 0; ri2 < n; ri2++) {
+      for (var rj2 = 0; rj2 < n; rj2++) {
+        var r = W[ri2][rj2];
+        for (var rk = 0; rk < n; rk++) r += A[rk][ri2] * P[rk][rj2] + P[ri2][rk] * A[rk][rj2];
+        residMax = Math.max(residMax, Math.abs(r));
+      }
+    }
+    if (residMax > 1e-3) {
+      if (_careDbg) console.warn('CARE: Lyapunov residual too large (' + residMax.toExponential(1) + '), discarding');
+      return null;
+    }
     return P;
   } catch(e) {
     return null;

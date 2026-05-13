@@ -182,4 +182,37 @@ t('extreme: high qTheta (1000), low R (0.001)', () => {
   if (th < 0 || th > 2) throw new Error('theta_end=' + th.toFixed(4) + ' out of range');
   console.log('  theta_end=' + th.toFixed(4));
 });
+t('low damping: qTheta=1, qOmega=0.5', () => {
+  const g = computeLQRGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 1, 0.5, 0.1, 10, 0.1);
+  if (!g) throw new Error('null');
+  console.log('  K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 5, 500);
+  // Check for sustained oscillations: count sign changes after settling period
+  var signChanges = 0, lastSign = 0;
+  for (var i = 300; i < 500; i++) {
+    var diff = s.theta[i] - 1.0;
+    if (Math.abs(diff) > 0.15 && diff * lastSign < 0) signChanges++;
+    if (Math.abs(diff) > 0.01) lastSign = diff > 0 ? 1 : -1;
+  }
+  console.log('  theta_end=' + s.theta[499].toFixed(4) + ' oscillations=' + signChanges +
+    ' max=' + Math.max.apply(null, s.theta.slice(300)).toFixed(3) +
+    ' min=' + Math.min.apply(null, s.theta.slice(300)).toFixed(3));
+  if (signChanges > 10) throw new Error('Too many oscillations: ' + signChanges);
+});
+t('very low damping: qTheta=1, qOmega=0.1', () => {
+  const g = computeLQRGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 1, 0.1, 0.1, 10, 0.1);
+  if (!g) throw new Error('null');
+  console.log('  K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 5, 500);
+  var signChanges = 0, lastSign = 0;
+  for (var i = 300; i < 500; i++) {
+    var diff = s.theta[i] - 1.0;
+    if (Math.abs(diff) > 0.15 && diff * lastSign < 0) signChanges++;
+    if (Math.abs(diff) > 0.01) lastSign = diff > 0 ? 1 : -1;
+  }
+  console.log('  theta_end=' + s.theta[499].toFixed(4) + ' oscillations=' + signChanges +
+    ' max=' + Math.max.apply(null, s.theta.slice(300)).toFixed(3) +
+    ' min=' + Math.min.apply(null, s.theta.slice(300)).toFixed(3));
+  if (signChanges > 20) throw new Error('Too many oscillations: ' + signChanges);
+});
 console.log('Done.');
