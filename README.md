@@ -152,6 +152,47 @@ $$J = \int_0^\infty \left( q_\theta \theta^2 + q_\omega \omega^2 + q_i i^2 + q_{
 
 The CARE solver produces the optimal gain matrix **K** that minimizes J. The closed-loop eigenvalues of (A − BK) are the LQR-optimal pole locations — no manual pole placement needed.
 
+### 🔑 How LQR handles the reference command
+
+A question every LQR newcomer hits: **where does the reference `r` go?** The control law `u = −Kx` only mentions the state — it drives everything to zero. So how does LQR track a desired position?
+
+**LQR is a regulator, not a tracker.** It was designed to return a perturbed system to equilibrium (`x → 0`), not to follow a command. To make it track, you must transform the tracking problem into a regulation problem. Two standard approaches exist.
+
+**Approach 1: LQI (LQR + Integral Action).** Augment the state with the integral of tracking error:
+
+$$x_{aug} = [\theta, \omega, i, \smallint e]^T, \quad e = r - \theta$$
+
+The augmented dynamics inject the reference through the error integral:
+
+$$\dot{x}_{aug} = A_{aug} x_{aug} + B_{aug} u + \underbrace{[0, 0, 0, 1]^T}_{B_{ref}} \cdot r$$
+
+The reference `r` enters by driving the rate of $\smallint e$: $d(\smallint e)/dt = e = r - \theta$. The optimal control `u = −K·x_aug` then includes integral action automatically because $x_{aug}$ contains $\smallint e$. This guarantees **zero steady-state error** for constant references — the integrator adjusts until $\theta = r$.
+
+**Approach 2: Reference feedforward.** Add a feedforward term directly to the control law:
+
+$$u = N r - K x$$
+
+`N` is chosen to give unity DC gain from `r` to the output. Without N, the closed-loop system has a DC gain that is generally not 1, so $\theta_{ss} \neq r$ even without disturbances.
+
+**Why pure LQI feels slow — and how `lqr_explorer.html` fixes it.** In Approach 1, the reference only reaches the plant *indirectly* through the error integrator. At $t=0$, all states are zero, so $u = 0$ — no immediate control action. The integrator must accumulate error over time before meaningful voltage appears. For the default motor, this takes ~7 seconds just to reach the setpoint.
+
+The fix: combine both approaches. Use $k_\theta r$ as feedforward (analogous to PID's $K_p r$) while keeping the integral state for steady-state correction:
+
+$$u = k_\theta r - K x_{aug} = k_\theta(r-\theta) - k_\omega \omega - k_i i - k_{\smallint} \smallint e$$
+
+This is what `lqr_explorer.html` does by default. Here's how each method injects the reference:
+
+| Method | Control law | $u$ at $t$=0 | $\theta_{ss}$ | Speed |
+|--------|------------|--------------|---------------|-------|
+| PID (PD, Ki=0) | $u = K_p(r-\theta) - K_d\omega$ | $K_p r$ (5.7 V) | $r$ − offset | Fast |
+| Pure LQI (no FF) | $u = -K x_{aug}$ | 0 V | $r$ (via ∫) | Very slow |
+| LQI + $k_\theta$ FF | $u = k_\theta r - K x_{aug}$ | $k_\theta r$ | $r$ (via ∫) | Fast |
+| LQI + exact DC FF | $u = N r - K x_{aug}$ | $N r$ | $r$ (via ∫) | Fast, exact |
+
+The $k_\theta$ feedforward is a pragmatic choice — it's simple, it's exactly what PID does, and any residual DC offset is corrected by the integral action. The exact DC-gain feedforward $N = -(C(A-BK)^{-1}B)^{-1}$ would eliminate the offset entirely but requires a matrix inverse and depends on the current K.
+
+**In short:** LQR needs help to track a reference. LQI provides it through the error integral (guaranteed zero steady-state error, but slow). Adding $k_\theta r$ feedforward gives the immediate "kick" that makes it responsive. This is not a hack — it's standard practice in LQI implementation, directly analogous to PID's $K_p r$ term.
+
 ### 🔑 The q_ω speed paradox: faster → slower → faster
 
 Try this in the LQR explorer: set q_θ = 5, then slide q_ω from 0.01 to 100. You'll see the step response go **fast → slow → fast again**. This is correct LQR behavior, caused by **dominant pole switching** as the velocity penalty increases.
@@ -175,6 +216,43 @@ At q_θ = 5 with the default motor:
 - **High q_ω** — the real poles merge back into a slow complex pair, while the proportional gain k_θ grows significantly (from 9 → 26). The large k_θ gives a strong initial "kick" that feels fast, but the dominant poles are slow (ωₙ ≈ 0.6 rad/s), creating a long settling tail.
 
 Watch the pole-zero map as you slide q_ω — you'll see the four closed-loop poles undergo this switching, and the controller zeros (orange ○) tell the same story: one zero stays near the origin (the slow tail) while the other shoots far left (the derivative kick).
+
+### 🔑 LQR vs PID: the reference feedforward
+
+A common first impression: no matter how you adjust the Q/R weights, LQR seems slower than a well-tuned PD controller (e.g. Kp=5.7, Kd=1.72, Ki=0). This is **not** a fundamental limitation of LQR — it's a missing feedforward term.
+
+**Why PID seems faster.** The PID control law is:
+
+$$u = K_p e - K_d \omega = K_p (r - \theta) - K_d \omega = \underbrace{K_p r}_{\text{feedforward}} - K_p \theta - K_d \omega$$
+
+At $t=0$, the $K_p r$ term immediately applies $K_p \cdot 1 = 5.7\mathrm{V}$ to the motor — an instant "kick" that drives the response.
+
+**Why LQI seems slower.** The pure LQI control law is:
+
+$$u = -(k_\theta \theta + k_\omega \omega + k_i i + k_{\smallint} \smallint e)$$
+
+At $t=0$, all states are zero, so $u=0$. The controller must wait for $\smallint e = \int (r-\theta)dt$ to slowly accumulate before applying meaningful voltage. In the default configuration, this takes **~7 seconds** just to reach the setpoint — compared to PID's 0.54s rise time.
+
+**The fix: reference feedforward.** Adding $k_\theta r$ to the control law (exactly analogous to PID's $K_p r$) gives:
+
+$$u = k_\theta r - (k_\theta \theta + k_\omega \omega + k_i i + k_{\smallint} \smallint e) = k_\theta (r-\theta) - k_\omega \omega - k_i i - k_{\smallint} \smallint e$$
+
+This is the LQR explorer's default behavior. The integral action then only needs to correct for residual steady-state error — not supply the entire DC bias.
+
+**Performance comparison (default motor, R=4, L=0.02, Kt=0.06, J=0.002, B=2e-4):**
+
+| Controller | Gains | $t_r$ [s] | $t_s$ [s] | OS % | SS err % | Notes |
+|------------|-------|-----------|-----------|------|----------|-------|
+| PD (Ki=0) | Kp=5.7, Kd=1.72 | 0.54 | 0.94 | 0 | 0.01 | No integral — can't reject disturbance |
+| LQI (balanced, q_θ=100) | k=[33, 4.4, 0.7, −10] | 0.22 | 2.0 | 3.0 | 0.02 | Integral action — zero SS error guaranteed |
+| LQI (fast, high q_θ=500) | k=[71, 5.7, 0.9, −10] | 0.14 | 0.24 | 1.2 | 0.005 | Saturates at 12V — aggressive |
+| LQI (tiny q_∫, low R) | k=[22, 4.0, 0.6, −1.0] | 0.32 | 0.55 | 0.7 | 0.007 | Relaxed integral ≈ PD-like dynamics |
+
+**How to tune LQI to exceed PID performance:**
+- **q_θ ↑** — increases $k_\theta$ (proportional gain), giving a stronger feedforward kick and faster rise. Watch for saturation at high values.
+- **q_ω ↑** — increases $k_\omega$ (derivative gain), adding damping. Unlike PID, LQR does this optimally — it won't amplify sensor noise.
+- **R ↓** — reduces the control penalty, allowing larger gains (Cheap Control). This is the LQR equivalent of "more aggressive tuning."
+- **q_∫ ↓** — shrinks the integral gain $k_{\smallint}$, making the response more PD-like. Use when disturbance rejection isn't critical.
 
 ## The interactive zero-effect explorer
 

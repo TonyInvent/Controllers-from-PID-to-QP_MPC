@@ -946,7 +946,7 @@ function simulateLQR(motor, lqrGains, amp, tMax, nPts) {
     const x = [0, 0, 0]; // [θ, ω, ∫e]
     function lqrVoltage(xv) {
       const denom = 1 + kCur / Rm_;
-      const Vc = (-kTheta*xv[0] - kOmega*xv[1] + kCur*Kt*xv[1]/Rm_ - kInt*xv[2]) / denom;
+      const Vc = (kTheta*(thetaRef - xv[0]) - kOmega*xv[1] + kCur*Kt*xv[1]/Rm_ - kInt*xv[2]) / denom;
       const Va = Math.max(-Vmax, Math.min(Vmax, Vc));
       return { Vc, Va, sat: Math.abs(Vc - Va) > 1e-10 };
     }
@@ -989,7 +989,7 @@ function simulateLQR(motor, lqrGains, amp, tMax, nPts) {
       t[k] = tk; theta[k] = x[0]; omega[k] = x[1];
       current[k] = x[2]; intErr[k] = x[3];
 
-      const Vc = -(kTheta*x[0] + kOmega*x[1] + kCur*x[2] + kInt*x[3]);
+      const Vc = kTheta*thetaRef - (kTheta*x[0] + kOmega*x[1] + kCur*x[2] + kInt*x[3]);
       const Va = Math.max(-Vmax, Math.min(Vmax, Vc));
       voltage[k] = Va;
       isSat[k] = Math.abs(Vc - Va) > 1e-10 ? 1 : 0;
@@ -997,7 +997,7 @@ function simulateLQR(motor, lqrGains, amp, tMax, nPts) {
       if (k === n - 1) break;
 
       function f(xv, tSub) {
-        const Vc2 = -(kTheta*xv[0] + kOmega*xv[1] + kCur*xv[2] + kInt*xv[3]);
+        const Vc2 = kTheta*thetaRef - (kTheta*xv[0] + kOmega*xv[1] + kCur*xv[2] + kInt*xv[3]);
         const V2 = Math.max(-Vmax, Math.min(Vmax, Vc2));
         const sat = Math.abs(Vc2 - V2) > 1e-10;
         const tau = (tSub >= tDistOn) ? tauDist : 0;
