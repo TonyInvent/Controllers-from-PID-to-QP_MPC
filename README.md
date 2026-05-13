@@ -62,6 +62,23 @@ python3 zero_effect_demo.py
 - **Dynamic insights** — explains what each gain is doing at the current operating point
 - **Unstable detection** — RHP poles trigger a red overlay and warning badge
 
+### 🔑 A fundamental insight: the integrator pole moves
+
+Here's something you'll see immediately when you slide Ki — and it's not a bug:
+
+The PID controller has a pole at **s = 0** from the integrator term (Ki/s). In the **open-loop**, that pole sits right at the origin. But when the feedback loop closes, it **moves**. For the "PID Tuned" preset (ζ=0.5, ωₙ=2, Kp=3, Kd=0.8):
+
+| Ki | Real pole (was at s=0) | Complex pair | What happens |
+|----|-------------------------|-------------|--------------|
+| 0 (PD) | cancelled | −2.6 ± j3.0 | No integrator — steady-state error remains |
+| 0.4 | **−0.103** | −2.55 ± j3.0 | Slow real pole near origin → the long settling tail |
+| 2 | −0.48 | −2.36 ± j3.2 | Integrator speeds up, complex pair drifts right |
+| 10 | −3.77 | −0.71 ± j3.2 | Complex pair near instability — too much Ki! |
+
+**This is fundamental PID behavior**: integral action pulls the steady-state error to zero, but as Ki increases, the real pole moves left (faster integrator) while the complex pair moves right toward the imaginary axis. Crank Ki too high, and the complex poles cross into the RHP — the system goes unstable.
+
+The root-locus interpretation: the integrator pole at s=0 departs along the negative real axis, while the two plant poles loop toward each other and then break away as Ki grows. The PID explorer shows all of this in real time — watch the pole-zero map as you slide Ki.
+
 ## The interactive zero-effect explorer
 
 `zero_effect_explorer.html` is a single 1180-line HTML file with zero dependencies:
