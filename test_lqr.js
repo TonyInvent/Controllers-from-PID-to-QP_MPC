@@ -104,10 +104,18 @@ t('LQR sign convention — negative kInt drives toward ref', () => {
   console.log('  theta_end=' + th.toFixed(4) + ' (correct direction with neg kInt)');
 });
 t('analyzeDominantPoles with 4-pole LQR system', () => {
-  // Mock eig produces poles that may not be conjugate pairs
   const p = computeLQRPoles({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4},[10,0.5,0.05,6]);
   const info = analyzeDominantPoles(p);
   if (!info) throw new Error('null result');
   console.log('  poles=' + p.length + ' zeta=' + (info.zetaEff||'null') + ' wn=' + (info.wnEff||'null'));
+});
+t('fallbackGains stabilize motor', () => {
+  const g = fallbackGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 100, 1, 0.1, 10, 0.1);
+  if (!g) throw new Error('null');
+  console.log('  fallback K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 2, 200);
+  const th = s.theta[199];
+  if (th < 0.5 || th > 1.5) throw new Error('theta_end=' + th.toFixed(4) + ' out of range [0.5, 1.5]');
+  console.log('  theta_end=' + th.toFixed(4) + ' (fallback gains work)');
 });
 console.log('Done.');

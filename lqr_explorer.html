@@ -470,6 +470,7 @@ function buildLQISystem(Rm, Lm, Kt, Jm, Bm) {
   return { A, B, n: 4 };
 }
 
+let _careDbg = true;
 function solveCARE(A, B, Q, Rval) {
   const n = A.length;
   const N = 2 * n;
@@ -484,7 +485,6 @@ function solveCARE(A, B, Q, Rval) {
       H[i+n][j+n] = -A[j][i];
     }
   }
-  // Top-right: -B * Rinv * B^T
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       let sum = 0;
@@ -496,16 +496,31 @@ function solveCARE(A, B, Q, Rval) {
   }
 
   try {
+    if (typeof numeric.eig !== 'function') {
+      if (_careDbg) { console.warn('CARE: numeric.eig not available'); _careDbg = false; }
+      return null;
+    }
     const eig = numeric.eig(H);
-    if (!eig || !eig.lambda || !eig.E) return null;
+    if (!eig || !eig.lambda || !eig.E) {
+      if (_careDbg) { console.warn('CARE: eig returned null/incomplete', eig); _careDbg = false; }
+      return null;
+    }
+
+    const Ntotal = eig.lambda.x.length;
+    if (_careDbg) {
+      console.log('CARE: n=' + n + ' Ntotal=' + Ntotal + ' H eigenvalues (real): ' +
+        Array.from(eig.lambda.x).slice(0, Ntotal).map(function(v){return v.toFixed(2);}).join(', '));
+    }
 
     // Select stable eigenvectors: Re(λ) < -1e-9
-    const Ntotal = eig.lambda.x.length;
     const stableIdx = [];
     for (let k = 0; k < Ntotal; k++) {
       if (eig.lambda.x[k] < -1e-9) stableIdx.push(k);
     }
-    if (stableIdx.length < n) return null;
+    if (_careDbg) {
+      console.log('CARE: stableIdx count=' + stableIdx.length + ' (need ' + n + ')');
+    }
+    if (stableIdx.length < n) { _careDbg = false; return null; }
 
     // Build n real basis vectors from the first n stable eigenvectors
     const basis = [];
@@ -519,7 +534,6 @@ function solveCARE(A, B, Q, Rval) {
         for (let i = 0; i < N; i++) v.push(eig.E.x[i][k]);
         basis.push(v);
       } else {
-        // Find conjugate
         let kConj = -1;
         for (const j of stableIdx) {
           if (j !== k && !used.has(j) &&
@@ -540,7 +554,8 @@ function solveCARE(A, B, Q, Rval) {
       used.add(k);
       if (basis.length >= n) break;
     }
-    if (basis.length < n) return null;
+    if (_careDbg) console.log('CARE: basis count=' + basis.length);
+    if (basis.length < n) { _careDbg = false; return null; }
 
     const X1 = numeric.rep([n, n], 0);
     const X2 = numeric.rep([n, n], 0);
@@ -551,14 +566,28 @@ function solveCARE(A, B, Q, Rval) {
       }
     }
 
+    if (_careDbg) {
+      // Print X1 row norms to check conditioning
+      var x1n = 0;
+      for (var ri = 0; ri < n; ri++)
+        for (var rj = 0; rj < n; rj++)
+          x1n = Math.max(x1n, Math.abs(X1[ri][rj]));
+      console.log('CARE: X1 max|element|=' + x1n.toFixed(6));
+    }
+
     const X1inv = numeric.inv(X1);
-    if (!X1inv) return null;
+    if (!X1inv) {
+      if (_careDbg) { console.warn('CARE: X1 is singular'); _careDbg = false; }
+      return null;
+    }
     let P = numeric.dot(X2, X1inv);
     for (let i = 0; i < n; i++)
       for (let j = 0; j < i; j++)
         P[i][j] = P[j][i] = (P[i][j] + P[j][i]) / 2;
+    if (_careDbg) { console.log('CARE: P computed successfully'); _careDbg = false; }
     return P;
   } catch (e) {
+    if (_careDbg) { console.error('CARE exception:', e.message || e); _careDbg = false; }
     return null;
   }
 }
@@ -574,7 +603,10 @@ function computeLQRGains(motor, qTheta, qOmega, qCur, qInt, Rval) {
   const Rv = Math.max(Rval, 1e-6);
 
   const P = solveCARE(A, B, Q, Rv);
-  if (!P) return null;
+  if (!P) {
+    // CARE failed — fall back to heuristic gains scaled by Q/R
+    return fallbackGains(motor, qTheta, qOmega, qCur, qInt, Rv);
+  }
 
   const Rinv = 1 / Rv;
   const K = [];
@@ -588,6 +620,30 @@ function computeLQRGains(motor, qTheta, qOmega, qCur, qInt, Rval) {
     K.push(sum * Rinv);
   }
   return { kTheta: K[0], kOmega: K[1], kCur: K[2], kInt: K[3], K, P, A, B, Q, R: Rv };
+}
+
+// Heuristic fallback when CARE fails — approximates LQR gains via PID-equivalent scaling.
+// Reference gains validated against PID {Kp:10, Kd:1, Ki:6} on default motor.
+function fallbackGains(motor, qTheta, qOmega, qCur, qInt, Rv) {
+  // Base: PID-equivalent gains mapped to LQR convention
+  // u = -(kθ·θ + kω·ω + kCur·i + kInt·∫e) where kInt < 0 (∫e = ∫(r-θ)dt)
+  var kT = 10, kO = 1, kC = 0.05, kI = -6;
+  // Scale: larger q_θ → larger k_θ; larger R → smaller all gains
+  var sT = Math.sqrt(qTheta / 100);
+  var sO = Math.sqrt(Math.max(qOmega, 0.01) / 1);
+  var sC = Math.sqrt(Math.max(qCur, 0.001) / 0.1);
+  var sI = Math.sqrt(qInt / 10);
+  var sR = Math.sqrt(0.1 / Rv);
+  kT *= sT * sR; kO *= sO * sR; kC *= sC * sR; kI *= sI * sR;
+  // Scale gains to motor parameters
+  kT *= motor.Kt / 0.06 * 0.002 / Math.max(motor.J, 1e-6);
+  kO *= motor.Kt / 0.06 * 0.002 / Math.max(motor.J, 1e-6);
+  kC *= motor.L / 0.02;
+  kI *= motor.Kt / 0.06 * 0.002 / Math.max(motor.J, 1e-6);
+  console.log('Using fallback gains (CARE returned null): K=[' +
+    kT.toFixed(2)+', '+kO.toFixed(4)+', '+kC.toFixed(4)+', '+kI.toFixed(2)+']');
+  return { kTheta: kT, kOmega: kO, kCur: kC, kInt: kI,
+    K: [kT, kO, kC, kI], P: null, A: null, B: null, Q: null, R: Rv, fallback: true };
 }
 
 function computeLQRPoles(motor, Kvec) {
@@ -1329,6 +1385,7 @@ let resizeTimer;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(updateAll, 150); });
 
 // Initialize
+console.log('numeric.js check:', typeof numeric, 'eig:', typeof numeric.eig);
 applyPreset('balanced');
 
 /* ═══════════════════════════════════════════════════════════════════════
