@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PID Explorer — 2nd-Order Plant</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0; --accent2: #06d6a0;
+  --warn: #f72585; --orange: #f77f00; --baseline: #666688; --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --pink: #f72585; --green: #06d6a0; --cyan: #4cc9f0;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar plot1" "sidebar plot2" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 12px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 16px;
+           display: flex; flex-direction: column; gap: 12px; }
+.plot-step, .plot-pzmap { position: relative; min-height: 0; background: var(--surface); }
+.plot-step { grid-area: plot1; } .plot-pzmap { grid-area: plot2; }
+.plot-step canvas, .plot-pzmap canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; z-index: 2; pointer-events: none; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 2px; }
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.param-row label { font-size: 13px; width: 36px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid var(--surface); }
+.param-row .val { width: 46px; text-align: right; font-size: 13px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+
+/* Color-coded sliders for PID */
+.pid-row.p-kp input[type="range"]::-webkit-slider-thumb { background: var(--pink); }
+.pid-row.p-kd input[type="range"]::-webkit-slider-thumb { background: var(--cyan); }
+.pid-row.p-ki input[type="range"]::-webkit-slider-thumb { background: var(--green); }
+.pid-row.p-kp .val { color: var(--pink); }
+.pid-row.p-kd .val { color: var(--cyan); }
+.pid-row.p-ki .val { color: var(--green); }
+.pid-row label { color: var(--text); }
+.pid-row.p-kp label { color: var(--pink); }
+.pid-row.p-kd label { color: var(--cyan); }
+.pid-row.p-ki label { color: var(--green); }
+
+.readout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.readout-item { background: var(--surface2); border-radius: 6px; padding: 8px 10px; text-align: center; }
+.readout-item .rv { font-family: var(--mono); font-size: 18px; color: var(--accent); }
+.readout-item .rl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn { font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(76,201,240,0.08); }
+.preset-btn.active { border-color: var(--accent); color: #fff; background: rgba(76,201,240,0.18); }
+
+.warning-badge { display: none; font-size: 11px; background: rgba(247,37,133,0.2); color: var(--warn); padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(247,37,133,0.3); }
+.warning-badge.show { display: inline-block; }
+
+.metrics { position: absolute; top: 8px; right: 14px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; pointer-events: none; max-width: 60%; justify-content: flex-end; }
+.metric { font-size: 11px; font-family: var(--mono); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; color: var(--text-dim); }
+
+@media (max-width: 800px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
+  .plot-step, .plot-pzmap { height: 300px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header"><div class="dot"></div>PID Explorer — 2nd-Order Plant &nbsp; <span class="warning-badge" id="warnBadge">UNSTABLE</span></div>
+
+  <div class="sidebar">
+    <!-- Plant Parameters -->
+    <div class="param-group">
+      <div class="section-title">Plant Parameters &nbsp; G(s)=ωₙ²/(s²+2ζωₙs+ωₙ²)</div>
+      <div class="param-row">
+        <label>&zeta;</label>
+        <input type="range" id="zeta" min="0.05" max="2" step="0.01" value="0.5">
+        <span class="val" id="zetaVal">0.50</span>
+      </div>
+      <div class="param-row">
+        <label>&omega;<sub>n</sub></label>
+        <input type="range" id="wn" min="0.3" max="8" step="0.1" value="2">
+        <span class="val" id="wnVal">2.0</span>
+      </div>
+    </div>
+
+    <!-- PID Parameters -->
+    <div class="param-group">
+      <div class="section-title">PID Parameters &nbsp; C(s)=Kp + Kd·s + Ki/s</div>
+      <div class="param-row pid-row p-kp">
+        <label>K<sub>p</sub></label>
+        <input type="range" id="kp" min="0" max="20" step="0.05" value="3">
+        <span class="val" id="kpVal">3.00</span>
+      </div>
+      <div class="param-row pid-row p-kd">
+        <label>K<sub>d</sub></label>
+        <input type="range" id="kd" min="0" max="5" step="0.01" value="0.8">
+        <span class="val" id="kdVal">0.80</span>
+      </div>
+      <div class="param-row pid-row p-ki">
+        <label>K<sub>i</sub></label>
+        <input type="range" id="ki" min="0" max="10" step="0.01" value="0.4">
+        <span class="val" id="kiVal">0.40</span>
+      </div>
+    </div>
+
+    <!-- Effective Parameters Readout -->
+    <div class="param-group">
+      <div class="section-title">Effective Closed-Loop Parameters</div>
+      <div class="readout-grid">
+        <div class="readout-item"><div class="rv" id="rvZetaEff">0.75</div><div class="rl">&zeta;<sub>eff</sub></div></div>
+        <div class="readout-item"><div class="rv" id="rvWnEff">4.2</div><div class="rl">&omega;<sub>n,eff</sub> [rad/s]</div></div>
+        <div class="readout-item"><div class="rv" id="rvOS" style="font-size:14px">—</div><div class="rl">Overshoot</div></div>
+        <div class="readout-item"><div class="rv" id="rvSSE" style="font-size:14px">—</div><div class="rl">SS Error</div></div>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="param-group">
+      <div class="section-title">Presets</div>
+      <div class="preset-row">
+        <button class="preset-btn" data-preset="noCtrl">No Control</button>
+        <button class="preset-btn" data-preset="pOnly">P Only</button>
+        <button class="preset-btn" data-preset="pd">PD</button>
+        <button class="preset-btn" data-preset="pi">PI</button>
+        <button class="preset-btn active" data-preset="pidTuned">PID Tuned</button>
+        <button class="preset-btn" data-preset="aggro">Aggressive</button>
+        <button class="preset-btn" data-preset="heavyD">Heavy D</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plot-step" id="plotStep">
+    <div class="plot-label">Step Response</div>
+    <div class="metrics" id="metricsStep"></div>
+    <canvas id="canvasStep"></canvas>
+  </div>
+
+  <div class="plot-pzmap" id="plotPZ">
+    <div class="plot-label">Pole–Zero Map</div>
+    <canvas id="canvasPZ"></canvas>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span id="insightIcon"></span> <span id="insightText">Adjust PID gains to see how they transform the closed-loop response.</span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const sliders = {
+  zeta: $('zeta'), wn: $('wn'),
+  kp: $('kp'), kd: $('kd'), ki: $('ki')
+};
+const canvasStep = $('canvasStep'), canvasPZ = $('canvasPZ');
+const ctxStep = canvasStep.getContext('2d'), ctxPZ = canvasPZ.getContext('2d');
+
+const presets = {
+  noCtrl:   { zeta:0.5, wn:2, kp:0,   kd:0,   ki:0   },
+  pOnly:    { zeta:0.5, wn:2, kp:5,   kd:0,   ki:0   },
+  pd:       { zeta:0.5, wn:2, kp:3,   kd:1,   ki:0   },
+  pi:       { zeta:0.5, wn:2, kp:3,   kd:0,   ki:0.6 },
+  pidTuned: { zeta:0.5, wn:2, kp:3,   kd:0.8, ki:0.4 },
+  aggro:    { zeta:0.5, wn:2, kp:10,  kd:0.3, ki:2   },
+  heavyD:   { zeta:0.5, wn:2, kp:2,   kd:3,   ki:0   },
+};
+
+let currentPreset = 'pidTuned';
+const TRACE_CL = '#4cc9f0';      // closed-loop trace
+const TRACE_OL = '#555577';      // open-loop (baseline) trace
+const POLE_COLOR = '#ff6644';    // closed-loop poles
+const POLE_OL = '#555577';       // open-loop plant poles
+const ZERO_LHP = '#4cc9f0';      // LHP zeros
+const ZERO_RHP = '#f72585';      // RHP zeros
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPLEX NUMBER HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function C(re, im) { return { re, im }; }
+function cAdd(a, b) { return C(a.re + b.re, a.im + b.im); }
+function cSub(a, b) { return C(a.re - b.re, a.im - b.im); }
+function cMul(a, b) { return C(a.re*b.re - a.im*b.im, a.re*b.im + a.im*b.re); }
+function cDiv(a, b) { const d = b.re*b.re + b.im*b.im; return C((a.re*b.re + a.im*b.im)/d, (a.im*b.re - a.re*b.im)/d); }
+function cAbs(a) { return Math.sqrt(a.re*a.re + a.im*a.im); }
+function cSqrt(a) {
+  const r = cAbs(a);
+  if (a.im >= 0) return C(Math.sqrt((r + a.re)/2), Math.sqrt((r - a.re)/2));
+  return C(Math.sqrt((r + a.re)/2), -Math.sqrt((r - a.re)/2));
+}
+function cCbrt(a) {
+  if (Math.abs(a.im) < 1e-12) return C(Math.cbrt(a.re), 0);
+  const r = cAbs(a), theta = Math.atan2(a.im, a.re);
+  const rn = Math.cbrt(r);
+  return C(rn * Math.cos(theta/3), rn * Math.sin(theta/3));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CUBIC SOLVER: s³ + a₂s² + a₁s + a₀ = 0   (Cardano's method)
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveCubic(a2, a1, a0) {
+  const p = a1 - (a2 * a2) / 3;
+  const q = a0 - (a2 * a1) / 3 + (2 * a2 * a2 * a2) / 27;
+  const disc = (q * q) / 4 + (p * p * p) / 27;
+  const shift = a2 / 3;
+  const EPS = 1e-12;
+
+  if (Math.abs(disc) < EPS) {
+    if (Math.abs(p) < EPS && Math.abs(q) < EPS) return [C(-shift,0), C(-shift,0), C(-shift,0)];
+    const u = Math.cbrt(-q / 2);
+    return [C(2*u-shift,0), C(-u-shift,0), C(-u-shift,0)];
+  }
+
+  if (disc > 0) {
+    const sd = Math.sqrt(disc);
+    const u = Math.cbrt(-q/2 + sd);
+    const v = Math.cbrt(-q/2 - sd);
+    return [C(u+v-shift,0), C(-(u+v)/2-shift,(u-v)*Math.sqrt(3)/2), C(-(u+v)/2-shift,-(u-v)*Math.sqrt(3)/2)];
+  }
+
+  // Three real roots, use trig form
+  const arg = Math.max(-1, Math.min(1, -q/2 / Math.sqrt(-(p*p*p)/27)));
+  const phi = Math.acos(arg);
+  const r = 2 * Math.sqrt(-p/3);
+  return [
+    C(r*Math.cos(phi/3)-shift, 0),
+    C(r*Math.cos((phi+2*Math.PI)/3)-shift, 0),
+    C(r*Math.cos((phi+4*Math.PI)/3)-shift, 0)
+  ];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   QUADRATIC SOLVER: s² + a₁s + a₀ = 0
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveQuadratic(a1, a0) {
+  const disc = a1*a1 - 4*a0;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    return [C((-a1+sd)/2,0), C((-a1-sd)/2,0)];
+  }
+  const sd = Math.sqrt(-disc);
+  return [C(-a1/2, sd/2), C(-a1/2, -sd/2)];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CLOSED-LOOP POLE & ZERO COMPUTATION
+   Plant:  G(s) = w² / (s² + 2zw s + w²)    where w = ωₙ, z = ζ
+   PID:    C(s) = Kp + Kd·s + Ki/s = (Kd·s² + Kp·s + Ki) / s
+
+   Closed-loop char poly:
+     s³ + (2zw + Kd·w²)s² + w²(1+Kp)s + Ki·w² = 0
+
+   Closed-loop zeros (from controller numerator):
+     Kd·s² + Kp·s + Ki = 0
+   ═══════════════════════════════════════════════════════════════════════ */
+function computePolesAndZeros(zeta, wn, kp, kd, ki) {
+  const w2 = wn * wn;
+  const a2 = 2*zeta*wn + kd*w2;
+  const a1 = w2 * (1 + kp);
+  const a0 = ki * w2;
+
+  // Closed-loop poles
+  let clPoles;
+  if (Math.abs(ki) < 1e-10 && Math.abs(kd) < 1e-10 && Math.abs(kp) < 1e-10) {
+    // No control: just plant poles
+    clPoles = computePlantPoles(zeta, wn);
+  } else {
+    clPoles = solveCubic(a2, a1, a0);
+    // Filter out spurious pole at s=0 when Ki=0 (cancelled by controller zero)
+    if (Math.abs(ki) < 1e-10) {
+      clPoles = clPoles.filter(p => !(Math.abs(p.re) < 1e-8 && Math.abs(p.im) < 1e-8));
+    }
+  }
+
+  // Plant (open-loop) poles: s² + 2zw s + w² = 0
+  const olPoles = computePlantPoles(zeta, wn);
+
+  // Controller zeros: Kd·s² + Kp·s + Ki = 0
+  let zeros = [];
+  if (Math.abs(kd) > 1e-10) {
+    zeros = solveQuadratic(kp/kd, ki/kd);
+  } else if (Math.abs(kp) > 1e-10) {
+    zeros = [C(-ki/kp, 0)];
+  }
+  // Filter zero at s=0 when Ki=0 — it cancels with the absent integrator pole
+  if (Math.abs(ki) < 1e-10) {
+    zeros = zeros.filter(z => !(Math.abs(z.re) < 1e-8 && Math.abs(z.im) < 1e-8));
+  }
+
+  return { clPoles, olPoles, zeros, hasIntegrator: Math.abs(ki) > 1e-10 };
+}
+
+function computePlantPoles(zeta, wn) {
+  const sigma = zeta * wn;
+  const disc = sigma*sigma - wn*wn;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    return [C(-sigma+sd, 0), C(-sigma-sd, 0)];
+  }
+  const wd = wn * Math.sqrt(1 - zeta*zeta);
+  return [C(-sigma, wd), C(-sigma, -wd)];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DOMINANT POLE ANALYSIS → ζ_eff, ωₙ_eff
+   ═══════════════════════════════════════════════════════════════════════ */
+function analyzeDominantPoles(clPoles) {
+  if (clPoles.length === 0) return { zetaEff: null, wnEff: null, isComplex: false, dominant: null };
+
+  // Find complex conjugate pair closest to imaginary axis
+  let bestPair = null, bestDist = Infinity;
+
+  const complex = clPoles.filter(p => Math.abs(p.im) > 1e-8);
+
+  for (let i = 0; i < complex.length; i++) {
+    for (let j = i + 1; j < complex.length; j++) {
+      if (Math.abs(complex[i].re - complex[j].re) < 1e-6 &&
+          Math.abs(complex[i].im + complex[j].im) < 1e-6) {
+        const dist = cAbs(complex[i]);
+        if (dist < bestDist) { bestDist = dist; bestPair = [complex[i], complex[j]]; }
+      }
+    }
+  }
+
+  if (bestPair) {
+    const p = bestPair[0];
+    const sigma = -p.re;  // positive for stable
+    const wnEff = cAbs(p);
+    const zetaEff = sigma / wnEff;
+    return { zetaEff, wnEff, isComplex: true, dominant: p };
+  }
+
+  // No complex pair: find dominant real pole (closest to jω axis, but must be stable)
+  const stableReal = clPoles.filter(p => Math.abs(p.im) < 1e-8 && p.re < 0);
+  if (stableReal.length > 0) {
+    stableReal.sort((a, b) => b.re - a.re); // most positive (least negative) first
+    const dom = stableReal[0];
+    return { zetaEff: 1, wnEff: Math.abs(dom.re), isComplex: false, dominant: dom };
+  }
+
+  // All unstable or no poles
+  return { zetaEff: null, wnEff: null, isComplex: false, dominant: null };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STATE-SPACE MODEL (controllable canonical, 3rd-order closed-loop)
+   x = [y, ẏ, ∫e]ᵀ
+   Plant:  ÿ + 2ζωₙẏ + ωₙ²y = ωₙ²u
+   PID:    u = Kp(r−y) − Kdẏ + Ki·∫e dt   (derivative on output)
+   ═══════════════════════════════════════════════════════════════════════ */
+function buildCLSystem(zeta, wn, kp, kd, ki) {
+  const w2 = wn * wn;
+  const n = 3;
+
+  const A = [
+    [0, 1, 0],
+    [-(1+kp)*w2, -(2*zeta*wn + kd*w2), ki*w2],
+    [-1, 0, 0]
+  ];
+
+  const B = [0, kp*w2, 1];
+  const C = [1, 0, 0];
+  const D = 0;
+
+  return { A, B, C, D, n };
+}
+
+function buildOLSystem(zeta, wn) {
+  // Plant only: ẋ₁=x₂, ẋ₂=-w²x₁-2zwx₂+w²u, y=x₁
+  const w2 = wn * wn;
+  const n = 2;
+  const A = [[0, 1], [-w2, -2*zeta*wn]];
+  const B = [0, w2];
+  const C = [1, 0];
+  return { A, B, C, D: 0, n };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RK4 SIMULATION
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateStep(sys, tMax, nPts) {
+  const { A, C, n } = sys;
+  const dt = tMax / (nPts - 1);
+  const t = new Array(nPts), y = new Array(nPts);
+  const x = new Array(n).fill(0);
+
+  const B = sys._B;  // ẋ = A·x + B·r,  r=1 (step)
+
+  for (let k = 0; k < nPts; k++) {
+    t[k] = k * dt;
+    y[k] = C.reduce((s, c, i) => s + c * x[i], 0);
+
+    function dx(v) {
+      const dxv = new Array(n).fill(0);
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++)
+          dxv[i] += A[i][j] * v[j];
+      if (B) for (let i = 0; i < n; i++) dxv[i] += B[i];
+      return dxv;
+    }
+
+    const k1 = dx(x);
+    const x2 = x.map((xi, i) => xi + 0.5*dt*k1[i]);
+    const k2 = dx(x2);
+    const x3 = x.map((xi, i) => xi + 0.5*dt*k2[i]);
+    const k3 = dx(x3);
+    const x4 = x.map((xi, i) => xi + dt*k3[i]);
+    const k4 = dx(x4);
+
+    for (let i = 0; i < n; i++) x[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+  }
+  return { t, y };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   METRICS
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeMetrics(t, y) {
+  const yMax = Math.max(...y), yMin = Math.min(...y);
+  const yEnd = y[y.length - 1];
+  const osPct = yMax > 1 ? (yMax - 1) * 100 : 0;
+  const ssErr = Math.abs(yEnd - 1) * 100;
+
+  // Rise time 10-90%
+  let t10 = -1, t90 = -1;
+  for (let i = 0; i < y.length; i++) { if (y[i] >= 0.1 && t10 < 0) t10 = t[i]; if (y[i] >= 0.9 && t90 < 0) t90 = t[i]; }
+  const tr = (t10 >= 0 && t90 >= 0) ? (t90 - t10) : null;
+
+  // Settling time (2%)
+  let ts = null;
+  for (let i = y.length - 1; i >= 0; i--) {
+    if (Math.abs(y[i] - 1) > 0.02) { ts = i + 1 < y.length ? t[i + 1] : t[i]; break; }
+  }
+
+  return { osPct, ssErr, tr, ts, yMax, yMin, yEnd };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  }
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE PLOT
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepPlot(zeta, wn, kp, kd, ki, sysCL, sysOL) {
+  const container = document.getElementById('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const margin = { top: 30, right: 20, bottom: 38, left: 50 };
+  const pw = w - margin.left - margin.right, ph = h - margin.top - margin.bottom;
+
+  // Adaptive tMax based on expected settling time
+  const avgEff = sysCL._zetaEff || 0.5;
+  const avgWn = sysCL._wnEff || wn;
+  const tsEst = avgEff > 0.01 ? 4 / (avgEff * avgWn) : 20;
+  const tMax = Math.max(8, Math.min(40, tsEst * 2.5));
+
+  // Simulate
+  const resCL = simulateStep(sysCL, tMax, 800);
+  const resOL = sysOL ? simulateStep(sysOL, tMax, 800) : null;
+
+  const metrics = computeMetrics(resCL.t, resCL.y);
+
+  // Y range
+  let yMin = -0.3, yMax = 2.2;
+  const allY = [resCL.y, resOL ? resOL.y : []].flat();
+  const dMin = Math.min(...allY), dMax = Math.max(...allY);
+  if (dMin < 0) yMin = Math.min(yMin, dMin * 1.2);
+  if (dMax > 2.2) yMax = Math.max(yMax, dMax * 1.15);
+  // Cap for unstable
+  if (dMax > 10) yMax = Math.min(dMax, 10);
+
+  function tx(t) { return margin.left + (t/tMax)*pw; }
+  function ty(y) { return margin.top + ph - ((y-yMin)/(yMax-yMin))*ph; }
+
+  // Background
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const nGrid = Math.ceil(tMax / 2);
+  for (let i = 0; i <= tMax; i += nGrid > 4 ? 2 : 1) {
+    ctx.beginPath(); ctx.moveTo(tx(i), margin.top); ctx.lineTo(tx(i), margin.top+ph); ctx.stroke();
+  }
+  const yStep = (yMax - yMin) > 5 ? 0.5 : 0.25;
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    if (Math.abs(yv - 1) < 0.001) continue;
+    ctx.beginPath(); ctx.moveTo(margin.left, ty(yv)); ctx.lineTo(margin.left+pw, ty(yv)); ctx.stroke();
+  }
+  // y=1 reference
+  ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, ty(1)); ctx.lineTo(margin.left+pw, ty(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top+ph); ctx.lineTo(margin.left+pw, margin.top+ph); ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= tMax; i += (tMax > 15 ? 4 : 2))
+    ctx.fillText(i.toFixed(0), tx(i), margin.top+ph+16);
+  ctx.fillText('Time [s]', margin.left+pw/2, margin.top+ph+34);
+  ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep)
+    ctx.fillText(yv.toFixed(yStep<0.5?2:1), margin.left-8, ty(yv)+4);
+  ctx.save();
+  ctx.translate(14, margin.top+ph/2); ctx.rotate(-Math.PI/2); ctx.fillText('Output', 0, 0);
+  ctx.restore();
+
+  // Open-loop (baseline) trace
+  if (resOL) {
+    ctx.strokeStyle = TRACE_OL; ctx.lineWidth = 2; ctx.setLineDash([8,4]);
+    ctx.beginPath();
+    for (let i = 0; i < resOL.t.length; i++) {
+      const sx = tx(resOL.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, resOL.y[i])));
+      i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#666688'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'left';
+    const lx = tx(tMax * 0.55);
+    const li = Math.floor(0.55 * tMax / tMax * (resOL.t.length-1));
+    ctx.fillText('open-loop (no control)', lx+6, ty(Math.max(yMin,Math.min(yMax,resOL.y[li])))-4);
+  }
+
+  // Closed-loop trace
+  ctx.strokeStyle = TRACE_CL; ctx.lineWidth = 2.5; ctx.shadowColor = TRACE_CL; ctx.shadowBlur = 3;
+  ctx.beginPath();
+  for (let i = 0; i < resCL.t.length; i++) {
+    const sx = tx(resCL.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, resCL.y[i])));
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Legend in corner
+  ctx.fillStyle = TRACE_CL; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  ctx.fillText('closed-loop (PID)', tx(0.2) + 6, ty(0.95*yMax + 0.05*yMin));
+
+  // Metrics overlay
+  let mHtml = '';
+  if (metrics.osPct > 0.1) mHtml += `<span class="metric" style="color:var(--warn)">OS ${metrics.osPct.toFixed(1)}%</span>`;
+  if (metrics.ssErr > 0.5) mHtml += `<span class="metric" style="color:var(--orange)">SS err ${metrics.ssErr.toFixed(1)}%</span>`;
+  if (metrics.tr !== null) mHtml += `<span class="metric">tᵣ ${metrics.tr.toFixed(2)}s</span>`;
+  if (metrics.ts !== null) mHtml += `<span class="metric">tₛ ${metrics.ts.toFixed(2)}s</span>`;
+  $('metricsStep').innerHTML = mHtml;
+
+  ctx.restore(); // undo DPR scaling
+  return { tMax, metrics, yMin, yMax };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLE–ZERO MAP
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawPZMap(zeta, wn, kp, kd, ki, sysCL) {
+  const container = document.getElementById('plotPZ');
+  const { w, h, dpr } = resizeCanvas(canvasPZ, container);
+  const ctx = ctxPZ;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const { clPoles, olPoles, zeros } = computePolesAndZeros(zeta, wn, kp, kd, ki);
+  const { zetaEff, wnEff, isComplex } = analyzeDominantPoles(clPoles);
+
+  // Auto-scale
+  const allPts = [...clPoles, ...olPoles, ...zeros];
+  let maxRe = 2, minRe = -10, maxIm = 8;
+  if (allPts.length > 0) {
+    const res = allPts.map(p => Math.abs(p.re)).reduce((a,b)=>Math.max(a,b), 0);
+    const ims = allPts.map(p => Math.abs(p.im)).reduce((a,b)=>Math.max(a,b), 0);
+    maxRe = Math.max(3, res * 1.4);
+    minRe = Math.min(1, -maxRe * 1.5);
+    maxIm = Math.max(3, ims * 1.4);
+    // Symmetric around Re=0 for clear view of stability boundary
+    const span = Math.max(maxRe, -minRe, maxIm);
+    minRe = -span; maxRe = span; maxIm = span;
+  }
+
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 40) / Math.max(maxRe, maxIm);
+
+  function px(re) { return cx + re * scale; }
+  function py(im) { return cy - im * scale; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const gridStep = Math.max(1, Math.ceil(Math.max(maxRe, maxIm) / 6));
+  for (let i = Math.ceil(minRe/gridStep)*gridStep; i <= maxRe; i += gridStep) {
+    ctx.beginPath(); ctx.moveTo(px(i), 8); ctx.lineTo(px(i), h-8); ctx.stroke();
+  }
+  for (let i = -Math.floor(maxIm/gridStep)*gridStep; i <= maxIm; i += gridStep) {
+    ctx.beginPath(); ctx.moveTo(8, py(i)); ctx.lineTo(w-8, py(i)); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8, cy); ctx.lineTo(w-8, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h-8); ctx.stroke();
+
+  // Imag axis emphasis (stability boundary)
+  ctx.strokeStyle = 'rgba(247,37,133,0.3)'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h-8); ctx.stroke();
+  ctx.setLineDash([]);
+  if (clPoles.some(p => p.re > 0.01)) {
+    ctx.fillStyle = 'rgba(247,37,133,0.15)';
+    ctx.fillRect(cx, 8, px(maxRe)-cx, h-16);
+  }
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let i = Math.ceil(minRe/gridStep)*gridStep; i <= maxRe; i += gridStep)
+    if (i !== 0) ctx.fillText(i, px(i), cy+14);
+  ctx.textAlign = 'right';
+  for (let i = -Math.floor(maxIm/gridStep)*gridStep; i <= maxIm; i += gridStep)
+    if (i !== 0) ctx.fillText(i, cx-5, py(i)+4);
+  ctx.fillText('Re', w - 16, cy + 14);
+  ctx.fillText('Im', cx - 5, 16);
+
+  // Damping lines from dominant poles
+  if (zetaEff !== null && isComplex) {
+    const ang = Math.acos(Math.max(0, Math.min(1, zetaEff)));
+    const lr = cAbs(clPoles[0]) * scale * 1.2;
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - lr*zetaEff, cy + lr*Math.sqrt(1-zetaEff*zetaEff)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - lr*zetaEff, cy - lr*Math.sqrt(1-zetaEff*zetaEff)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#666688'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'left';
+    ctx.fillText('ζ_eff='+zetaEff.toFixed(2), cx-lr*zetaEff+6, cy+35);
+  } else if (zetaEff !== null && !isComplex) {
+    // Overdamped/critically damped
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy); ctx.stroke(); // just a point
+    ctx.setLineDash([]);
+  }
+
+  // Plot open-loop plant poles (ghost)
+  for (const p of olPoles) {
+    const sz = 6;
+    ctx.strokeStyle = 'rgba(85,85,119,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+    ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+    ctx.stroke();
+  }
+
+  // Plot closed-loop poles
+  for (const p of clPoles) {
+    const isDominant = isComplex && Math.abs(cAbs(p) - (wnEff||0)) < 1e-6;
+    const sz = isDominant ? 8 : 6;
+    ctx.strokeStyle = p.re > 0.01 ? 'var(--warn)' : POLE_COLOR;
+    ctx.fillStyle = p.re > 0.01 ? 'rgba(247,37,133,0.3)' : 'rgba(255,102,68,0.2)';
+    ctx.lineWidth = isDominant ? 3 : 2;
+    // Fill circle for unstable
+    if (p.re > 0.01) {
+      ctx.beginPath(); ctx.arc(px(p.re), py(p.im), sz+2, 0, 2*Math.PI); ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+    ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+    ctx.stroke();
+  }
+
+  // Plot controller zeros
+  for (const z of zeros) {
+    ctx.strokeStyle = z.re >= 0 ? ZERO_RHP : ZERO_LHP;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(px(z.re), py(z.im), 7, 0, 2*Math.PI);
+    ctx.stroke();
+  }
+
+  // Legend
+  const lx = Math.max(16, px(maxRe) - 130), ly = 20;
+  // CL poles
+  ctx.strokeStyle = POLE_COLOR; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx+1, ly-4); ctx.lineTo(lx+7, ly+2);
+  ctx.moveTo(lx+7, ly-4); ctx.lineTo(lx+1, ly+2); ctx.stroke();
+  ctx.fillStyle = POLE_COLOR; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily; ctx.textAlign = 'left';
+  ctx.fillText('CL poles', lx+14, ly+4);
+  // OL poles
+  ctx.strokeStyle = 'rgba(85,85,119,0.7)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(lx+1, ly+16-4); ctx.lineTo(lx+7, ly+16+2);
+  ctx.moveTo(lx+7, ly+16-4); ctx.lineTo(lx+1, ly+16+2); ctx.stroke();
+  ctx.fillStyle = '#8888aa';
+  ctx.fillText('OL poles', lx+14, ly+16+4);
+  // Zero
+  ctx.strokeStyle = ZERO_LHP; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lx+4, ly+32, 5, 0, 2*Math.PI); ctx.stroke();
+  ctx.fillStyle = ZERO_LHP;
+  ctx.fillText('Ctr zeros', lx+14, ly+32+4);
+
+  ctx.restore(); // undo DPR scaling
+  return { clPoles, zeros, zetaEff, wnEff, isComplex };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIGHT PANEL
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateInsight(zeta, wn, kp, kd, ki, zetaEff, wnEff, isComplex, clPoles) {
+  const msgs = [];
+  const hasUnstable = clPoles.some(p => p.re > 0.01);
+
+  if (hasUnstable) {
+    msgs.push('RHP poles detected — system is UNSTABLE. Reduce Kp or increase Kd to regain stability.');
+    $('warnBadge').classList.add('show');
+  } else {
+    $('warnBadge').classList.remove('show');
+  }
+
+  if (Math.abs(kp) < 1e-8 && Math.abs(kd) < 1e-8 && Math.abs(ki) < 1e-8) {
+    msgs.push('No controller active. The response is determined entirely by the plant poles (ζ='+zeta.toFixed(2)+', ωₙ='+wn.toFixed(1)+').');
+  } else {
+    // Describe what each gain is doing
+    if (kp > 0.1) {
+      const wnRatio = wnEff ? wnEff / wn : 1;
+      msgs.push('Kp raises effective ωₙ from '+wn.toFixed(1)+' to '+wnEff.toFixed(1)+' rad/s ('+((wnRatio-1)*100).toFixed(0)+'% faster) — and lowers ζ.');
+    }
+    if (kd > 0.01) {
+      msgs.push('Kd adds damping — it shifts the dominant poles leftward, increasing ζ_eff to '+zetaEff.toFixed(2)+'.');
+    }
+    if (ki > 0.01) {
+      const ssMsg = Math.abs(kp) > 0.1 ? 'eliminates steady-state error' : 'adds integral action';
+      msgs.push('Ki '+ssMsg+' and places an extra pole at s=0 (plus additional zeros).');
+    }
+    if (kd > 0.01 && ki < 0.01 && Math.abs(kp) > 0.1) {
+      msgs.push('PD control lets you tune ζ_eff and ωₙ_eff independently: Kp sets speed, Kd sets damping.');
+    }
+  }
+
+  if (zetaEff !== null && !isComplex && !hasUnstable) {
+    msgs.push('Dominant poles are real — the system is overdamped (ζ_eff ≥ 1). Increase Kp or reduce Kd for a faster, more oscillatory response.');
+  }
+
+  $('insightText').textContent = msgs.join(' · ');
+  $('insightIcon').textContent = hasUnstable ? '⚠️' : '💡';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESET HIGHLIGHT
+   ═══════════════════════════════════════════════════════════════════════ */
+function updatePresetHighlight() {
+  const zeta = sliders.zeta.valueAsNumber, wn = sliders.wn.valueAsNumber;
+  const kp = sliders.kp.valueAsNumber, kd = sliders.kd.valueAsNumber, ki = sliders.ki.valueAsNumber;
+  let matched = null;
+  const EPS = 0.02;
+  for (const [name, p] of Object.entries(presets)) {
+    if (Math.abs(p.zeta - zeta) < EPS && Math.abs(p.wn - wn) < EPS*10 &&
+        Math.abs(p.kp - kp) < EPS && Math.abs(p.kd - kd) < EPS*0.1 && Math.abs(p.ki - ki) < EPS*0.1) {
+      matched = name; break;
+    }
+  }
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === matched));
+  currentPreset = matched;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN UPDATE
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateAll() {
+  const zeta = sliders.zeta.valueAsNumber, wn = sliders.wn.valueAsNumber;
+  const kp = sliders.kp.valueAsNumber, kd = sliders.kd.valueAsNumber, ki = sliders.ki.valueAsNumber;
+
+  // Update display values
+  $('zetaVal').textContent = zeta.toFixed(2);
+  $('wnVal').textContent = wn.toFixed(1);
+  $('kpVal').textContent = kp.toFixed(2);
+  $('kdVal').textContent = kd.toFixed(2);
+  $('kiVal').textContent = ki.toFixed(2);
+
+  // Build systems
+  const sysCL = buildCLSystem(zeta, wn, kp, kd, ki);
+  sysCL._B = [0, kp*wn*wn, 1];  // B vector for step input
+  const sysOL = buildOLSystem(zeta, wn);
+  sysOL._B = [0, wn*wn];
+
+  // Compute poles and effective params
+  const { clPoles, olPoles, zeros } = computePolesAndZeros(zeta, wn, kp, kd, ki);
+  const { zetaEff, wnEff, isComplex } = analyzeDominantPoles(clPoles);
+  sysCL._zetaEff = zetaEff;
+  sysCL._wnEff = wnEff;
+
+  // Draw
+  const stepResult = drawStepPlot(zeta, wn, kp, kd, ki, sysCL, sysOL);
+  drawPZMap(zeta, wn, kp, kd, ki, sysCL);
+  updateInsight(zeta, wn, kp, kd, ki, zetaEff, wnEff, isComplex, clPoles);
+  updatePresetHighlight();
+
+  // Update readout panel
+  if (zetaEff !== null) {
+    $('rvZetaEff').textContent = zetaEff.toFixed(3);
+    $('rvWnEff').textContent = wnEff.toFixed(2);
+    $('rvZetaEff').style.color = zetaEff < 0.2 ? 'var(--warn)' : 'var(--accent)';
+  } else {
+    $('rvZetaEff').textContent = '—';
+    $('rvWnEff').textContent = '—';
+    $('rvZetaEff').style.color = 'var(--text-dim)';
+  }
+  $('rvOS').textContent = stepResult.metrics.osPct > 0.1 ? stepResult.metrics.osPct.toFixed(1)+'%' : '0%';
+  $('rvOS').style.color = stepResult.metrics.osPct > 20 ? 'var(--warn)' : 'var(--accent)';
+  $('rvSSE').textContent = stepResult.metrics.ssErr > 0.3 ? stepResult.metrics.ssErr.toFixed(1)+'%' : '~0%';
+  $('rvSSE').style.color = stepResult.metrics.ssErr > 2 ? 'var(--orange)' : 'var(--accent)';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT BINDINGS
+   ═══════════════════════════════════════════════════════════════════════ */
+Object.values(sliders).forEach(s => s.addEventListener('input', updateAll));
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const p = presets[btn.dataset.preset];
+    if (!p) return;
+    sliders.zeta.value = p.zeta;
+    sliders.wn.value = p.wn;
+    sliders.kp.value = p.kp;
+    sliders.kd.value = p.kd;
+    sliders.ki.value = p.ki;
+    updateAll();
+  });
+});
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateAll, 100); });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════ */
+updateAll();
+</script>
+</body>
+</html>
