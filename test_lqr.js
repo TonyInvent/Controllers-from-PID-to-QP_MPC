@@ -155,4 +155,31 @@ t('fallbackGains stabilize motor', () => {
   if (th < 0.5 || th > 1.5) throw new Error('theta_end=' + th.toFixed(4) + ' out of range [0.5, 1.5]');
   console.log('  theta_end=' + th.toFixed(4) + ' (fallback gains work)');
 });
+t('extreme: low qTheta (0.1), high R (10)', () => {
+  const g = computeLQRGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 0.1, 1, 0.1, 10, 10);
+  if (!g) throw new Error('null');
+  console.log('  K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 4, 400);
+  const th = s.theta[399];
+  if (th < 0 || th > 2) throw new Error('theta_end=' + th.toFixed(4) + ' out of range');
+  console.log('  theta_end=' + th.toFixed(4));
+});
+t('extreme: low qOmega (0.01)', () => {
+  const g = computeLQRGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 100, 0.01, 0.1, 10, 0.1);
+  if (!g) throw new Error('null');
+  console.log('  K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 4, 400);
+  const th = s.theta[399];
+  if (th < 0 || th > 2) throw new Error('theta_end=' + th.toFixed(4) + ' out of range');
+  console.log('  theta_end=' + th.toFixed(4));
+});
+t('extreme: high qTheta (1000), low R (0.001)', () => {
+  const g = computeLQRGains({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, 1000, 1, 0.1, 10, 0.001);
+  if (!g) throw new Error('null');
+  console.log('  K=[' + g.kTheta.toFixed(2) + ' ' + g.kOmega.toFixed(4) + ' ' + g.kCur.toFixed(4) + ' ' + g.kInt.toFixed(2) + ']');
+  const s = simulateLQR({R:4,L:0.02,Kt:0.06,J:0.002,B:2e-4}, g, {Vmax:12,tauDist:0,tDistOn:999}, 4, 400);
+  const th = s.theta[399];
+  if (th < 0 || th > 2) throw new Error('theta_end=' + th.toFixed(4) + ' out of range');
+  console.log('  theta_end=' + th.toFixed(4));
+});
 console.log('Done.');
