@@ -479,28 +479,179 @@ function buildLQISystem(Rm, Lm, Kt, Jm, Bm) {
 
 // Solve Lyapunov equation: A^T P + P A = -W  for P  (n×n matrices)
 // Uses Kronecker product + numeric.solve — no eigenvalue decomposition needed.
+// Complex matrix helpers for {x, y} format (x=real, y=imag)
+function cMatMul(A, B) {
+  const n = A.x.length, m = B.x[0].length, inner = A.x[0].length;
+  const R = { x: numeric.rep([n, m], 0), y: numeric.rep([n, m], 0) };
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++)
+      for (let k = 0; k < inner; k++) {
+        R.x[i][j] += A.x[i][k] * B.x[k][j] - A.y[i][k] * B.y[k][j];
+        R.y[i][j] += A.x[i][k] * B.y[k][j] + A.y[i][k] * B.x[k][j];
+      }
+  return R;
+}
+// Plain transpose (no conjugation) — for V^T in eigendecomposition formula
+function cMatTransposePlain(M) {
+  const n = M.x.length, m = M.x[0].length;
+  const R = { x: numeric.rep([m, n], 0), y: numeric.rep([m, n], 0) };
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++) {
+      R.x[j][i] = M.x[i][j];
+      R.y[j][i] = M.y[i][j];
+    }
+  return R;
+}
+function cMatInverse(M) {
+  // Build 2n×2n real matrix: [X  -Y; Y  X] and invert
+  const n = M.x.length;
+  const R = numeric.rep([2*n, 2*n], 0);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) {
+      R[i][j] = M.x[i][j];
+      R[i][j+n] = -M.y[i][j];
+      R[i+n][j] = M.y[i][j];
+      R[i+n][j+n] = M.x[i][j];
+    }
+  try {
+    const Rinv = numeric.inv(R);
+    if (!Rinv) return null;
+    const Minv = { x: numeric.rep([n, n], 0), y: numeric.rep([n, n], 0) };
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        Minv.x[i][j] = Rinv[i][j];
+        Minv.y[i][j] = Rinv[i+n][j];
+      }
+    return Minv;
+  } catch(e) { return null; }
+}
+
+// Solve A^T P + P A = -W via eigendecomposition.
+// A = V Λ V⁻¹ → (λ_i + λ_j) P̃[i][j] = -(V^T W V)[i][j], then P = V^{-T} P̃ V^{-1}
 function solveLyapunov(A, W) {
+  const n = A.length;
+  try {
+    const eig = numeric.eig(A);
+    const lamX = eig.lambda.x, lamY = eig.lambda.y;
+    // Build complex eigenvector matrix V (columns are eigenvectors)
+    const V = { x: eig.E.x, y: eig.E.y };
+    // Guard: check V invertibility before attempting expensive inverse
+    var Rquick = numeric.rep([2*n, 2*n], 0);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        Rquick[i][j] = V.x[i][j]; Rquick[i][j+n] = -V.y[i][j];
+        Rquick[i+n][j] = V.y[i][j]; Rquick[i+n][j+n] = V.x[i][j];
+      }
+    try {
+      var detV = Math.abs(numeric.det(Rquick));
+      if (detV < 1e-8) {
+        if (_careDbg) console.warn('CARE: eig V nearly singular (det=' + detV.toExponential(1) + '), using Kronecker');
+        return solveLyapunovKron(A, W);
+      }
+    } catch(e) { /* proceed */ }
+    // V^{-1}
+    const Vinv = cMatInverse(V);
+    if (!Vinv) return null;
+    // V^T (conjugate transpose)
+    const VT = cMatTransposePlain(V);
+    // W̃ = V^T * W * V  (plain transpose, not conjugate)
+    // First multiply VT * W (W is real, treat as complex with zero imag)
+    const Wcx = numeric.rep([n, n], 0), Wcy = numeric.rep([n, n], 0);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        for (let k = 0; k < n; k++) {
+          Wcx[i][j] += VT.x[i][k] * W[k][j];
+          Wcy[i][j] += VT.y[i][k] * W[k][j];
+        }
+    // Then multiply by V
+    const W̃ = { x: numeric.rep([n, n], 0), y: numeric.rep([n, n], 0) };
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        for (let k = 0; k < n; k++) {
+          W̃.x[i][j] += Wcx[i][k] * V.x[k][j] - Wcy[i][k] * V.y[k][j];
+          W̃.y[i][j] += Wcx[i][k] * V.y[k][j] + Wcy[i][k] * V.x[k][j];
+        }
+
+    // P̃[i][j] = -W̃[i][j] / (λ_i + λ_j)
+    const Pt = { x: numeric.rep([n, n], 0), y: numeric.rep([n, n], 0) };
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const denRe = lamX[i] + lamX[j];
+        const denIm = lamY[i] + lamY[j];
+        const den = denRe * denRe + denIm * denIm;
+        if (den < 1e-16) {
+          if (_careDbg) console.warn('CARE: near-zero eigenvalue sum λ['+i+']+λ['+j+']=' + den.toExponential(1));
+          return null;
+        }
+        // Pt = -W̃ / (λ_i+λ_j)
+        const numRe = -W̃.x[i][j], numIm = -W̃.y[i][j];
+        Pt.x[i][j] = (numRe * denRe + numIm * denIm) / den;
+        Pt.y[i][j] = (numIm * denRe - numRe * denIm) / den;
+      }
+
+    // P = V^{-T} * P̃ * V^{-1} = (Vinv)^T * P̃ * Vinv
+    const VinvT = cMatTransposePlain(Vinv);
+    const T = cMatMul(VinvT, Pt);  // T = Vinv^T * P̃
+    const Pf = cMatMul(T, Vinv);    // P = T * Vinv
+
+    // Extract real P (imaginary part should be negligible for stable A)
+    const P = numeric.rep([n, n], 0);
+    var maxImag = 0;
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        P[i][j] = Pf.x[i][j];
+        maxImag = Math.max(maxImag, Math.abs(Pf.y[i][j]));
+      }
+    if (maxImag > 1e-6) {
+      if (_careDbg) console.warn('CARE: Lyapunov eig result has non-negligible imag part: ' + maxImag.toExponential(1));
+      return null;
+    }
+
+    // Symmetrize
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++)
+        P[i][j] = P[j][i] = (P[i][j] + P[j][i]) / 2;
+
+    // Verify residual: ||A^T P + P A + W||_F
+    var residMax = 0;
+    for (var ri = 0; ri < n; ri++)
+      for (var rj = 0; rj < n; rj++) {
+        var r = W[ri][rj];
+        for (var rk = 0; rk < n; rk++)
+          r += A[rk][ri] * P[rk][rj] + P[ri][rk] * A[rk][rj];
+        residMax = Math.max(residMax, Math.abs(r));
+      }
+    if (residMax > 1e-4) {
+      if (_careDbg) console.warn('CARE: Lyapunov residual too large (' + residMax.toExponential(1) + ')');
+      return null;
+    }
+    return P;
+  } catch(e) {
+    if (_careDbg) console.warn('CARE: Lyapunov eig solver exception:', e.message);
+  }
+  // Fallback: Kronecker product method
+  return solveLyapunovKron(A, W);
+}
+
+function solveLyapunovKron(A, W) {
   const n = A.length, N = n * n;
   const M = numeric.rep([N, N], 0);
-  // M = I⊗A^T + A^T⊗I
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       for (let p = 0; p < n; p++) {
         for (let q = 0; q < n; q++) {
           const row = p * n + q;
           const col = i * n + j;
-          if (p === i) M[row][col] += A[j][q]; // I⊗A^T
-          if (q === j) M[row][col] += A[i][p]; // A^T⊗I
+          if (p === i) M[row][col] += A[j][q];
+          if (q === j) M[row][col] += A[i][p];
         }
       }
     }
   }
-  // Tikhonov regularization for numerical stability
   var diagScale = 0;
   for (var ri = 0; ri < N; ri++) diagScale = Math.max(diagScale, Math.abs(M[ri][ri]));
   var reg = diagScale * 1e-10;
   for (var ri = 0; ri < N; ri++) M[ri][ri] += reg;
-
   const b = new Array(N);
   for (let p = 0; p < n; p++)
     for (let q = 0; q < n; q++)
@@ -512,23 +663,19 @@ function solveLyapunov(A, W) {
     for (let p = 0; p < n; p++)
       for (let q = 0; q < n; q++)
         P[p][q] = x[p * n + q];
-    // Verify residual: ||A^T P + P A + W||_F should be small
     var residMax = 0;
-    for (var ri2 = 0; ri2 < n; ri2++) {
+    for (var ri2 = 0; ri2 < n; ri2++)
       for (var rj2 = 0; rj2 < n; rj2++) {
         var r = W[ri2][rj2];
         for (var rk = 0; rk < n; rk++) r += A[rk][ri2] * P[rk][rj2] + P[ri2][rk] * A[rk][rj2];
         residMax = Math.max(residMax, Math.abs(r));
       }
-    }
     if (residMax > 1e-3) {
-      if (_careDbg) console.warn('CARE: Lyapunov residual too large (' + residMax.toExponential(1) + '), discarding');
+      if (_careDbg) console.warn('CARE: Lyapunov (Kron) residual too large (' + residMax.toExponential(1) + ')');
       return null;
     }
     return P;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 let _careDbg = true;
@@ -576,24 +723,24 @@ function solveCARE(A, B, Q, Rval) {
   const tol = 1e-7;
   const nb = B[0].length;
 
-  // Initial K0: use base gains that are KNOWN to stabilize the motor
-  // Base gains for default motor: K=[10, 1, 0.05, -6] with Q=diag(100,1,0.1,10), R=0.1
-  // Scale toward the target Q/R, but enforce a minimum so A_cl stays Hurwitz
-  var sQ, sR;
-  sQ = Math.sqrt(Math.max(Q[0][0],1e-6)/100);
-  sR = Math.sqrt(0.1 / Math.max(Rval, 1e-6));
-  var sTheta = Math.max(sQ * sR, 0.3);
-  sQ = Math.sqrt(Math.max(Q[1][1],1e-6)/1);
-  var sOmega = Math.max(sQ * sR, 0.3);
-  sQ = Math.sqrt(Math.max(Q[2][2],1e-9)/0.1);
-  var sCur   = Math.max(sQ * sR, 0.1);
-  sQ = Math.sqrt(Math.max(Q[3][3],1e-6)/10);
-  var sInt   = Math.max(sQ * sR, 0.3);
+  // Initial K0: base gains K=[10, 1, 0.05, -6] stabilize the default motor
+  // for Q=diag(100,1,0.1,10), R=0.1.
+  // Scale by a single common factor so the relative proportions are preserved —
+  // kTheta:kInt ratio must stay ~1.67:1 or the integrator destabilizes.
+  var sQeff = Math.sqrt(
+    (Q[0][0] + Q[1][1] + Math.max(Q[2][2],1e-9) + Q[3][3]) /
+    (100 + 1 + 0.1 + 10)
+  );
+  var sReff = Math.sqrt(0.1 / Math.max(Rval, 1e-6));
+  var sc = sQeff * sReff;
+  // Clamp: never go below 0.2× base (ensures integrator pole moves off s=0),
+  // never go above 50× base (avoids saturation oscillation).
+  sc = Math.max(0.2, Math.min(sc, 50));
   var K = new Array(n);
-  K[0] =  10 * sTheta;
-  K[1] =   1 * sOmega;
-  K[2] = 0.05 * sCur;
-  K[3] =  -6 * sInt;
+  K[0] =  10 * sc;
+  K[1] =   1 * sc;
+  K[2] = 0.05 * sc;
+  K[3] =  -6 * sc;
 
   // Build A_cl for initial K
   function buildAcl(Kvec) {
