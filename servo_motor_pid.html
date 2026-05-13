@@ -448,15 +448,14 @@ function computeClosedLoopPoles(R, L, Kt, J, B, Kp, Kd, Ki) {
   const a1 = (Kt * Kp) / LJ;
   const a0 = (Kt * Ki) / LJ;
 
-  // When Ki=0, s=0 is a root (cancels with controller zero). Solve cubic for rest.
+  // When Ki=0, the controller is PD (no Ki/s term), so the characteristic
+  // equation is cubic: LJ·s³+(LB+RJ)·s²+(Kt²+RB+Kt·Kd)·s+Kt·Kp = 0.
+  // No spurious s=0 — the plant pole at s=0 moves under feedback.
   if (Math.abs(Ki) < 1e-12) {
-    const cubicRoots = solveCubic(a3, a2, a1);
-    return [
-      C(0, 0),
-      ...cubicRoots.filter(r => !(Math.abs(r.re) < 1e-8 && Math.abs(r.im) < 1e-8)).slice(0, 3)
-    ];
+    return solveCubic(a3, a2, a1);
   }
 
+  // Full PID: 4th-order quartic
   return solveQuartic(a3, a2, a1, a0);
 }
 
