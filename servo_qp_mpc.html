@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Servo Motor QP-MPC Controller — Quadratic Programming for Constrained Control</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #58a6ff;
+  --accent-glow: rgba(88,166,255,0.15);
+  --qp: #00bcd4;
+  --lqr: #f0883e;
+  --ref: #e6edf3;
+  --limit: #f85149;
+  --success: #3fb950;
+  --warning: #d29922;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+header h1 { font-size: 1.25rem; font-weight: 600; white-space: nowrap; }
+header .badge {
+  font-size: 0.7rem; padding: 3px 8px; border-radius: 12px;
+  background: var(--accent-glow); color: var(--accent);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+}
+header .subtitle { color: var(--text-secondary); font-size: 0.85rem; }
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr 300px;
+  gap: 1px;
+  background: var(--border);
+  min-height: calc(100vh - 140px);
+}
+.main-grid > * { background: var(--bg); }
+
+/* Left Panel */
+.left-panel { padding: 16px; overflow-y: auto; max-height: calc(100vh - 140px); }
+.panel-section { margin-bottom: 16px; }
+.panel-section h3 {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-secondary); margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.param-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.param-row label { font-size: 0.78rem; color: var(--text-secondary); width: 50px; flex-shrink: 0; }
+.param-row input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+.param-row .val { font-size: 0.72rem; color: var(--text); width: 52px; text-align: right; font-family: var(--mono); }
+
+select {
+  width: 100%; padding: 6px 8px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+}
+
+.btn-row { display: flex; gap: 6px; margin-top: 8px; }
+.btn {
+  padding: 7px 14px; border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; font-weight: 600; transition: all 0.15s;
+  background: var(--surface); color: var(--text);
+}
+.btn:hover { border-color: var(--accent); background: var(--accent-glow); }
+.btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.accent:hover { filter: brightness(1.1); }
+
+/* Center Panel */
+.center-panel { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.chart-container {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  position: relative; overflow: hidden;
+}
+.chart-container canvas { display: block; width: 100%; height: 100%; }
+.chart-label {
+  position: absolute; top: 8px; left: 12px; font-size: 0.7rem; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+}
+.chart-legend {
+  position: absolute; top: 8px; right: 12px; display: flex; gap: 12px;
+  font-size: 0.7rem; font-family: var(--mono);
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Right Panel */
+.right-panel { padding: 16px; overflow-y: auto; max-height: calc(100vh - 140px); }
+.motor-viz {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 16px; text-align: center; margin-bottom: 12px;
+}
+.motor-viz canvas { display: block; margin: 0 auto; }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.metric {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px; text-align: center;
+}
+.metric .label { font-size: 0.65rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.metric .value { font-size: 1.15rem; font-weight: 700; font-family: var(--mono); margin-top: 2px; }
+.metric .unit { font-size: 0.65rem; color: var(--text-secondary); }
+
+.constraint-indicator {
+  padding: 8px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+  text-align: center; margin-bottom: 8px; transition: all 0.3s;
+}
+.constraint-indicator.inactive { background: #1a3a1a; color: var(--success); }
+.constraint-indicator.active { background: #3a1a1a; color: var(--limit); }
+
+.qp-info {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px; font-size: 0.72rem; font-family: var(--mono);
+}
+.qp-info div { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.qp-info .label { color: var(--text-secondary); }
+
+/* Footer */
+footer {
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 14px 24px; font-size: 0.75rem; color: var(--text-secondary);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+footer .note { max-width: 600px; }
+footer .note strong { color: var(--accent); }
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .left-panel, .right-panel { max-height: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Servo Motor QP-MPC</h1>
+  <span class="badge">Quadratic Programming</span>
+  <span class="subtitle">Constrained optimal control via Model Predictive Control with online QP solving</span>
+</header>
+
+<div class="main-grid">
+
+  <!-- ======= LEFT PANEL: Parameters ======= -->
+  <div class="left-panel">
+    <div class="panel-section">
+      <h3>Motor Model</h3>
+      <div class="param-row"><label>J</label><input type="range" id="param-J" min="0.0001" max="0.1" step="0.0001" value="0.001"><span class="val" id="val-J">0.0010</span></div>
+      <div class="param-row"><label>b</label><input type="range" id="param-b" min="0.001" max="0.5" step="0.001" value="0.01"><span class="val" id="val-b">0.010</span></div>
+      <div class="param-row"><label>K<sub>t</sub></label><input type="range" id="param-Kt" min="0.01" max="1" step="0.01" value="0.1"><span class="val" id="val-Kt">0.10</span></div>
+      <div class="param-row"><label>K<sub>e</sub></label><input type="range" id="param-Ke" min="0.01" max="1" step="0.01" value="0.1"><span class="val" id="val-Ke">0.10</span></div>
+      <div class="param-row"><label>R</label><input type="range" id="param-Rm" min="0.1" max="10" step="0.1" value="1"><span class="val" id="val-Rm">1.0</span></div>
+      <div class="param-row"><label>L</label><input type="range" id="param-L" min="0.001" max="0.2" step="0.001" value="0.05"><span class="val" id="val-L">0.050</span></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>MPC Settings</h3>
+      <div class="param-row"><label>Horizon N</label><input type="range" id="param-N" min="3" max="30" step="1" value="10"><span class="val" id="val-N">10</span></div>
+      <div class="param-row"><label>T<sub>s</sub> (ms)</label><input type="range" id="param-Ts" min="1" max="50" step="1" value="10"><span class="val" id="val-Ts">10</span></div>
+      <div class="param-row"><label>Q<sub>pos</sub></label><input type="range" id="param-Qp" min="1" max="1000" step="1" value="100"><span class="val" id="val-Qp">100</span></div>
+      <div class="param-row"><label>Q<sub>vel</sub></label><input type="range" id="param-Qv" min="0" max="100" step="0.1" value="1"><span class="val" id="val-Qv">1.0</span></div>
+      <div class="param-row"><label>R</label><input type="range" id="param-R" min="0.001" max="10" step="0.001" value="0.1"><span class="val" id="val-R">0.100</span></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Constraints</h3>
+      <div class="param-row"><label>V<sub>max</sub></label><input type="range" id="param-Vmax" min="1" max="48" step="0.1" value="12"><span class="val" id="val-Vmax">12.0</span></div>
+      <div class="param-row"><label>I<sub>max</sub></label><input type="range" id="param-Imax" min="0.1" max="10" step="0.1" value="3"><span class="val" id="val-Imax">3.0</span></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Reference</h3>
+      <select id="param-ref-type">
+        <option value="step" selected>Step</option>
+        <option value="square">Square Wave</option>
+        <option value="sine">Sine Wave</option>
+      </select>
+      <div class="param-row" style="margin-top:8px"><label>Amp</label><input type="range" id="param-amp" min="0.1" max="5" step="0.1" value="1"><span class="val" id="val-amp">1.0</span></div>
+      <div class="param-row" id="freq-row" style="display:none"><label>Freq</label><input type="range" id="param-freq" min="0.1" max="5" step="0.1" value="1"><span class="val" id="val-freq">1.0</span></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn accent" id="btn-start">▶ Start</button>
+      <button class="btn" id="btn-pause">⏸ Pause</button>
+      <button class="btn" id="btn-reset">↺ Reset</button>
+    </div>
+    <div class="param-row" style="margin-top:8px">
+      <label>Speed</label>
+      <input type="range" id="param-speed" min="0.1" max="5" step="0.1" value="1">
+      <span class="val" id="val-speed">1.0×</span>
+    </div>
+  </div>
+
+  <!-- ======= CENTER PANEL: Charts ======= -->
+  <div class="center-panel">
+    <div class="chart-container" style="flex:3">
+      <canvas id="chart-pos"></canvas>
+      <div class="chart-label">Position Tracking θ(t) [rad]</div>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:var(--ref)"></span>Ref</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--qp)"></span>QP-MPC</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--lqr)"></span>LQR (unconstrained)</span>
+      </div>
+    </div>
+    <div class="chart-container" style="flex:2">
+      <canvas id="chart-ctrl"></canvas>
+      <div class="chart-label">Control Input V(t) [V]</div>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:var(--qp)"></span>QP-MPC</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--lqr)"></span>LQR</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--limit)"></span>V<sub>max</sub></span>
+      </div>
+    </div>
+    <div class="chart-container" style="flex:2">
+      <canvas id="chart-curr"></canvas>
+      <div class="chart-label">Motor Current i(t) [A]</div>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:var(--qp)"></span>QP-MPC</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--lqr)"></span>LQR</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--limit)"></span>I<sub>max</sub></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= RIGHT PANEL: Viz + Diagnostics ======= -->
+  <div class="right-panel">
+    <div class="motor-viz">
+      <canvas id="motor-canvas" width="200" height="140"></canvas>
+      <div style="font-size:0.7rem;color:var(--text-secondary);margin-top:4px">Motor Shaft Position</div>
+    </div>
+
+    <div class="constraint-indicator inactive" id="constraint-badge">No constraints active</div>
+
+    <div class="metrics">
+      <div class="metric"><div class="label">Position</div><div class="value" id="met-pos">0.000</div><div class="unit">rad</div></div>
+      <div class="metric"><div class="label">Velocity</div><div class="value" id="met-vel">0.000</div><div class="unit">rad/s</div></div>
+      <div class="metric"><div class="label">Current</div><div class="value" id="met-cur">0.000</div><div class="unit">A</div></div>
+      <div class="metric"><div class="label">Voltage</div><div class="value" id="met-volt">0.000</div><div class="unit">V</div></div>
+    </div>
+
+    <div class="qp-info" id="qp-info">
+      <div><span class="label">QP horizon</span><span id="qp-N">10</span></div>
+      <div><span class="label">Active bounds</span><span id="qp-active">0</span></div>
+      <div><span class="label">QP iterations</span><span id="qp-iters">0</span></div>
+      <div><span class="label">QP time</span><span id="qp-time">0.00 ms</span></div>
+      <div><span class="label">Cost J</span><span id="qp-cost">0.000</span></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="note">
+    <strong>QP-MPC</strong> solves a constrained quadratic program online at each timestep:
+    <code>min ½UᵀHU + fᵀU</code> subject to <code>u<sub>min</sub> ≤ u<sub>k</sub> ≤ u<sub>max</sub></code>.
+    When constraints are inactive, the solution matches the unconstrained LQR.
+  </div>
+  <div class="note">
+    <strong>Progression:</strong> PID (SISO) → LQR/LQI (state-space, unconstrained) → QP-MPC (state-space + hard constraints).
+    The QP formulation is the standard approach for handling actuator limits, current limits, and other physical constraints.
+  </div>
+</footer>
+
+<script>
+// ======================== MATRIX UTILITIES ========================
+function matCreate(rows, cols, val = 0) {
+  return Array.from({length: rows}, () => new Float64Array(cols).fill(val));
+}
+function matIdentity(n) {
+  const m = matCreate(n, n);
+  for (let i = 0; i < n; i++) m[i][i] = 1;
+  return m;
+}
+function matMul(A, B) {
+  const ra = A.length, ca = A[0].length, cb = B[0].length;
+  const C = matCreate(ra, cb);
+  for (let i = 0; i < ra; i++)
+    for (let k = 0; k < ca; k++)
+      for (let j = 0; j < cb; j++)
+        C[i][j] += A[i][k] * B[k][j];
+  return C;
+}
+function matMulVec(A, v) {
+  const r = A.length, c = A[0].length;
+  const out = new Float64Array(r);
+  for (let i = 0; i < r; i++)
+    for (let j = 0; j < c; j++)
+      out[i] += A[i][j] * v[j];
+  return out;
+}
+function matAdd(A, B) {
+  const r = A.length, c = A[0].length, C = matCreate(r, c);
+  for (let i = 0; i < r; i++)
+    for (let j = 0; j < c; j++)
+      C[i][j] = A[i][j] + B[i][j];
+  return C;
+}
+function matSub(A, B) {
+  const r = A.length, c = A[0].length, C = matCreate(r, c);
+  for (let i = 0; i < r; i++)
+    for (let j = 0; j < c; j++)
+      C[i][j] = A[i][j] - B[i][j];
+  return C;
+}
+function matScale(A, s) {
+  const r = A.length, c = A[0].length, C = matCreate(r, c);
+  for (let i = 0; i < r; i++)
+    for (let j = 0; j < c; j++)
+      C[i][j] = A[i][j] * s;
+  return C;
+}
+function matTranspose(A) {
+  const r = A.length, c = A[0].length, T = matCreate(c, r);
+  for (let i = 0; i < r; i++)
+    for (let j = 0; j < c; j++)
+      T[j][i] = A[i][j];
+  return T;
+}
+function vecScale(v, s) { return v.map(x => x * s); }
+function vecAdd(a, b) { return a.map((x, i) => x + b[i]); }
+function vecSub(a, b) { return a.map((x, i) => x - b[i]); }
+function vecDot(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }
+
+// Cholesky decomposition: A = L*L^T (A must be symmetric positive definite)
+function cholesky(A) {
+  const n = A.length;
+  const L = matCreate(n, n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = 0;
+      for (let k = 0; k < j; k++) sum += L[i][k] * L[j][k];
+      if (i === j) L[i][j] = Math.sqrt(Math.max(1e-12, A[i][i] - sum));
+      else L[i][j] = (A[i][j] - sum) / L[j][j];
+    }
+  }
+  return L;
+}
+function choleskySolve(L, b) {
+  const n = L.length;
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = b[i];
+    for (let j = 0; j < i; j++) s -= L[i][j] * y[j];
+    y[i] = s / L[i][i];
+  }
+  const x = new Float64Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    let s = y[i];
+    for (let j = i + 1; j < n; j++) s -= L[j][i] * x[j];
+    x[i] = s / L[i][i];
+  }
+  return x;
+}
+function solvePD(A, b) {
+  return choleskySolve(cholesky(A), b);
+}
+
+// ======================== MOTOR MODEL ========================
+// State: x = [theta, omega, i]  (position, velocity, current)
+// Input: u = V (voltage)
+// dx/dt = Ac*x + Bc*u
+function buildMotorModel(p) {
+  const { J, b, Kt, Ke, Rm, L } = p;
+  const Ac = [
+    new Float64Array([0, 1, 0]),
+    new Float64Array([0, -b/J, Kt/J]),
+    new Float64Array([0, -Ke/L, -Rm/L])
+  ];
+  const Bc = [
+    new Float64Array([0]),
+    new Float64Array([0]),
+    new Float64Array([1/L])
+  ];
+  const Cc = [new Float64Array([1, 0, 0])];
+  return { Ac, Bc, Cc, nx: 3, nu: 1, ny: 1 };
+}
+
+function discretizeEuler(Ac, Bc, Ts) {
+  const n = Ac.length, m = Bc[0].length;
+  const Ad = matCreate(n, n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) Ad[i][j] = (i === j ? 1 : 0) + Ac[i][j] * Ts;
+  }
+  const Bd = matCreate(n, m);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < m; j++) Bd[i][j] = Bc[i][j] * Ts;
+  return { Ad, Bd };
+}
+
+function motorDerivatives(motor, x, u) {
+  const { Ac, Bc } = motor;
+  const dx = new Float64Array(3);
+  for (let i = 0; i < 3; i++) {
+    dx[i] = Ac[i][0]*x[0] + Ac[i][1]*x[1] + Ac[i][2]*x[2] + Bc[i][0]*u;
+  }
+  return dx;
+}
+
+function motorStepRK4(motor, x, u, dt) {
+  const k1 = motorDerivatives(motor, x, u);
+  const x2 = [x[0]+0.5*dt*k1[0], x[1]+0.5*dt*k1[1], x[2]+0.5*dt*k1[2]];
+  const k2 = motorDerivatives(motor, x2, u);
+  const x3 = [x[0]+0.5*dt*k2[0], x[1]+0.5*dt*k2[1], x[2]+0.5*dt*k2[2]];
+  const k3 = motorDerivatives(motor, x3, u);
+  const x4 = [x[0]+dt*k3[0], x[1]+dt*k3[1], x[2]+dt*k3[2]];
+  const k4 = motorDerivatives(motor, x4, u);
+  return new Float64Array([
+    x[0] + dt/6*(k1[0] + 2*k2[0] + 2*k3[0] + k4[0]),
+    x[1] + dt/6*(k1[1] + 2*k2[1] + 2*k3[1] + k4[1]),
+    x[2] + dt/6*(k1[2] + 2*k2[2] + 2*k3[2] + k4[2])
+  ]);
+}
+
+// ======================== DARE SOLVER ========================
+// Discrete Algebraic Riccati Equation: P = Q + A'PA - A'PB(R+B'PB)^{-1}B'PA
+function solveDARE(Ad, Bd, Q, Rmat) {
+  const n = Ad.length;
+  let P = matCreate(n, n);
+  for (let i = 0; i < n; i++) P[i][i] = Q[i][i];
+
+  for (let iter = 0; iter < 200; iter++) {
+    const BtPB = matMul(matMul(matTranspose(Bd), P), Bd);
+    const S = matAdd(BtPB, Rmat);
+    const Sinv = [[1/S[0][0]]];
+    const BtPA = matMul(matTranspose(Bd), matMul(P, Ad));
+    const K = matMul(Sinv, BtPA);
+    const Pnew = matAdd(Q, matMul(matMul(matTranspose(Ad), P), Ad));
+    const correction = matMul(matMul(matTranspose(K), S), K);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        Pnew[i][j] -= correction[i][j];
+
+    let diff = 0;
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        diff = Math.max(diff, Math.abs(Pnew[i][j] - P[i][j]));
+    P = Pnew;
+    if (diff < 1e-8) break;
+  }
+  return P;
+}
+
+function computeLQRGain(Ad, Bd, Q, Rmat) {
+  const P = solveDARE(Ad, Bd, Q, Rmat);
+  const BtPB = matMul(matMul(matTranspose(Bd), P), Bd);
+  const S = matAdd(BtPB, Rmat);
+  const K = matMul([[1/S[0][0]]], matMul(matTranspose(Bd), matMul(P, Ad)));
+  return { K, P };
+}
+
+// ======================== QP-MPC CONTROLLER ========================
+function buildMPCMatrices(Ad, Bd, Qdiag, Rval, P, N) {
+  const nx = Ad.length, nu = Bd[0].length;
+  const Q = matCreate(nx, nx);
+  for (let i = 0; i < nx; i++) Q[i][i] = Qdiag[i];
+
+  // A_aug: [Ad; Ad^2; ...; Ad^N]
+  const A_aug = matCreate(N * nx, nx);
+  let Apow = matIdentity(nx);
+  for (let k = 0; k < N; k++) {
+    Apow = matMul(Apow, Ad);
+    for (let i = 0; i < nx; i++)
+      for (let j = 0; j < nx; j++)
+        A_aug[k*nx + i][j] = Apow[i][j];
+  }
+
+  // B_aug: block lower-triangular Toeplitz
+  const B_aug = matCreate(N * nx, N * nu);
+  for (let row = 0; row < N; row++) {
+    for (let col = 0; col <= row; col++) {
+      const blockRow = row - col;
+      let AkB = Bd;
+      let Acur = matIdentity(nx);
+      for (let p = 0; p < blockRow; p++) Acur = matMul(Acur, Ad);
+      AkB = matMul(Acur, Bd);
+      for (let i = 0; i < nx; i++)
+        B_aug[row*nx + i][col] = AkB[i][0];
+    }
+  }
+
+  // Q_bar = blkdiag(Q, Q, ..., P)
+  const Q_bar = matCreate(N * nx, N * nx);
+  for (let k = 0; k < N; k++) {
+    const Quse = (k === N - 1) ? P : Q;
+    for (let i = 0; i < nx; i++)
+      for (let j = 0; j < nx; j++)
+        Q_bar[k*nx + i][k*nx + j] = Quse[i][j];
+  }
+
+  // R_bar = blkdiag(R, ..., R)
+  const R_bar = matCreate(N * nu, N * nu);
+  for (let k = 0; k < N; k++) R_bar[k][k] = Rval;
+
+  // H = B_aug^T * Q_bar * B_aug + R_bar  (N*nu × N*nu)
+  const BtQ = matMul(matTranspose(B_aug), Q_bar);
+  const H = matAdd(matMul(BtQ, B_aug), R_bar);
+
+  // Precomputed: B_aug^T * Q_bar (for fast f computation)
+  return { A_aug, B_aug, Q_bar, H, BtQ, nx, nu, N };
+}
+
+// Box-constrained QP solver using Projected Coordinate Descent
+// min 0.5 * x^T * H * x + f^T * x  s.t. lb <= x_i <= ub
+function solveBoxQP(H, f, lb, ub, maxIter, x0) {
+  const n = H.length;
+  let x = x0 ? new Float64Array(x0) : new Float64Array(n);
+  if (!x0) {
+    // Initialize with unconstrained solution if feasible
+    try {
+      const L = cholesky(H);
+      const ux = choleskySolve(L, f.map(v => -v));
+      for (let i = 0; i < n; i++) x[i] = Math.max(lb, Math.min(ub, ux[i]));
+    } catch(e) {
+      for (let i = 0; i < n; i++) x[i] = Math.max(lb, Math.min(ub, 0));
+    }
+  }
+
+  // Precompute diagonal of H for coordinate descent
+  const Hdiag = new Float64Array(n);
+  for (let i = 0; i < n; i++) Hdiag[i] = H[i][i];
+
+  // Compute initial gradient
+  const grad = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = f[i];
+    for (let j = 0; j < n; j++) s += H[i][j] * x[j];
+    grad[i] = s;
+  }
+
+  let iter;
+  for (iter = 0; iter < maxIter; iter++) {
+    let maxChange = 0;
+    // One pass of coordinate descent
+    for (let i = 0; i < n; i++) {
+      const g_i = grad[i];
+      const h_ii = Hdiag[i];
+      // Optimal step for coordinate i holding others fixed
+      let x_new = x[i] - g_i / h_ii;
+      x_new = Math.max(lb, Math.min(ub, x_new));
+      const delta = x_new - x[i];
+      if (Math.abs(delta) > maxChange) maxChange = Math.abs(delta);
+      // Update gradient for all coordinates
+      if (Math.abs(delta) > 1e-14) {
+        for (let j = 0; j < n; j++) grad[j] += H[j][i] * delta;
+        x[i] = x_new;
+      }
+    }
+    if (maxChange < 1e-10) break;
+  }
+
+  // Count active bounds
+  let activeBounds = 0;
+  for (let i = 0; i < n; i++) {
+    if (x[i] <= lb + 1e-8 || x[i] >= ub - 1e-8) activeBounds++;
+  }
+
+  return { x, iter: iter + 1, activeBounds };
+}
+
+class QPMPCController {
+  constructor(Ad, Bd, Qdiag, Rval, N, umin, umax) {
+    this.Ad = Ad; this.Bd = Bd;
+    this.Qdiag = Qdiag; this.Rval = Rval;
+    this.N = N; this.umin = umin; this.umax = umax;
+    this.nx = Ad.length; this.nu = Bd[0].length;
+    this.rebuild();
+  }
+
+  rebuild() {
+    const { K, P } = computeLQRGain(this.Ad, this.Bd,
+      this.Qdiag.map((v,i) => [v]), [[this.Rval]]); // pass as matrix form
+    // Actually computeLQRGain expects matrices — let's fix:
+    const Qmat = matCreate(this.nx, this.nx);
+    for (let i = 0; i < this.nx; i++) Qmat[i][i] = this.Qdiag[i];
+    const Rmat = [[this.Rval]];
+    const dareResult = computeLQRGain(this.Ad, this.Bd, Qmat, Rmat);
+    this.K = dareResult.K;
+    this.P = dareResult.P;
+    const mpc = buildMPCMatrices(this.Ad, this.Bd, this.Qdiag, this.Rval, this.P, this.N);
+    this.A_aug = mpc.A_aug;
+    this.B_aug = mpc.B_aug;
+    this.H = mpc.H;
+    this.BtQ = mpc.BtQ;
+  }
+
+  computeControl(x, xref) {
+    const { A_aug, B_aug, H, BtQ, N, nu, umin, umax, nx } = this;
+    const xerr = new Float64Array(nx);
+    for (let i = 0; i < nx; i++) xerr[i] = x[i] - xref[i];
+
+    // f = BtQ * A_aug * xerr
+    const Aaug_xerr = matMulVec(A_aug, xerr);
+    const f = matMulVec(BtQ, Aaug_xerr);
+
+    const lb = umin, ub = umax;
+    const result = solveBoxQP(H, f, lb, ub, 30, null);
+
+    // Compute cost
+    let cost = 0;
+    const U = result.x;
+    for (let i = 0; i < N; i++) {
+      cost += 0.5 * U[i] * H[i][i] * U[i] + f[i] * U[i];
+      for (let j = 0; j < i; j++) cost += U[i] * H[i][j] * U[j];
+    }
+
+    // Unconstrained LQR control: u = -K * xerr
+    const u_lqr = -vecDot(this.K[0], xerr);
+
+    // Predicted state trajectory: X_pred = A_aug * xerr + B_aug * U
+    const X_pred_err = matMulVec(A_aug, xerr);
+    const B_aug_U = matMulVec(B_aug, U);
+    const pred_positions = [];
+    for (let k = 0; k < N; k++) {
+      pred_positions.push(xref[0] + X_pred_err[k * nx] + B_aug_U[k * nx]);
+    }
+
+    return {
+      u_qp: U[0],
+      u_lqr: u_lqr,
+      U_sequence: Array.from(U),
+      pred_positions,
+      qp_iters: result.iter,
+      active_bounds: result.activeBounds,
+      cost: cost
+    };
+  }
+}
+
+// ======================== SIMULATION STATE ========================
+const HISTORY_MAX = 600; // 6 seconds at 100Hz
+
+function getParams() {
+  return {
+    J: parseFloat(document.getElementById('param-J').value),
+    b: parseFloat(document.getElementById('param-b').value),
+    Kt: parseFloat(document.getElementById('param-Kt').value),
+    Ke: parseFloat(document.getElementById('param-Ke').value),
+    Rm: parseFloat(document.getElementById('param-Rm').value),
+    L: parseFloat(document.getElementById('param-L').value),
+    N: parseInt(document.getElementById('param-N').value),
+    Ts: parseFloat(document.getElementById('param-Ts').value) / 1000,
+    Qpos: parseFloat(document.getElementById('param-Qp').value),
+    Qvel: parseFloat(document.getElementById('param-Qv').value),
+    Rval: parseFloat(document.getElementById('param-R').value),
+    Vmax: parseFloat(document.getElementById('param-Vmax').value),
+    Imax: parseFloat(document.getElementById('param-Imax').value),
+    refType: document.getElementById('param-ref-type').value,
+    amp: parseFloat(document.getElementById('param-amp').value),
+    freq: parseFloat(document.getElementById('param-freq').value),
+    speed: parseFloat(document.getElementById('param-speed').value),
+  };
+}
+
+function referenceSignal(t, p) {
+  switch (p.refType) {
+    case 'step': return t < 0.3 ? 0 : p.amp;
+    case 'square': return Math.sin(2*Math.PI*p.freq*t) >= 0 ? p.amp : -p.amp;
+    case 'sine': return p.amp * Math.sin(2*Math.PI*p.freq*t);
+    default: return 0;
+  }
+}
+
+let simState = {
+  running: false,
+  t: 0,
+  x: new Float64Array([0, 0, 0]),
+  x_lqr: new Float64Array([0, 0, 0]), // separate LQR simulation state
+  history: { t: [], pos_qp: [], pos_lqr: [], pos_ref: [], volt_qp: [], volt_lqr: [], curr_qp: [], curr_lqr: [] },
+  lastControl: { u_qp: 0, u_lqr: 0, active_bounds: 0, qp_iters: 0, cost: 0, U_sequence: [], pred_positions: [] },
+  qpTime: 0,
+};
+
+function resetSimulation() {
+  simState.t = 0;
+  simState.x = new Float64Array([0, 0, 0]);
+  simState.x_lqr = new Float64Array([0, 0, 0]);
+  for (const key of Object.keys(simState.history)) simState.history[key] = [];
+  simState.lastControl = { u_qp: 0, u_lqr: 0, active_bounds: 0, qp_iters: 0, cost: 0, U_sequence: [], pred_positions: [] };
+  simState.qpTime = 0;
+}
+
+// ======================== CANVAS CHARTS ========================
+function setupChart(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const container = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+
+  function resize() {
+    const rect = container.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  return { canvas, dpr, resize };
+}
+
+const chartPos = setupChart('chart-pos');
+const chartCtrl = setupChart('chart-ctrl');
+const chartCurr = setupChart('chart-curr');
+
+function drawChart(chart, history, series, ylabel, ymin, ymax, extraLines, prediction) {
+  const { canvas, dpr } = chart;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const margin = { top: 28*dpr, right: 20*dpr, bottom: 28*dpr, left: 50*dpr };
+  const pw = w - margin.left - margin.right;
+  const ph = h - margin.top - margin.bottom;
+
+  // Background
+  ctx.fillStyle = '#161b22'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(48,54,61,0.5)'; ctx.lineWidth = 1;
+  const gridLines = 5;
+  for (let i = 0; i <= gridLines; i++) {
+    const y = margin.top + (ph * i) / gridLines;
+    ctx.beginPath(); ctx.moveTo(margin.left, y); ctx.lineTo(w - margin.right, y); ctx.stroke();
+    const val = ymax - (ymax - ymin) * i / gridLines;
+    ctx.fillStyle = '#8b949e'; ctx.font = `${10*dpr}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = 'right'; ctx.fillText(val.toFixed(1), margin.left - 5*dpr, y + 3*dpr);
+  }
+  for (let i = 0; i <= 4; i++) {
+    const x = margin.left + (pw * i) / 4;
+    ctx.beginPath(); ctx.moveTo(x, margin.top); ctx.lineTo(x, h - margin.bottom); ctx.stroke();
+  }
+
+  // Y label
+  ctx.save();
+  ctx.fillStyle = '#8b949e'; ctx.font = `${10*dpr}px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.translate(12*dpr, margin.top + ph/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText(ylabel, 0, 0);
+  ctx.restore();
+
+  // X label
+  ctx.fillStyle = '#8b949e'; ctx.font = `${10*dpr}px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.fillText('Time [s]', margin.left + pw/2, h - 4*dpr);
+  // Time tick labels
+  ctx.textAlign = 'center';
+  const tMax = simState.history.t.length > 0 ? simState.history.t[simState.history.t.length - 1] : 6;
+  for (let i = 0; i <= 4; i++) {
+    const tval = tMax * i / 4;
+    const x = margin.left + pw * i / 4;
+    ctx.fillText(tval.toFixed(1), x, h - margin.bottom + 14*dpr);
+  }
+
+  // Clip
+  ctx.save();
+  ctx.beginPath(); ctx.rect(margin.left, margin.top, pw, ph); ctx.clip();
+
+  // Extra lines (constraints, etc.)
+  if (extraLines) {
+    for (const el of extraLines) {
+      ctx.strokeStyle = el.color; ctx.lineWidth = el.width * dpr;
+      ctx.setLineDash(el.dash || []);
+      ctx.beginPath();
+      const y = margin.top + ph * (1 - (el.value - ymin) / (ymax - ymin));
+      ctx.moveTo(margin.left, y); ctx.lineTo(w - margin.right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Draw series
+  for (const s of series) {
+    if (!history[s.key] || history[s.key].length < 2) continue;
+    const data = history[s.key];
+    const tData = history.t;
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.width * dpr; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let firstPoint = true;
+    for (let i = 0; i < data.length; i++) {
+      const px = margin.left + pw * (tData[i] / tMax);
+      const py = margin.top + ph * (1 - (data[i] - ymin) / (ymax - ymin));
+      if (firstPoint) { ctx.moveTo(px, py); firstPoint = false; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // Prediction horizon (MPC planned trajectory)
+  if (prediction && prediction.positions && prediction.positions.length > 1) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(margin.left, margin.top, pw, ph); ctx.clip();
+    const pts = prediction.positions;
+    const tNow = prediction.tNow;
+    const pTs = prediction.Ts;
+    ctx.strokeStyle = 'rgba(0,188,212,0.3)'; ctx.lineWidth = 1.5 * dpr;
+    ctx.setLineDash([3 * dpr, 3 * dpr]);
+    ctx.beginPath();
+    for (let k = 0; k < pts.length; k++) {
+      const px = margin.left + pw * ((tNow + (k + 1) * pTs) / tMax);
+      const py = margin.top + ph * (1 - (pts[k] - ymin) / (ymax - ymin));
+      if (k === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(0,188,212,0.4)';
+    for (let k = 0; k < pts.length; k++) {
+      const px = margin.left + pw * ((tNow + (k + 1) * pTs) / tMax);
+      const py = margin.top + ph * (1 - (pts[k] - ymin) / (ymax - ymin));
+      ctx.beginPath(); ctx.arc(px, py, 2 * dpr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Current time cursor
+  if (simState.history.t.length > 0) {
+    const tNow = simState.history.t[simState.history.t.length - 1];
+    const cx = margin.left + pw * (tNow / tMax);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, margin.top); ctx.lineTo(cx, h - margin.bottom); ctx.stroke();
+  }
+}
+
+// ======================== MOTOR VISUALIZATION ========================
+function drawMotor() {
+  const canvas = document.getElementById('motor-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  const angle = simState.x[0]; // shaft position in rad
+
+  // Motor body
+  ctx.fillStyle = '#30363d';
+  ctx.fillRect(cx - 60, cy - 8, 120, 16);
+  ctx.fillStyle = '#484f58';
+  ctx.fillRect(cx - 55, cy - 12, 30, 24);
+  ctx.fillRect(cx + 25, cy - 12, 30, 24);
+
+  // Shaft
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+
+  // Shaft line
+  ctx.strokeStyle = '#8b949e'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(28, 0); ctx.stroke();
+
+  // Arrow head
+  ctx.fillStyle = '#8b949e';
+  ctx.beginPath(); ctx.moveTo(28, 0); ctx.lineTo(20, -6); ctx.lineTo(20, 6); ctx.closePath(); ctx.fill();
+
+  // Center dot
+  ctx.fillStyle = '#e6edf3';
+  ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+
+  // Tick marks
+  for (let i = 0; i < 12; i++) {
+    const a = (i * Math.PI * 2) / 12;
+    ctx.fillStyle = '#484f58';
+    ctx.fillRect(cx + Math.cos(a) * 35 - 1, cy + Math.sin(a) * 35 - 1, 2, 2);
+  }
+
+  // Position label
+  ctx.fillStyle = '#e6edf3'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+  const posDeg = ((angle % (2*Math.PI)) * 180 / Math.PI).toFixed(0);
+  ctx.fillText(posDeg + '°', cx, cy + 40);
+}
+
+// ======================== MAIN LOOP ========================
+let motor, mpc;
+let lastParamHash = '';
+
+function buildControllers() {
+  const p = getParams();
+  const model = buildMotorModel(p);
+  const { Ad, Bd } = discretizeEuler(model.Ac, model.Bc, p.Ts);
+  const Qdiag = [p.Qpos, p.Qvel, 0.01];
+  const mpcCtrl = new QPMPCController(Ad, Bd, Qdiag, p.Rval, p.N, -p.Vmax, p.Vmax);
+  return { model, mpc: mpcCtrl, params: p };
+}
+
+function stepSimulation(dt) {
+  const p = getParams();
+  const ref = referenceSignal(simState.t, p);
+  const xref = new Float64Array([ref, 0, 0]);
+
+  // Rebuild if params changed
+  const hash = JSON.stringify(p);
+  if (hash !== lastParamHash) {
+    const c = buildControllers();
+    motor = c.model; mpc = c.mpc; lastParamHash = hash;
+  }
+
+  // ---- QP-MPC: compute and apply constrained control ----
+  const t0 = performance.now();
+  const ctrl = mpc.computeControl(simState.x, xref);
+  const qpTime = performance.now() - t0;
+
+  const u_qp = Math.max(-p.Vmax, Math.min(p.Vmax, ctrl.u_qp));
+  const x_qp_next = motorStepRK4(motor, simState.x, u_qp, dt);
+
+  // ---- LQR: compute and apply unconstrained control (separate simulation) ----
+  const xerr_lqr = new Float64Array(3);
+  for (let i = 0; i < 3; i++) xerr_lqr[i] = simState.x_lqr[i] - xref[i];
+  const u_lqr = -vecDot(mpc.K[0], xerr_lqr);
+  // Allow LQR to exceed constraints (3x margin) so we can see the violation;
+  // a real system would saturate, but we show the raw command for comparison
+  const u_lqr_applied = Math.max(-p.Vmax * 3, Math.min(p.Vmax * 3, u_lqr));
+  const x_lqr_next = motorStepRK4(motor, simState.x_lqr, u_lqr_applied, dt);
+
+  // ---- Advance both simulations ----
+  simState.x = x_qp_next;
+  simState.x_lqr = x_lqr_next;
+  simState.t += dt;
+
+  // ---- Record history ----
+  const hist = simState.history;
+  hist.t.push(simState.t);
+  hist.pos_ref.push(ref);
+  hist.pos_qp.push(simState.x[0]);
+  hist.pos_lqr.push(simState.x_lqr[0]);
+  hist.volt_qp.push(u_qp);
+  hist.volt_lqr.push(u_lqr_applied);
+  hist.curr_qp.push(simState.x[2]);
+  hist.curr_lqr.push(simState.x_lqr[2]);
+
+  // Trim history
+  while (hist.t.length > HISTORY_MAX) {
+    for (const key of Object.keys(hist)) hist[key].shift();
+  }
+
+  simState.lastControl = {
+    u_qp, u_lqr,
+    active_bounds: ctrl.active_bounds,
+    qp_iters: ctrl.qp_iters,
+    cost: ctrl.cost,
+    U_sequence: ctrl.U_sequence,
+    pred_positions: ctrl.pred_positions
+  };
+  simState.qpTime = qpTime;
+}
+
+function renderAll() {
+  const p = getParams();
+  const hist = simState.history;
+  const tData = hist.t;
+  const tMax = tData.length > 1 ? tData[tData.length - 1] : 6;
+  const tMin = Math.max(0, tMax - 6);
+
+  // Position chart with prediction horizon
+  const predData = simState.lastControl.pred_positions && simState.lastControl.pred_positions.length > 0 ? {
+    positions: simState.lastControl.pred_positions,
+    tNow: simState.t,
+    Ts: p.Ts
+  } : null;
+  drawChart(chartPos, hist, [
+    { key: 'pos_ref', color: 'rgba(230,237,243,0.4)', width: 1.5 },
+    { key: 'pos_qp', color: '#00bcd4', width: 2.0 },
+    { key: 'pos_lqr', color: '#f0883e', width: 1.2 },
+  ], 'θ [rad]', -p.amp * 0.2, p.amp * 1.3, null, predData);
+
+  // Control chart
+  drawChart(chartCtrl, hist, [
+    { key: 'volt_qp', color: '#00bcd4', width: 2.0 },
+    { key: 'volt_lqr', color: '#f0883e', width: 1.2 },
+  ], 'V [V]', -p.Vmax * 1.3, p.Vmax * 1.3, [
+    { value: p.Vmax, color: 'rgba(248,81,73,0.5)', width: 1, dash: [4, 4] },
+    { value: -p.Vmax, color: 'rgba(248,81,73,0.5)', width: 1, dash: [4, 4] },
+  ]);
+
+  // Current chart
+  drawChart(chartCurr, hist, [
+    { key: 'curr_qp', color: '#00bcd4', width: 2.0 },
+    { key: 'curr_lqr', color: '#f0883e', width: 1.2 },
+  ], 'i [A]', -p.Imax * 1.3, p.Imax * 1.3, [
+    { value: p.Imax, color: 'rgba(248,81,73,0.5)', width: 1, dash: [4, 4] },
+    { value: -p.Imax, color: 'rgba(248,81,73,0.5)', width: 1, dash: [4, 4] },
+  ]);
+
+  // Motor viz
+  drawMotor();
+
+  // Metrics
+  const x = simState.x;
+  document.getElementById('met-pos').textContent = x[0].toFixed(3);
+  document.getElementById('met-vel').textContent = x[1].toFixed(3);
+  document.getElementById('met-cur').textContent = x[2].toFixed(3);
+  document.getElementById('met-volt').textContent = simState.lastControl.u_qp.toFixed(3);
+
+  // Constraint indicator
+  const badge = document.getElementById('constraint-badge');
+  const active = simState.lastControl.active_bounds;
+  if (active > 0) {
+    badge.textContent = `${active} constraint${active>1?'s':''} active`;
+    badge.className = 'constraint-indicator active';
+  } else {
+    badge.textContent = 'No constraints active';
+    badge.className = 'constraint-indicator inactive';
+  }
+
+  // QP info
+  document.getElementById('qp-N').textContent = p.N;
+  document.getElementById('qp-active').textContent = simState.lastControl.active_bounds;
+  document.getElementById('qp-iters').textContent = simState.lastControl.qp_iters;
+  document.getElementById('qp-time').textContent = simState.qpTime.toFixed(2) + ' ms';
+  document.getElementById('qp-cost').textContent = simState.lastControl.cost.toFixed(4);
+}
+
+let animFrameId = null;
+let lastFrameTime = null;
+
+function gameLoop(timestamp) {
+  if (!simState.running) { animFrameId = null; return; }
+  if (lastFrameTime === null) lastFrameTime = timestamp;
+
+  const p = getParams();
+  const simDt = p.Ts;
+  const speed = p.speed;
+  let elapsed = (timestamp - lastFrameTime) / 1000 * speed;
+  lastFrameTime = timestamp;
+
+  // Cap to prevent spiral of death
+  if (elapsed > 0.1) elapsed = 0.1;
+
+  // Step simulation
+  let simTime = 0;
+  while (simTime < elapsed) {
+    stepSimulation(simDt);
+    simTime += simDt;
+  }
+
+  renderAll();
+  animFrameId = requestAnimationFrame(gameLoop);
+}
+
+function startSimulation() {
+  if (simState.running) return;
+  simState.running = true;
+  lastFrameTime = null;
+  animFrameId = requestAnimationFrame(gameLoop);
+  document.getElementById('btn-start').textContent = '▶ Running...';
+}
+
+function pauseSimulation() {
+  simState.running = false;
+  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+  document.getElementById('btn-start').textContent = '▶ Start';
+}
+
+// ======================== UI BINDINGS ========================
+document.getElementById('btn-start').addEventListener('click', startSimulation);
+document.getElementById('btn-pause').addEventListener('click', pauseSimulation);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  pauseSimulation();
+  resetSimulation();
+  lastParamHash = ''; // force rebuild
+  renderAll();
+});
+
+// Parameter display updates
+const paramIds = ['J','b','Kt','Ke','Rm','L','N','Ts','Qp','Qv','R','Vmax','Imax','amp','freq','speed'];
+for (const id of paramIds) {
+  const el = document.getElementById('param-' + id);
+  if (!el) continue;
+  el.addEventListener('input', () => {
+    const vid = 'val-' + id;
+    const disp = document.getElementById(vid);
+    if (disp) {
+      const v = parseFloat(el.value);
+      if (id === 'N' || id === 'Ts') disp.textContent = el.value;
+      else if (Math.abs(v) < 0.001) disp.textContent = v.toExponential(1);
+      else if (Math.abs(v) < 0.01) disp.textContent = v.toFixed(4);
+      else if (Math.abs(v) < 1) disp.textContent = v.toFixed(3);
+      else disp.textContent = v.toFixed(2);
+    }
+    lastParamHash = ''; // force rebuild on next step
+  });
+}
+
+document.getElementById('param-ref-type').addEventListener('change', () => {
+  const type = document.getElementById('param-ref-type').value;
+  document.getElementById('freq-row').style.display = (type === 'sine' || type === 'square') ? 'flex' : 'none';
+  pauseSimulation();
+  resetSimulation();
+  lastParamHash = '';
+  renderAll();
+});
+
+// Ensure charts resize with window
+window.addEventListener('resize', () => {
+  chartPos.resize(); chartCtrl.resize(); chartCurr.resize();
+  renderAll();
+});
+
+// ======================== INITIALIZATION ========================
+function init() {
+  chartPos.resize(); chartCtrl.resize(); chartCurr.resize();
+  const c = buildControllers();
+  motor = c.model; mpc = c.mpc; lastParamHash = JSON.stringify(c.params);
+  renderAll();
+}
+
+// Wait for layout to settle before first render
+requestAnimationFrame(() => { requestAnimationFrame(init); });
+</script>
+</body>
+</html>
