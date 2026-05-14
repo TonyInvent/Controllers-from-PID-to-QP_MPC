@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controllers from PID to QP-MPC</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #58a6ff;
+  --accent-glow: rgba(88,166,255,0.12);
+  --green: #3fb950;
+  --cyan: #4cc9f0;
+  --orange: #f0883e;
+  --teal: #00bcd4;
+  --pink: #f72585;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 60px 24px 40px;
+  background: linear-gradient(180deg, rgba(88,166,255,0.05) 0%, transparent 100%);
+  border-bottom: 1px solid var(--border);
+}
+.hero h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+.hero h1 span { color: var(--accent); }
+.hero .subtitle {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto 20px;
+}
+.hero .tagline {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* Progression bar */
+.progression {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  padding: 32px 16px;
+  flex-wrap: wrap;
+}
+.progression .step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.progression .arrow {
+  font-size: 1.2rem;
+  color: var(--border);
+  margin: 0 4px;
+  user-select: none;
+}
+.step.s-pid { color: var(--cyan); border-color: rgba(76,201,240,0.3); }
+.step.s-lqr { color: var(--orange); border-color: rgba(240,136,62,0.3); }
+.step.s-mpc { color: var(--teal); border-color: rgba(0,188,212,0.3); }
+
+/* Cards grid */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  padding: 0 24px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  text-decoration: none;
+  color: var(--text);
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+.card:hover {
+  border-color: var(--accent);
+  background: rgba(88,166,255,0.04);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.card.c-pid::before { background: var(--cyan); }
+.card.c-lqr::before { background: var(--orange); }
+.card.c-mpc::before { background: var(--teal); }
+.card.c-zero::before { background: var(--pink); }
+
+.card .card-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.card .card-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  width: fit-content;
+}
+.tag-pid { background: rgba(76,201,240,0.15); color: var(--cyan); }
+.tag-lqr { background: rgba(240,136,62,0.15); color: var(--orange); }
+.tag-mpc { background: rgba(0,188,212,0.15); color: var(--teal); }
+.tag-zero { background: rgba(247,37,133,0.15); color: var(--pink); }
+
+.card h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.card p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.card .card-features {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.card .card-features span {
+  font-family: var(--mono);
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .hero h1 { font-size: 1.4rem; }
+  .cards { grid-template-columns: 1fr; padding: 0 12px 24px; }
+  .progression { gap: 2px; }
+  .progression .arrow { margin: 0 1px; }
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Controllers <span>from PID to QP-MPC</span></h1>
+  <p class="subtitle">
+    Interactive simulators tracing the evolution of feedback control &mdash;
+    all applied to the same DC motor servo.
+  </p>
+  <p class="tagline">
+    "Three generations of engineers looked at the same motor and came up with
+    three radically different answers. Not because the motor changed, but because
+    what they had available changed."
+  </p>
+</div>
+
+<div class="progression">
+  <span class="step s-pid">PID</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step s-lqr">LQR / LQI</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step s-mpc">QP-MPC</span>
+</div>
+
+<div class="cards">
+
+  <a href="pid_explorer.html" class="card c-pid">
+    <div class="card-icon">&#x1F399;&#xFE0F;</div>
+    <span class="card-tag tag-pid">Classical &middot; SISO</span>
+    <h2>PID Explorer</h2>
+    <p>
+      Start here. Tune Kp, Kd, Ki on a 2nd-order plant and watch the pole-zero
+      map update in real time. Build intuition for what each term does before
+      moving to real motors.
+    </p>
+    <div class="card-features">
+      <span>&zeta;<sub>eff</sub></span>
+      <span>&omega;<sub>n,eff</sub></span>
+      <span>poles &times;</span>
+      <span>zeros &compfn;</span>
+      <span>7 presets</span>
+    </div>
+  </a>
+
+  <a href="servo_motor_pid.html" class="card c-pid">
+    <div class="card-icon">&#x1F5DC;&#xFE0F;</div>
+    <span class="card-tag tag-pid">Real Physics &middot; DC Motor</span>
+    <h2>Servo Motor PID</h2>
+    <p>
+      Apply PID to a brushed DC motor with real parameters &mdash; R, L, Kt, J, B.
+      Voltage saturation, anti-windup, and disturbance torque injection show
+      where classical control meets physics.
+    </p>
+    <div class="card-features">
+      <span>3rd-order motor</span>
+      <span>&plusmn;V<sub>max</sub> saturation</span>
+      <span>&tau;<sub>dist</sub></span>
+      <span>stiff ODE guard</span>
+      <span>7 presets</span>
+    </div>
+  </a>
+
+  <a href="lqr_explorer.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9EE;</div>
+    <span class="card-tag tag-lqr">Optimal &middot; MIMO</span>
+    <h2>LQR Explorer</h2>
+    <p>
+      Tune cost weights Q &amp; R instead of gains. The CARE solver returns the
+      mathematically optimal state-feedback matrix K. Overlay PID to see how
+      classical tuning compares to optimal control.
+    </p>
+    <div class="card-features">
+      <span>LQI (4-state)</span>
+      <span>CARE solver</span>
+      <span>PID overlay</span>
+      <span>k<sub>&theta;</sub> feedforward</span>
+      <span>6 presets</span>
+    </div>
+  </a>
+
+  <a href="servo_qp_mpc.html" class="card c-mpc">
+    <div class="card-icon">&#x1F9E9;</div>
+    <span class="card-tag tag-mpc">Constrained &middot; Receding Horizon</span>
+    <h2>QP-MPC Explorer</h2>
+    <p>
+      Hard constraints enter the optimization. A QP solver finds the best control
+      sequence that respects &plusmn;V<sub>max</sub> and &plusmn;I<sub>max</sub>.
+      Parallel LQR simulation proves the constrained optimum is structurally
+      different from simply saturating LQR.
+    </p>
+    <div class="card-features">
+      <span>online QP solver</span>
+      <span>prediction horizon</span>
+      <span>LQR comparison</span>
+      <span>V &amp; I limits</span>
+      <span>N=3&ndash;30</span>
+    </div>
+  </a>
+
+  <a href="zero_effect_explorer.html" class="card c-zero">
+    <div class="card-icon">&#x1F4C8;</div>
+    <span class="card-tag tag-zero">Transfer Function &middot; Intuition</span>
+    <h2>Zero-Effect Explorer</h2>
+    <p>
+      Deep-dive on zeros: why derivative action speeds things up, why RHP zeros
+      impose hard bandwidth limits, and how multiple zeros compound. The
+      transfer-function view that explains <em>why</em> the controllers above
+      behave the way they do.
+    </p>
+    <div class="card-features">
+      <span>LHP &amp; RHP zeros</span>
+      <span>up to 3 zeros</span>
+      <span>combined trace</span>
+      <span>7 presets</span>
+    </div>
+  </a>
+
+</div>
+
+<footer>
+  <a href="https://github.com/TonyInvent/Controllers-from-PID-to-QP_MPC">github.com/TonyInvent/Controllers-from-PID-to-QP_MPC</a>
+  &nbsp;&middot;&nbsp;
+  Companion docs:
+  <a href="Servo Motor controllers from PID, LQR to QP-MPC.md">EN podcast script</a>
+  &nbsp;&middot;&nbsp;
+  <a href="Servo Motor controllers from PID, LQR to QP-MPC-zh.md">中文播客稿</a>
+</footer>
+
+</body>
+</html>
