@@ -306,11 +306,35 @@ This is the LQR explorer's default behavior. The integral action then only needs
 
 This is the key insight: **when constraints are inactive, QP-MPC *is* LQR.** There's no switched controller, no gain scheduling. The QP solver naturally recovers the unconstrained optimum when all bounds are slack, and smoothly transitions to a boundary-riding solution when a constraint becomes active.
 
-### Why MPC instead of just saturating LQR?
+### 🔑 The most common misconception: "just saturate LQR"
 
-Simply clamping LQR's output to ±Vmax destroys optimality. The controller assumes unlimited authority and computes gains accordingly — when you clip, the closed-loop behavior diverges from the design. Anti-windup patches help but are reactive heuristics.
+Here's the trap. You have LQR, it's optimal, and your amplifier can only output ±12V. The obvious fix: compute u = −Kx as usual, then clip it to ±12V with a one-liner:
 
-QP-MPC, by contrast, **knows the constraints in advance.** It plans a trajectory that respects the voltage limit over the entire prediction horizon. If the motor needs to accelerate hard but the supply is capped at 12V, MPC finds the acceleration profile that stays within 12V while getting to the target as fast as physically possible. It's the difference between "do your best and I'll catch you if you fall" and "here are the walls — find the best path."
+```
+u = clamp(−Kx, −Vmax, +Vmax)
+```
+
+This is called **naive saturation**, and it feels right. After all, you're applying the optimal control whenever it's "available," and when it's not, you're doing the best the hardware can do — right?
+
+**No. And this is the single most important idea in constrained control.**
+
+Saturating LQR's output is not the constrained optimum. It's not even close. Here's why, broken into two layers:
+
+**Layer 1 — the controller doesn't know it's saturated.** LQR computes its gains assuming unlimited authority. When you build feedback gains on that assumption, the *entire gain matrix K* is wrong for the constrained regime. The controller plans aggressive moves — large voltage spikes, sharp reversals — that only make sense if the amplifier can deliver them. Saturating after the fact means the controller is flying blind: it keeps computing commands as if the motor got 30V, while the motor actually got 12V. The internal state trajectory diverges from what the controller believes.
+
+A concrete example: from rest, LQR commands a 30V spike to accelerate the motor. You clamp to 12V. The motor accelerates slower than LQR expects. LQR's state estimate now says "we're behind schedule — hit it harder." Next step: another 30V command, clamped again. The controller is permanently confused, permanently commanding voltages it will never get. This is how naive saturation produces oscillation, overshoot, and sometimes instability — not because the motor can't handle 12V, but because the *controller was designed for a world where 30V exists.*
+
+**Layer 2 — the constrained optimum is a different shape.** When you solve the QP with the constraint baked in, the optimizer knows it only has 12V. It doesn't just clip the unconstrained solution — it finds a *completely different control sequence* that stays within 12V for the entire horizon while minimizing the tracking cost. This often means:
+
+- Starting to decelerate **earlier** than the unconstrained solution would, because the limited voltage can't brake as hard
+- Applying **less voltage early** to avoid overshooting a target that can't be corrected quickly
+- **Not saturating at all** for some steps where the naive clamp would hit the rail — the optimizer knows holding 11.9V now is better than hitting 12V, overshooting, and needing −12V later
+
+The key distinction: naive saturation says "do your best, I'll clean up the mess." Constrained optimization says "given the walls, find the best path that never touches them unnecessarily." The two produce identical results only in the trivial case where constraints are never binding.
+
+**And the simulator proves it.** In `servo_qp_mpc.html`, the LQR trace (orange) and QP-MPC trace (cyan) run on the same motor with the same cost weights. When constraints are active, the QP-MPC voltage profile is not just a clipped version of LQR's — it's structurally different. Watch the voltage chart during a large step reference: LQR demands a spike that gets clipped, overshoots, then oscillates. QP-MPC pre-emptively backs off, delivering a cleaner, often faster settling response with less total energy.
+
+**The deeper principle:** every physical system has constraints — voltage, current, torque, temperature, pressure. An optimal controller that doesn't know about them is answering the wrong question. QP-MPC answers the right one: *what is the best I can do, given what I actually have?*
 
 ### The QP at the core
 
