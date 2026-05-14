@@ -1,32 +1,55 @@
-# Zero Effect Explorer
+# Controllers from PID to QP-MPC
 
-Interactive tools to understand how **zeros** change the step response of a second-order system — a fundamental concept in control theory that's notoriously hard to build intuition for.
+Interactive simulators tracing the evolution of feedback control — from classical PID through LQR to constrained QP-MPC — all applied to the same DC motor servo.
+
+**The big idea:** three generations of engineers looked at the same motor and came up with three radically different answers. Not because the motor changed, but because *what they had available* changed — the math they knew, the computers they could touch, the problems they were being paid to solve.
 
 ## What's here
 
-| File | What it is | Open with |
-|------|-----------|-----------|
-| `zero_effect_explorer.html` | Self-contained interactive web page | Any browser — no server, no install |
-| `pid_explorer.html` | PID controller explorer — see how Kp, Kd, Ki change ζ_eff, ωₙ_eff, and the step response | Any browser — no server, no install |
-| `servo_motor_pid.html` | Servo motor PID demo — concrete DC motor position control with real physics (R, L, Kt, J, B) | Any browser — no server, no install |
-| `lqr_explorer.html` | LQR explorer — optimal state feedback design via CARE, compare with PID on the same motor | Any browser — no server, no install |
-| `zero_effect_demo.py` | Python script that generates the 3 figures | `python3 zero_effect_demo.py` (needs `control`, `matplotlib`) |
-| `zero_effect_video_script.md` | English video script (7 scenes, ~12-15 min) | Any text editor |
-| `zero_effect_video_script_cn.md` | Chinese video script for Bilibili (7 scenes) | Any text editor |
+### Interactive simulators (open in any browser — no install, no server)
+
+| File | Controller | What it does |
+|------|-----------|-------------|
+| `pid_explorer.html` | PID | Classical 3-term control of a 2nd-order plant — sliders for Kp, Kd, Ki with real-time pole-zero map |
+| `servo_motor_pid.html` | PID | DC motor position servo with real physics (R, L, Kt, J, B), voltage saturation, anti-windup, disturbance torque |
+| `lqr_explorer.html` | LQR / LQI | Optimal state feedback via CARE solution — tune cost weights Q & R instead of gains, with PID comparison overlay |
+| `servo_qp_mpc.html` | QP-MPC | Constrained Model Predictive Control — online quadratic programming with voltage & current limits, parallel LQR comparison |
+| `zero_effect_explorer.html` | — | Transfer-function intuition: how LHP/RHP zeros change step response of a 2nd-order system |
+
+### Companion documents
+
+| File | What it is |
+|------|-----------|
+| `Servo Motor controllers from PID, LQR to QP-MPC.md` | English podcast script — the century-long history of control theory in 7 slides |
+| `Servo Motor controllers from PID, LQR to QP-MPC-zh.md` | Chinese podcast script — Bilibili edition of the same story |
+| `zero_effect_video_script.md` | English video script on zero effects (7 scenes) |
+| `zero_effect_video_script_cn.md` | Chinese video script on zero effects for Bilibili |
+| `zero_effect_demo.py` | Python script generating 3 pole-zero/step-response figures (`control` + `matplotlib`) |
 
 ## Try it now
 
 ```bash
-# Interactive web pages — just open them:
-open zero_effect_explorer.html   # Zero-effect explorer
-open pid_explorer.html           # PID controller explorer
-open servo_motor_pid.html        # Servo motor PID demo
-open lqr_explorer.html           # LQR explorer
+# Interactive web pages — just open any of them:
+open pid_explorer.html              # PID controller explorer
+open servo_motor_pid.html           # Servo motor PID demo
+open lqr_explorer.html              # LQR explorer
+open servo_qp_mpc.html              # QP-MPC explorer
+open zero_effect_explorer.html      # Zero-effect explorer
 
 # Or run the Python demo:
 pip install control matplotlib
 python3 zero_effect_demo.py
 ```
+
+## Suggested learning path
+
+Start here and work forward — the historical progression is also the pedagogical one:
+
+1. **`pid_explorer.html`** — grasp the three-term intuition on a simple 2nd-order plant
+2. **`servo_motor_pid.html`** — see PID applied to real motor physics (saturation, disturbance)
+3. **`lqr_explorer.html`** — discover optimal state feedback: declare what you care about, math returns the gains
+4. **`servo_qp_mpc.html`** — add hard constraints: when the 12V supply can't deliver what LQR demands, QP-MPC finds the constrained optimum
+5. **`zero_effect_explorer.html`** — deep-dive on zeros: the transfer-function view that explains *why* derivative action speeds things up
 
 ## What you'll learn
 
@@ -35,24 +58,28 @@ python3 zero_effect_demo.py
 - Kd adds damping — it pulls the dominant poles leftward, raising ζ
 - Ki eliminates steady-state error by adding an integrator pole at s=0
 - PD lets you tune ζ_eff and ωₙ_eff independently; PI kills offset at the cost of a longer tail
-- The effective ζ and ωₙ come from the dominant closed-loop pole pair — Cardano's cubic formula under the hood
+
+**Servo Motor PID** — what happens when you apply PID to real hardware:
+- Voltage saturation clips your command — and anti-windup keeps the integrator sane
+- Torque disturbances cause steady-state error that only Ki can reject
+- Stiff electrical dynamics (small L) demand reduced-order modeling for stable simulation
+
+**LQR Explorer** — how optimal control differs from classical tuning:
+- You don't tune gains — you declare what you care about (Q, R weights) and math returns the optimal K
+- LQR guarantees stability margins (≥60° PM, ∞ gain margin) that PID can't promise
+- LQI adds integral action through state augmentation — zero steady-state error, guaranteed
+- Reference feedforward is essential: without it, LQI takes ~7 seconds to reach setpoint (vs. 0.5s with FF)
+
+**QP-MPC Explorer** — what happens when constraints are non-negotiable:
+- LQR commands whatever voltage optimality demands — QP-MPC finds the best voltage the 12V supply can actually deliver
+- Receding-horizon optimization: solve a constrained QP at every time step, apply the first move, repeat
+- When constraints are inactive, QP-MPC *is* LQR — smooth, automatic transition between regimes
+- Prediction horizon visualization shows where the controller plans to go
 
 **Zero-Effect Explorer** — how zeros change the step response of a second-order system:
-
-**Left-half-plane (LHP) zeros** — a speed-versus-overshoot trade-off:
-- A zero far from the origin is practically invisible
-- As the zero moves closer to the origin, the derivative "kick" grows, amplifying overshoot while reducing rise time
-- This is what PID derivative action does — you're placing a zero, and *where* you place it matters
-
-**Right-half-plane (RHP) zeros** — a hard physical limit:
-- The system initially moves the **wrong** way before recovering
-- Closer to the origin = deeper and longer undershoot
-- You cannot remove an RHP zero with any controller; it imposes a bandwidth limit of roughly |z|/2
-- Real-world example: boiler drum level — adding cold feedwater temporarily drops the level before it rises
-
-**Multiple zeros** — effects compound:
-- Each additional zero adds another derivative term
-- Two LHP zeros amplify overshoot more than one
+- LHP zeros: speed-vs-overshoot trade-off — this is what derivative action does
+- RHP zeros: hard physical limits — the system moves the wrong way first, and no controller can remove this
+- Multiple zeros compound — each derivative term adds another kick
 
 ## The PID explorer
 
@@ -253,6 +280,45 @@ This is the LQR explorer's default behavior. The integral action then only needs
 - **q_ω ↑** — increases $k_\omega$ (derivative gain), adding damping. Unlike PID, LQR does this optimally — it won't amplify sensor noise.
 - **R ↓** — reduces the control penalty, allowing larger gains (Cheap Control). This is the LQR equivalent of "more aggressive tuning."
 - **q_∫ ↓** — shrinks the integral gain $k_{\smallint}$, making the response more PD-like. Use when disturbance rejection isn't critical.
+
+## The QP-MPC explorer
+
+`servo_qp_mpc.html` demonstrates **Quadratic Programming Model Predictive Control** — the third generation of servo control, where hard constraints are front and center:
+
+- **3-state motor model** — position θ, velocity ω, current i — discretized via forward Euler at a configurable sample time Ts
+- **Online QP solver** — coordinate-descent box-constrained quadratic programming: `min ½UᵀHU + fᵀU` subject to `−Vmax ≤ uₖ ≤ +Vmax`
+- **Parallel LQR simulation** — a separate motor instance runs unconstrained LQR, so you can directly compare: QP-MPC clips at ±12V while LQR blithely commands 30V
+- **Prediction horizon visualization** — dashed cyan dots show the MPC's planned trajectory over the next N steps
+- **Configurable horizon** — N = 3 to 30 steps; longer horizons see further ahead but cost more computation
+- **Real-time QP diagnostics** — active constraint count, QP iterations, solve time (ms), and cost function value J
+- **Three live charts** — position tracking θ(t), control voltage V(t) with ±Vmax limit lines, motor current i(t) with ±Imax limit lines
+- **Motor shaft animation** — visual indicator of the rotor angle
+- **Adaptive speed control** — slow down simulation to watch constraint boundary behavior frame by frame
+
+### QP-MPC vs. LQR: the constraint story
+
+| Scenario | LQR | QP-MPC |
+|----------|-----|--------|
+| **Constraint inactive** | Applies optimal voltage freely | Same as LQR — unconstrained optimum is feasible |
+| **Voltage hits +Vmax** | Saturates — optimality lost, may wind up | Finds constrained optimum: best voltage ≤ Vmax |
+| **Starting from rest** | Commands large spike to accelerate quickly | Same spike — but clipped to Vmax if needed |
+| **Near steady-state** | Small corrections, well within limits | Same as LQR — constraints are slack |
+
+This is the key insight: **when constraints are inactive, QP-MPC *is* LQR.** There's no switched controller, no gain scheduling. The QP solver naturally recovers the unconstrained optimum when all bounds are slack, and smoothly transitions to a boundary-riding solution when a constraint becomes active.
+
+### Why MPC instead of just saturating LQR?
+
+Simply clamping LQR's output to ±Vmax destroys optimality. The controller assumes unlimited authority and computes gains accordingly — when you clip, the closed-loop behavior diverges from the design. Anti-windup patches help but are reactive heuristics.
+
+QP-MPC, by contrast, **knows the constraints in advance.** It plans a trajectory that respects the voltage limit over the entire prediction horizon. If the motor needs to accelerate hard but the supply is capped at 12V, MPC finds the acceleration profile that stays within 12V while getting to the target as fast as physically possible. It's the difference between "do your best and I'll catch you if you fall" and "here are the walls — find the best path."
+
+### The QP at the core
+
+At each time step, the controller solves:
+
+$$\min_{U} \frac{1}{2}U^T H U + f^T U \quad \text{s.t.} \quad u_{\min} \leq u_k \leq u_{\max}$$
+
+where U = [u₀, u₁, ..., u_{N−1}]ᵀ is the control sequence over the horizon. H and f are built from the motor model, Q/R cost weights, and the current state error. Only u₀ is applied — the rest is discarded, and the optimization repeats at the next sample time.
 
 ## The interactive zero-effect explorer
 
