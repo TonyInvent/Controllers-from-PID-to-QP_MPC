@@ -186,6 +186,14 @@ def main():
             script_dir / "Servo Motor controllers from PID, LQR to QP-MPC-zh.md",
             script_dir / "Servo Motor controllers from PID, LQR to QP-MPC-zh.html",
         ),
+        (
+            script_dir / "The Century of Feedback - A History of Control Theory.md",
+            script_dir / "The Century of Feedback - A History of Control Theory.html",
+        ),
+        (
+            script_dir / "The Century of Feedback - A History of Control Theory-zh.md",
+            script_dir / "The Century of Feedback - A History of Control Theory-zh.html",
+        ),
     ]
 
     for md_path, html_path in pairs:
