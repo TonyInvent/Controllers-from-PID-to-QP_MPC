@@ -25,6 +25,8 @@ Interactive simulators tracing the evolution of feedback control — from classi
 | `zero_effect_video_script.md` | English video script on zero effects (7 scenes) |
 | `zero_effect_video_script_cn.md` | Chinese video script on zero effects for Bilibili |
 | `zero_effect_demo.py` | Python script generating 3 pole-zero/step-response figures (`control` + `matplotlib`) |
+| `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
+| `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版，50分钟播客，反馈控制的250年演化史 |
 
 ## Try it now
 

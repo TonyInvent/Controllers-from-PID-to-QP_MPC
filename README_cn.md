@@ -25,6 +25,8 @@
 | `zero_effect_video_script.md` | 零点效应的英文视频脚本（7 个场景） |
 | `zero_effect_video_script_cn.md` | 零点效应 B 站中文视频脚本 |
 | `zero_effect_demo.py` | 生成 3 张零极点/阶跃响应图的 Python 脚本（需要 `control` + `matplotlib`） |
+| `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
+| `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版50分钟播客，反馈控制的250年演化史，从瓦特讲到SpaceX |
 
 ## 立刻体验
 
