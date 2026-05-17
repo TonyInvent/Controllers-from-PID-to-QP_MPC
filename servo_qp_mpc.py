@@ -44,7 +44,7 @@ Bc = np.array([[0.0],
                [Kt / (Rm * J)]])
 Cc = np.array([[1.0, 0.0]])
 
-# ZOH discretisation at 10 ms
+# ZOH discretisation at 1 ms
 Ts = 0.001
 n, m = 2, 1
 M = np.zeros((n + m, n + m))
