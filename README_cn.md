@@ -25,22 +25,38 @@
 | `zero_effect_video_script.md` | 零点效应的英文视频脚本（7 个场景） |
 | `zero_effect_video_script_cn.md` | 零点效应 B 站中文视频脚本 |
 | `zero_effect_demo.py` | 生成 3 张零极点/阶跃响应图的 Python 脚本（需要 `control` + `matplotlib`） |
+| `servo_qp_mpc.py` | **新** —— Python QP-MPC 演示：LQR vs 朴素饱和 vs 约束QP，同一台直流伺服电机（`numpy scipy cvxpy matplotlib`） |
 | `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
 | `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版50分钟播客，反馈控制的250年演化史，从瓦特讲到SpaceX |
+
+### Python 演示
+
+两个 Python 脚本依赖不同，建议使用虚拟环境：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# zero_effect_demo.py — 零极点 / 阶跃响应图
+pip install control matplotlib
+python3 zero_effect_demo.py
+
+# servo_qp_mpc.py — QP-MPC 约束伺服演示
+pip install numpy scipy cvxpy matplotlib
+python3 servo_qp_mpc.py
+```
+
+或一次性装齐：  `pip install control matplotlib numpy scipy cvxpy`
 
 ## 立刻体验
 
 ```bash
-# 交互式网页——直接打开任意一个即可：
+# 交互式网页——用浏览器打开任意一个即可：
 open pid_explorer.html              # PID 控制器探索器
 open servo_motor_pid.html           # 伺服电机 PID 演示
 open lqr_explorer.html              # LQR 探索器
 open servo_qp_mpc.html              # QP-MPC 探索器
 open zero_effect_explorer.html      # 零点效应探索器
-
-# 或者运行 Python 演示：
-pip install control matplotlib
-python3 zero_effect_demo.py
 ```
 
 ## 推荐学习路径

@@ -25,22 +25,38 @@ Interactive simulators tracing the evolution of feedback control — from classi
 | `zero_effect_video_script.md` | English video script on zero effects (7 scenes) |
 | `zero_effect_video_script_cn.md` | Chinese video script on zero effects for Bilibili |
 | `zero_effect_demo.py` | Python script generating 3 pole-zero/step-response figures (`control` + `matplotlib`) |
+| `servo_qp_mpc.py` | **New** — Python QP-MPC demo: LQR vs naive saturation vs constrained QP on a DC servo (`numpy scipy cvxpy matplotlib`) |
 | `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
 | `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版，50分钟播客，反馈控制的250年演化史 |
+
+### Python demos
+
+The two Python scripts need different dependencies.  Use a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# zero_effect_demo.py — pole-zero / step response figures
+pip install control matplotlib
+python3 zero_effect_demo.py
+
+# servo_qp_mpc.py — QP-MPC constrained servo demo
+pip install numpy scipy cvxpy matplotlib
+python3 servo_qp_mpc.py
+```
+
+Or install everything at once:  `pip install control matplotlib numpy scipy cvxpy`
 
 ## Try it now
 
 ```bash
-# Interactive web pages — just open any of them:
+# Interactive web pages — just open any of them in a browser:
 open pid_explorer.html              # PID controller explorer
 open servo_motor_pid.html           # Servo motor PID demo
 open lqr_explorer.html              # LQR explorer
 open servo_qp_mpc.html              # QP-MPC explorer
 open zero_effect_explorer.html      # Zero-effect explorer
-
-# Or run the Python demo:
-pip install control matplotlib
-python3 zero_effect_demo.py
 ```
 
 ## Suggested learning path
