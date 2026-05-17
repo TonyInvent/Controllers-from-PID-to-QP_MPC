@@ -45,7 +45,7 @@ Bc = np.array([[0.0],
 Cc = np.array([[1.0, 0.0]])
 
 # ZOH discretisation at 10 ms
-Ts = 0.010
+Ts = 0.001
 n, m = 2, 1
 M = np.zeros((n + m, n + m))
 M[:n, :n] = Ac
