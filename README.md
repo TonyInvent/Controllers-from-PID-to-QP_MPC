@@ -354,13 +354,145 @@ The key distinction: naive saturation says "do your best, I'll clean up the mess
 
 **The deeper principle:** every physical system has constraints — voltage, current, torque, temperature, pressure. An optimal controller that doesn't know about them is answering the wrong question. QP-MPC answers the right one: *what is the best I can do, given what I actually have?*
 
-### The QP at the core
+### 🔑 How the control problem becomes a QP — condensing explained
 
-At each time step, the controller solves:
+The QP at each time step doesn't appear out of thin air. It comes from **eliminating the dynamics constraints** from the MPC optimisation, a process called *condensing*. Here's the full derivation, traced through `servo_qp_mpc.py`.
 
-$$\min_{U} \frac{1}{2}U^T H U + f^T U \quad \text{s.t.} \quad u_{\min} \leq u_k \leq u_{\max}$$
+#### 1. The original MPC problem
 
-where U = [u₀, u₁, ..., u_{N−1}]ᵀ is the control sequence over the horizon. H and f are built from the motor model, Q/R cost weights, and the current state error. Only u₀ is applied — the rest is discarded, and the optimization repeats at the next sample time.
+At each timestep, given the current state error `x₀_err = x − x_ref`, we want to solve:
+
+```
+min    Σᵢ₌₀ᴺ⁻¹ (xᵢᵀ Q xᵢ + uᵢᵀ R uᵢ)   +   x_Nᵀ P x_N
+u₀…uₙ₋₁
+
+s.t.   xᵢ₊₁ = A_d xᵢ + B_d uᵢ        (discrete motor dynamics)
+      −V_max ≤ uᵢ ≤ V_max            (voltage limits)
+```
+
+The terminal cost `x_Nᵀ P x_N` (where `P` comes from the discrete algebraic Riccati equation) guarantees stability — it approximates the infinite-horizon cost beyond the prediction window.
+
+This problem has both dynamics equality constraints and box inequality constraints. A general-purpose QP solver can't handle arbitrary equality constraints efficiently — we need to eliminate the dynamics.
+
+#### 2. Condensing — write the state trajectory purely as a function of `x₀` and `U`
+
+Unroll the linear dynamics over the horizon of length `N`. For `N = 3`:
+
+```
+x₁ = A_d x₀ + B_d u₀
+x₂ = A_d² x₀ + A_d B_d u₀ + B_d u₁
+x₃ = A_d³ x₀ + A_d² B_d u₀ + A_d B_d u₁ + B_d u₂
+```
+
+Stack all N future states into one big vector `X = [x₁; x₂; …; x_N]`. In matrix form:
+
+```
+X = A_aug · x₀_err  +  B_aug · U
+```
+
+where:
+- `A_aug` is a vertical stack of `A_d, A_d², …, A_dᴺ` — the *free response* of each step to the initial state
+- `B_aug` is a **block-lower-triangular Toeplitz matrix** — element `(row, col)` is `A_d^(row−col) B_d`, capturing how the input at step `col` propagates to the state at step `row` through the dynamics
+
+This is the code in `servo_qp_mpc.py`:
+
+```python
+A_aug = np.vstack([np.linalg.matrix_power(Ad, k+1) for k in range(N)])
+
+B_aug = np.zeros((N*n, N*m))
+for row in range(N):
+    for col in range(row + 1):
+        B_aug[row*n:(row+1)*n, col] = (
+            np.linalg.matrix_power(Ad, row-col) @ Bd).flatten()
+```
+
+#### 3. Substitute into the cost — all that's left is a standard QP
+
+The original cost is `J = Xᵀ Q̄ X + Uᵀ R̄ U`, where `Q̄ = block-diag(Q,…,Q,P)` puts the Riccati matrix `P` on the final block, and `R̄ = block-diag(R,…,R)`.
+
+**Substitute** `X = A_aug x₀_err + B_aug U` into `J` and expand:
+
+```
+J = x₀ᵀ A_augᵀ Q̄ A_aug x₀          ← constant (doesn't depend on U, can be dropped)
+  + 2 x₀ᵀ A_augᵀ Q̄ B_aug U        ← linear term in U
+  + Uᵀ (B_augᵀ Q̄ B_aug + R̄) U     ← quadratic term in U
+```
+
+Define:
+
+```
+H = B_augᵀ Q̄ B_aug + R̄              (quadratic cost matrix — penalises control energy)
+F = A_augᵀ Q̄ B_aug                   (maps initial state into linear cost term)
+```
+
+The code:
+
+```python
+Qbar = np.kron(np.eye(N), Q_lqr)
+Qbar[-n:, -n:] = P_lqr               # terminal cost
+
+H = B_aug.T @ Qbar @ B_aug + Rbar    # Uᵀ H U / 2
+F = A_aug.T @ Qbar @ B_aug           # (Fᵀ x₀_err)ᵀ U
+```
+
+The original MPC problem is now equivalent to the **standard box-constrained QP**:
+
+```
+min    ½ Uᵀ H U  +  (Fᵀ x₀_err)ᵀ U
+ U
+
+s.t.   −V_max ≤ uₖ ≤ V_max      (box constraints only — one per control step)
+```
+
+All the dynamics constraints have been absorbed into `H` and `F`. The QP solver sees only `N` scalar variables with simple upper/lower bounds — that's what makes it fast enough for a 1 ms control loop.
+
+#### 4. Building the QP once, solving it repeatedly
+
+The QP **structure** (`H`, `F`, the box constraints) is built once before the simulation loop — `H` and `F` only depend on the motor model and cost weights, which don't change. What changes at each timestep is the current state error `x₀_err`, which enters through the linear term `(Fᵀ x₀_err)ᵀ U`.
+
+This is handled with a **parameter** in cvxpy:
+
+```python
+x0_param = cp.Parameter(n)                 # placeholder for the current state error
+U = cp.Variable(N)                         # the N control inputs we're optimising over
+
+prob = cp.Problem(
+    cp.Minimize(0.5 * cp.quad_form(U, H) + (F.T @ x0_param).T @ U),
+    [U >= -V_max, U <= V_max])
+```
+
+The `Problem` object is constructed once. At each 1 ms timestep:
+
+```python
+x0_param.value = x0_err                    # inject the current state error
+prob.solve(solver=cp.OSQP, warm_start=True, polish=False,
+           max_iter=400, eps_abs=1e-4, eps_rel=1e-4)
+u = float(U.value[0])                      # apply only the first control (receding horizon)
+```
+
+Key solver choices and why they matter for a real-time control loop:
+
+- **`solver=cp.OSQP`** — OSQP is an operator-splitting QP solver (ADMM-based). It's fast for MPC because it exploits the sparsity of the condensed problem and handles warm starts well.
+- **`warm_start=True`** — initialises the solver with the previous timestep's solution. Since the state changes by only one 1 ms step, the previous optimal sequence is very close to correct, often cutting iterations by 80%+.
+- **`polish=False`** — skips a final refinement step. In a 1 ms control loop, speed matters more than high-precision optimality.
+- **`max_iter=400, eps_abs/eps_rel=1e-4`** — cap iteration count and set convergence tolerance. These are tuned for the 1 ms period: if the solver hasn't converged by 400 iterations, the best-so-far solution is good enough.
+- Only the **first element** `U.value[0]` is applied to the motor. The rest of the sequence is discarded, and the whole optimisation repeats at the next sample time (receding horizon principle).
+
+#### Summary picture
+
+```
+At each 1 ms step:
+  ┌─────────────┐     ┌─────────────────────┐      ┌──────────────┐
+  │ measure x   │ ──▶ │ condense into QP    │ ──▶  │ OSQP solves  │
+  │ error x₀    │     │ H, F precomputed    │      │ min ½UᵀHU +  │
+  │             │     │ x₀ → linear term    │      │ (Fᵀx₀)ᵀU     │
+  └─────────────┘     └─────────────────────┘      │ s.t. |u|≤V   │
+                                                   └──────┬───────┘
+                                                          │
+                                           apply u₀ only ─┘
+```
+
+The crucial distinction from naive saturation: the QP *knows about the constraints* when planning its trajectory — `H` and `F` encode the full dynamics, so the solver can pre-emptively back off the voltage to avoid overshoot. Naive saturation plans as if unlimited voltage exists (calculating gains from the unconstrained Riccati equation), then post-hoc clips — which is why it overshoots and oscillates.
 
 ## The interactive zero-effect explorer
 

@@ -354,13 +354,145 @@ u = clamp(−Kx, −Vmax, +Vmax)
 
 **更深层的原理：** 每个物理系统都有约束——电压、电流、转矩、温度、压力。一个不知道它们在的最优控制器，在回答错误的问题。QP-MPC 答的是对的那个：*给定我实际拥有的东西，我能做到的最好是什么？*
 
-### 核心的 QP
+### 🔑 控制问题如何变成 QP —— 冷凝法详解
 
-每个时间步，控制器求解：
+每个时间步求解的 QP 并非凭空出现。它来自**消去 MPC 优化中的动力学约束**，这个过程称为*冷凝（condensing）*。以下是完整推导，与 `servo_qp_mpc.py` 中的代码一一对应。
 
-$$\min_{U} \frac{1}{2}U^T H U + f^T U \quad \text{s.t.} \quad u_{\min} \leq u_k \leq u_{\max}$$
+#### 1. 原始的 MPC 问题
 
-其中 U = [u₀, u₁, ..., u_{N−1}]ᵀ 是时域内的控制序列。H 和 f 由电机模型、Q/R 代价权重和当前状态误差构建。只有 u₀ 被施加——其余的丢弃，下一采样时间重新优化。
+每个时间步，给定当前状态误差 `x₀_err = x − x_ref`，我们希望求解：
+
+```
+min    Σᵢ₌₀ᴺ⁻¹ (xᵢᵀ Q xᵢ + uᵢᵀ R uᵢ)   +   x_Nᵀ P x_N
+u₀…uₙ₋₁
+
+s.t.   xᵢ₊₁ = A_d xᵢ + B_d uᵢ        (离散电机动力学)
+      −V_max ≤ uᵢ ≤ V_max            (电压限制)
+```
+
+终端代价 `x_Nᵀ P x_N`（其中 `P` 来自离散代数 Riccati 方程）保证稳定性——它近似预测窗口之外的无穷时域代价。
+
+这个问题既有动力学等式约束，也有盒子不等式约束。通用 QP 求解器无法高效处理任意等式约束——我们需要消去动力学。
+
+#### 2. 冷凝 —— 将状态轨迹写成纯 `x₀` 和 `U` 的函数
+
+沿预测时域展开线性动力学。以 `N = 3` 为例：
+
+```
+x₁ = A_d x₀ + B_d u₀
+x₂ = A_d² x₀ + A_d B_d u₀ + B_d u₁
+x₃ = A_d³ x₀ + A_d² B_d u₀ + A_d B_d u₁ + B_d u₂
+```
+
+将所有 N 个未来状态堆叠成一个大向量 `X = [x₁; x₂; …; x_N]`：
+
+```
+X = A_aug · x₀_err  +  B_aug · U
+```
+
+其中：
+- `A_aug` 是 `A_d, A_d², …, A_dᴺ` 的纵向堆叠——每一步对初始状态的*自由响应*
+- `B_aug` 是一个**下三角块 Toeplitz 矩阵**——元素 `(row, col)` 为 `A_d^(row−col) B_d`，描述第 `col` 步的输入如何通过动力学传播到第 `row` 步的状态
+
+对应 `servo_qp_mpc.py` 中的代码：
+
+```python
+A_aug = np.vstack([np.linalg.matrix_power(Ad, k+1) for k in range(N)])
+
+B_aug = np.zeros((N*n, N*m))
+for row in range(N):
+    for col in range(row + 1):
+        B_aug[row*n:(row+1)*n, col] = (
+            np.linalg.matrix_power(Ad, row-col) @ Bd).flatten()
+```
+
+#### 3. 代入代价函数 —— 只剩标准 QP
+
+原始代价为 `J = Xᵀ Q̄ X + Uᵀ R̄ U`，其中 `Q̄ = block-diag(Q,…,Q,P)` 将 Riccati 矩阵 `P` 放在最后一个块，`R̄ = block-diag(R,…,R)`。
+
+**代入** `X = A_aug x₀_err + B_aug U` 到 `J` 中并展开：
+
+```
+J = x₀ᵀ A_augᵀ Q̄ A_aug x₀          ← 常数项（不依赖 U，可以去掉）
+  + 2 x₀ᵀ A_augᵀ Q̄ B_aug U        ← U 的线性项
+  + Uᵀ (B_augᵀ Q̄ B_aug + R̄) U     ← U 的二次项
+```
+
+定义：
+
+```
+H = B_augᵀ Q̄ B_aug + R̄              (二次代价矩阵——惩罚控制能量)
+F = A_augᵀ Q̄ B_aug                   (将初始状态映射为线性代价项)
+```
+
+代码：
+
+```python
+Qbar = np.kron(np.eye(N), Q_lqr)
+Qbar[-n:, -n:] = P_lqr               # 终端代价
+
+H = B_aug.T @ Qbar @ B_aug + Rbar    # Uᵀ H U / 2
+F = A_aug.T @ Qbar @ B_aug           # (Fᵀ x₀_err)ᵀ U
+```
+
+原始 MPC 问题现在等价于**标准盒子约束 QP**：
+
+```
+min    ½ Uᵀ H U  +  (Fᵀ x₀_err)ᵀ U
+ U
+
+s.t.   −V_max ≤ uₖ ≤ V_max      (仅盒子约束——每个控制步一个)
+```
+
+所有动力学约束都已被吸收进 `H` 和 `F`。QP 求解器只看到 N 个标量变量及其简单的上下界——这正是它能在 1 ms 控制回路上跑得动的原因。
+
+#### 4. 构建一次 QP，反复求解
+
+QP 的**结构**（`H`、`F`、盒子约束）在仿真循环之前一次性构建——`H` 和 `F` 只依赖电机模型和代价权重，这些在运行中不变。每个时间步变化的是当前状态误差 `x₀_err`，它通过线性项 `(Fᵀ x₀_err)ᵀ U` 进入问题。
+
+这通过 cvxpy 中的**参数（Parameter）**来实现：
+
+```python
+x0_param = cp.Parameter(n)                 # 占位符：当前状态误差
+U = cp.Variable(N)                         # 我们要优化的 N 个控制输入
+
+prob = cp.Problem(
+    cp.Minimize(0.5 * cp.quad_form(U, H) + (F.T @ x0_param).T @ U),
+    [U >= -V_max, U <= V_max])
+```
+
+`Problem` 对象只构造一次。在每个 1 ms 时间步：
+
+```python
+x0_param.value = x0_err                    # 注入当前状态误差
+prob.solve(solver=cp.OSQP, warm_start=True, polish=False,
+           max_iter=400, eps_abs=1e-4, eps_rel=1e-4)
+u = float(U.value[0])                      # 只施加第一个控制量（滚动时域）
+```
+
+关键求解器选择及其对实时控制回路的意义：
+
+- **`solver=cp.OSQP`** — OSQP 是基于算子分裂（ADMM）的 QP 求解器。它对 MPC 很快，因为能利用冷凝问题的稀疏性，且热启动效果好。
+- **`warm_start=True`** — 用上一个时间步的解初始化求解器。由于状态仅变化了一个 1 ms 步长，上一轮的优化序列非常接近正确答案，通常能减少 80% 以上的迭代次数。
+- **`polish=False`** — 跳过最终的精细化求解步骤。在 1 ms 控制回路中，速度比高精度最优性更重要。
+- **`max_iter=400, eps_abs/eps_rel=1e-4`** — 限制迭代次数并设定收敛容差。这些参数针对 1 ms 周期调优：如果求解器在 400 次迭代内尚未收敛，当前最佳解已足够好。
+- 只有**第一个元素** `U.value[0]` 被施加到电机。序列的其余部分被丢弃，整个优化在下一个采样时间重新进行（滚动时域原理）。
+
+#### 总结图
+
+```
+每个 1 ms 步：
+  ┌─────────────┐     ┌─────────────────────┐      ┌──────────────┐
+  │ 测量状态     │ ──▶  │ 冷凝为 QP           │ ──▶  │ OSQP 求解     │
+  │ 误差 x₀     │      │ H、F 已预计算        │      │ min ½UᵀHU +   │
+  │             │     │ x₀ → 线性项          │      │ (Fᵀx₀)ᵀU     │
+  └─────────────┘     └─────────────────────┘      │ s.t. |u|≤V   │
+                                                   └──────┬───────┘
+                                                          │
+                                         只施加 u₀  ───────┘
+```
+
+与朴素饱和的关键区别：QP 在规划轨迹时*知道约束的存在*——`H` 和 `F` 编码了完整的动力学，因此求解器可以提前收敛电压以避免超调。朴素饱和却假设无限电压存在（从无约束 Riccati 方程计算增益），事后削足适履——这就是它会超调和振荡的根本原因。
 
 ## 交互式零点效应探索器
 
