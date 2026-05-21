@@ -1,0 +1,229 @@
+# Bellman to LQR: Dynamic Programming and the Riccati Recurrence
+
+**How a 1950s idea about "optimal remaining paths" leads directly to the core of LQR — and why the Riccati equation isn't pulled out of thin air.**
+
+---
+
+## 1. The problem we're trying to solve
+
+You have a system. At each time step $k$, it has a state $x_k$ (a vector). You apply a control $u_k$. The system evolves according to some known dynamics:
+
+$$x_{k+1} = f(x_k, u_k)$$
+
+You also have a cost function that accumulates over time. At each step you pay $\ell(x_k, u_k)$ (the "stage cost"), and at the final step $N$ you pay a terminal cost $V_f(x_N)$. Total cost:
+
+$$J = V_f(x_N) + \sum_{k=0}^{N-1} \ell(x_k, u_k)$$
+
+Your job: pick the sequence $u_0, u_1, \ldots, u_{N-1}$ that minimizes $J$.
+
+If you try to solve this by brute force — jointly optimizing over all $N$ control vectors at once — the problem grows combinatorially with the horizon. For a continuous state and control space, you're facing a high-dimensional nonlinear optimization. This is where Bellman comes in.
+
+---
+
+## 2. Bellman's principle of optimality
+
+Richard Bellman (1957) stated a deceptively simple idea:
+
+> **"An optimal policy has the property that whatever the initial state and initial decision are, the remaining decisions must constitute an optimal policy with regard to the state resulting from the first decision."**
+
+In plain English: **the tail of an optimal trajectory is itself optimal for the subproblem starting at that tail.**
+
+Why is this so powerful? It means you don't need to solve for all $u_0, \ldots, u_{N-1}$ simultaneously. You can solve **backwards in time**, one step at a time.
+
+Define the **value function** $V_k(x)$ as the minimum cost-to-go from state $x$ at time $k$:
+
+$$V_k(x) = \min_{u_k, \ldots, u_{N-1}} \left[ V_f(x_N) + \sum_{i=k}^{N-1} \ell(x_i, u_i) \right]$$
+
+Bellman's principle gives us a recurrence. At time $k$, the optimal choice of $u_k$ must balance:
+1. The immediate cost $\ell(x_k, u_k)$
+2. The optimal cost-to-go from wherever we land: $V_{k+1}(x_{k+1})$
+
+This is the **Bellman equation**:
+
+$$V_k(x) = \min_u \Big[ \ell(x, u) + V_{k+1}\big(f(x, u)\big) \Big]$$
+
+with boundary condition $V_N(x) = V_f(x)$.
+
+You start at the end ($k = N$) and march backwards. At each step you solve a **single-step** optimization over just $u$ — the future is already summarized by $V_{k+1}$. This is dynamic programming: break a multi-step problem into a sequence of single-step problems.
+
+### A concrete 1D example (to feel the recurrence)
+
+Suppose $x_{k+1} = x_k + u_k$ (simple integrator), with cost:
+
+$$J = x_N^2 + \sum_{k=0}^{N-1} (x_k^2 + u_k^2)$$
+
+Horizon $N = 3$. We solve backwards.
+
+**Step $k=3$ (terminal):** $V_3(x) = x^2$
+
+**Step $k=2$:**
+$$V_2(x) = \min_u \big[ x^2 + u^2 + V_3(x+u) \big] = \min_u \big[ x^2 + u^2 + (x+u)^2 \big]$$
+
+Take derivative w.r.t. $u$ and set to zero: $2u + 2(x+u) = 0 \Rightarrow u = -x/2$. Plug back:
+
+$$V_2(x) = x^2 + (x/2)^2 + (x - x/2)^2 = x^2 + x^2/4 + x^2/4 = \tfrac{3}{2}x^2$$
+
+**Step $k=1$:**
+$$V_1(x) = \min_u \big[ x^2 + u^2 + \tfrac{3}{2}(x+u)^2 \big]$$
+
+Derivative: $2u + 3(x+u) = 0 \Rightarrow u = -\tfrac{3}{5}x$. Then:
+
+$$V_1(x) = x^2 + \tfrac{9}{25}x^2 + \tfrac{3}{2}(\tfrac{2}{5}x)^2 = x^2\big(1 + \tfrac{9}{25} + \tfrac{6}{25}\big) = \tfrac{8}{5}x^2$$
+
+**Step $k=0$:**
+$$V_0(x) = \min_u \big[ x^2 + u^2 + \tfrac{8}{5}(x+u)^2 \big]$$
+
+Derivative: $2u + \tfrac{16}{5}(x+u) = 0 \Rightarrow u = -\tfrac{8}{13}x$.
+
+So the optimal policy at each step is a **linear feedback** $u_k = -K_k x_k$, with gains $K_0 = 8/13$, $K_1 = 3/5$, $K_2 = 1/2$. These are the **Riccati gains** — and we computed them by hand via backwards DP.
+
+---
+
+## 3. LQR: when the system is linear and the cost is quadratic
+
+Now specialize. Suppose the dynamics are **linear**:
+
+$$x_{k+1} = A x_k + B u_k$$
+
+and the cost is **quadratic**:
+
+$$J = x_N^T Q_f x_N + \sum_{k=0}^{N-1} \big( x_k^T Q x_k + u_k^T R u_k \big)$$
+
+where $Q \succeq 0$ (penalizes state error), $R \succ 0$ (penalizes control effort), and $Q_f \succeq 0$ (terminal cost).
+
+This is the **Linear Quadratic Regulator** (LQR) — finite horizon, discrete time.
+
+The magic of LQR is that the value function stays quadratic at every step. We make an **ansatz** (informed by the 1D example above):
+
+$$V_k(x) = x^T P_k x$$
+
+where $P_k$ is a symmetric positive-semidefinite matrix. Let's verify this ansatz holds and find the recurrence for $P_k$.
+
+Plug into the Bellman equation:
+
+$$x^T P_k x = \min_u \Big[ x^T Q x + u^T R u + (Ax + Bu)^T P_{k+1} (Ax + Bu) \Big]$$
+
+The term inside the brackets is quadratic in $u$. Expand the future cost part:
+
+$$(Ax + Bu)^T P_{k+1} (Ax + Bu) = x^T A^T P_{k+1} A x + 2 u^T B^T P_{k+1} A x + u^T B^T P_{k+1} B u$$
+
+So the total expression to minimize over $u$ is:
+
+$$u^T (R + B^T P_{k+1} B) u + 2 u^T B^T P_{k+1} A x + x^T (Q + A^T P_{k+1} A) x$$
+
+This is an unconstrained convex quadratic in $u$ (since $R \succ 0$ and $P_{k+1} \succeq 0$, the Hessian $R + B^T P_{k+1} B$ is positive definite). Set the gradient to zero:
+
+$$2(R + B^T P_{k+1} B) u + 2 B^T P_{k+1} A x = 0$$
+
+$$\Rightarrow u^* = -\underbrace{(R + B^T P_{k+1} B)^{-1} B^T P_{k+1} A}_{K_k} \; x$$
+
+This is a **linear state feedback** $u_k = -K_k x_k$, where the gain $K_k$ depends on $P_{k+1}$.
+
+Now substitute $u^*$ back to find $P_k$. After algebra (completing the square), we get:
+
+$$P_k = Q + A^T P_{k+1} A - A^T P_{k+1} B (R + B^T P_{k+1} B)^{-1} B^T P_{k+1} A$$
+
+This is the **discrete-time Riccati recurrence**. It propagates $P_k$ backwards from the terminal condition $P_N = Q_f$.
+
+### The complete algorithm (finite-horizon discrete-time LQR)
+
+```
+Given: A, B, Q, R, Qf, horizon N
+
+P_N = Qf
+for k = N-1, N-2, ..., 0:
+    K_k = (R + B^T P_{k+1} B)^{-1} B^T P_{k+1} A
+    P_k = Q + A^T P_{k+1} A - A^T P_{k+1} B K_k
+
+Optimal control: u_k = -K_k x_k
+Optimal cost:    J*(x_0) = x_0^T P_0 x_0
+```
+
+Each iteration does one $m \times m$ solve (where $m$ is the number of control inputs) and a few matrix multiplies. Total complexity: $O(N n^3)$ for an $n$-state system.
+
+---
+
+## 4. Steady-state: from recurrence to algebraic equation
+
+What happens as $N \to \infty$? If the system is stabilizable and detectable, $P_k$ converges to a steady-state matrix $P$ as we march backwards. The recurrence becomes:
+
+$$P = Q + A^T P A - A^T P B (R + B^T P B)^{-1} B^T P A$$
+
+This is the **Discrete-time Algebraic Riccati Equation** (DARE). The optimal feedback gain becomes constant:
+
+$$K = (R + B^T P B)^{-1} B^T P A$$
+
+and the infinite-horizon optimal control is simply $u_k = -K x_k$.
+
+In practice, you iterate the Riccati recurrence until $\|P_{k} - P_{k+1}\| < \epsilon$, then read off the steady-state $K$.
+
+---
+
+## 5. Continuous-time: how we get the CARE
+
+The continuous-time LQR problem minimizes:
+
+$$J = \int_0^\infty \big( x(t)^T Q x(t) + u(t)^T R u(t) \big) dt$$
+
+subject to $\dot{x} = A x + B u$.
+
+You can derive the continuous-time Riccati equation by taking the limit of the discrete recurrence as the sampling time $\Delta t \to 0$ (this is careful work — the discrete $A_d \approx I + A \Delta t$, $B_d \approx B \Delta t$, and terms of order $\Delta t^2$ drop out). The result is the **Continuous-time Algebraic Riccati Equation** (CARE):
+
+$$A^T P + P A - P B R^{-1} B^T P + Q = 0$$
+
+This is exactly the equation solved by the `solveCARE()` function in `lqr_explorer.html:719`. The optimal control is:
+
+$$u(t) = -K x(t), \qquad K = R^{-1} B^T P$$
+
+Compare with the discrete gain $K = (R + B^T P B)^{-1} B^T P A$. As $\Delta t \to 0$, the $B^T P B$ term becomes negligible relative to $R$, and $A$ in the feedback path disappears — the continuous limit is cleaner.
+
+### How `solveCARE` actually works (Newton-Kleinman)
+
+The code in `lqr_explorer.html` doesn't solve the CARE directly as a quadratic matrix equation. It uses **Newton-Kleinman iteration**, which is a Newton method applied to the Riccati equation:
+
+1. **Guess** an initial stabilizing $K_0$ (line 739–743 — scaled from a known-good set of gains).
+2. **Iterate:** given $K_i$, form the closed-loop matrix $A_{cl} = A - B K_i$.
+3. **Solve Lyapunov:** $A_{cl}^T P_{i+1} + P_{i+1} A_{cl} = -(Q + K_i^T R K_i)$ (line 779).
+4. **Update gain:** $K_{i+1} = R^{-1} B^T P_{i+1}$ (line 786–792).
+5. **Damp if needed:** if $K_{i+1}$ doesn't stabilize $A$, take a partial step (line 795–800).
+6. **Stop** when $\|K_{i+1} - K_i\| < 10^{-7}$.
+
+This converges quadratically once near the solution. The Lyapunov solve at each iteration uses either eigenvalue decomposition or Kronecker-product methods (code at line 480 onward).
+
+---
+
+## 6. Why this is beautiful
+
+The entire LQR edifice rests on three ideas, each building on the last:
+
+| Layer | Idea | Equation |
+|-------|------|----------|
+| **Bellman (1957)** | Optimal tail is optimal for the subproblem | $V_k = \min_u [\ell + V_{k+1}]$ |
+| **DP + Quadratic** | The value function stays quadratic | $V_k(x) = x^T P_k x$ |
+| **DP → Riccati** | Backwards recurrence for $P_k$ | $P_k = Q + A^T P_{k+1} A - (\ldots)$ |
+| **Steady-state → CARE** | As $N \to \infty$, $P$ satisfies an algebraic equation | $A^T P + P A - P B R^{-1} B^T P + Q = 0$ |
+
+Notice what's **not** here:
+- No discretization of a PDE (the Hamilton-Jacobi-Bellman equation stays tractable because the quadratic ansatz closes the loop).
+- No nonlinear optimization — the Bellman equation reduces to setting a gradient to zero because the cost is quadratic and the dynamics are linear.
+- No curse of dimensionality — the value function is represented by an $n \times n$ matrix $P$, not a grid over the state space.
+
+The price: LQR only works for linear dynamics and quadratic cost. That's the trade. But within that regime, it's exact, global, and computable in $O(n^3)$.
+
+---
+
+## 7. From LQR to the rest of this project
+
+The LQR explorer (`lqr_explorer.html`) solves the CARE for a 4th-order augmented motor model (3 motor states + 1 integrator for zero steady-state error — this is the "LQI" extension). The QP-MPC simulator (`servo_qp_mpc.html`) solves a finite-horizon constrained version: at each time step, it minimizes the same LQR cost over a horizon of $N$ steps, subject to voltage limits $u_{\min} \leq u_k \leq u_{\max}$, using a coordinate-descent QP solver. Without constraints, the QP-MPC solution at the first step is **identical** to the LQR solution — because the Bellman principle with quadratic cost yields the same linear feedback whether you solve the Riccati equation once or optimize a finite horizon online.
+
+The unified thread through all three controllers (PID, LQR, QP-MPC) is this: **you're always solving an optimization problem.** PID does it implicitly through gain tuning. LQR does it explicitly but unconstrained, via one Riccati solve. QP-MPC does it explicitly and constrained, via online quadratic programming. Bellman's principle is what makes the last two tractable.
+
+---
+
+## 8. Further reading
+
+- **Bellman, R. (1957).** *Dynamic Programming.* Princeton University Press. — The original. Chapter 1 alone is worth reading for Bellman's intuition.
+- **Bertsekas, D.P. (2012).** *Dynamic Programming and Optimal Control, Vol. I.* Athena Scientific. — Rigorous treatment; Chapters 1 and 4 cover DP and LQR in depth.
+- **Anderson, B.D.O. & Moore, J.B. (1990).** *Optimal Control: Linear Quadratic Methods.* Prentice-Hall. — The definitive LQR reference.
+- **Boyd, S.** *EE363: Linear Dynamical Systems* (Stanford course notes). — Excellent lecture notes connecting DP, LQR, and Riccati.
+- Try the 1D example in Section 2 by hand with different $N$ — watching $K_k$ converge to the steady-state gain builds intuition that no amount of reading can replace.
