@@ -25,7 +25,7 @@ Interactive simulators tracing the evolution of feedback control — from classi
 | `zero_effect_video_script.md` | English video script on zero effects (7 scenes) |
 | `zero_effect_video_script_cn.md` | Chinese video script on zero effects for Bilibili |
 | `zero_effect_demo.py` | Python script generating 3 pole-zero/step-response figures (`control` + `matplotlib`) |
-| `servo_qp_mpc.py` | **New** — Python QP-MPC demo: LQR vs naive saturation vs constrained QP on a DC servo (`numpy scipy cvxpy matplotlib`) |
+| `servo_qp_mpc.py` | **New** — Python QP-MPC demo: LQR vs naive saturation vs constrained QP on a DC servo, with OSQP vs DAQP solver speed comparison (`numpy scipy cvxpy daqp matplotlib`) |
 | `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
 | `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版，50分钟播客，反馈控制的250年演化史 |
 
@@ -42,7 +42,7 @@ pip install control matplotlib
 python3 zero_effect_demo.py
 
 # servo_qp_mpc.py — QP-MPC constrained servo demo
-pip install numpy scipy cvxpy matplotlib
+pip install numpy scipy cvxpy daqp matplotlib
 python3 servo_qp_mpc.py
 ```
 
@@ -493,6 +493,28 @@ At each 1 ms step:
 ```
 
 The crucial distinction from naive saturation: the QP *knows about the constraints* when planning its trajectory — `H` and `F` encode the full dynamics, so the solver can pre-emptively back off the voltage to avoid overshoot. Naive saturation plans as if unlimited voltage exists (calculating gains from the unconstrained Riccati equation), then post-hoc clips — which is why it overshoots and oscillates.
+
+#### 5. Solver speed comparison: OSQP vs DAQP
+
+The condensed QP has only `N` variables with simple box bounds — but solving it in under 1 ms requires a fast solver. `servo_qp_mpc.py` now benchmarks two solvers on the same problem (12 vars, 1500 solves, 1 ms time steps):
+
+| Solver | Mean [µs] | Median [µs] | Max [µs] | Total [ms] |
+|--------|-----------|-------------|----------|------------|
+| OSQP (via cvxpy) | 409 | 391 | 7635 | 614 |
+| DAQP (direct C API) | 3.9 | 3.5 | 69 | 5.8 |
+
+**DAQP is ~105× faster per solve.** The gap has two causes:
+
+- **cvxpy modelling overhead** — cvxpy compiles the symbolic `Problem` into solver-standard form on every call, even with the `Parameter` already set. This overhead dominates OSQP's actual solve time on small problems.
+- **DAQP's dual active-set method** — DAQP exploits the problem's small size (12 vars) and simple structure (box constraints only) directly through its C API. Active-set methods often outperform operator-splitting (ADMM) methods like OSQP on small, dense QPs because they converge in far fewer iterations.
+
+For this toy problem either solver easily meets the 1 ms deadline. But the difference matters for:
+
+- **Larger horizons** — the condensed `H` matrix grows as N×N, so the QP becomes denser and harder
+- **Faster control loops** — 100 kHz motor drives, power electronics, where the control period is 10–100 µs
+- **Embedded deployment** — cvxpy requires Python; C-native solvers like DAQP compile onto microcontrollers and DSPs
+
+`servo_qp_mpc.py` prints the full benchmark table at the end of each run.
 
 ## The interactive zero-effect explorer
 

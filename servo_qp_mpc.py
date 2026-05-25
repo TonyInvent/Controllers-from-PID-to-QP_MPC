@@ -22,10 +22,12 @@ This directly illustrates the README's central argument:
 Usage:   .venv/bin/python3 servo_qp_mpc.py
 """
 
+import time
 import numpy as np
 from scipy.linalg import solve_discrete_are as dare
 from matplotlib import pyplot as plt
 import cvxpy as cp
+import daqp
 
 # ═══════════════════════════════════════════════════════════════════
 # 1. Motor model — 2nd-order DC servo (θ, ω)
@@ -137,23 +139,86 @@ def run_qp_mpc():
 
     x = np.zeros(2)
     h = dict(t=[], pos=[], volt=[])
+    solve_times = []
     for k in range(n_steps):
         rk = ref[k];  xref = np.array([rk, 0.0])
         x0_err = x - xref              # state error for regulation
 
         x0_param.value = x0_err
+        t0 = time.perf_counter()
         prob.solve(solver=cp.OSQP, warm_start=True, polish=False,
                    max_iter=400, eps_abs=1e-4, eps_rel=1e-4)
+        dt = time.perf_counter() - t0
+        solve_times.append(dt)
         u = float(U.value[0]) if U.value is not None else 0.0
         u = np.clip(u, -V_max, V_max)
 
         x = Ad @ x + Bd.flatten() * u
         h['t'].append(k*Ts); h['pos'].append(x[0]); h['volt'].append(u)
-    return h
+    return h, solve_times
+
+# ——— D. QP-MPC with DAQP ———
+def run_qp_mpc_daqp():
+    N = 12
+
+    # Same condensed matrices as OSQP version
+    A_aug = np.vstack([np.linalg.matrix_power(Ad, k+1) for k in range(N)])
+    B_aug = np.zeros((N*n, N*m))
+    for row in range(N):
+        for col in range(row + 1):
+            B_aug[row*n:(row+1)*n, col] = (
+                np.linalg.matrix_power(Ad, row-col) @ Bd).flatten()
+
+    Qbar = np.kron(np.eye(N), Q_lqr)
+    Qbar[-n:, -n:] = P_lqr
+    Rbar = np.kron(np.eye(N), R_lqr)
+
+    H = B_aug.T @ Qbar @ B_aug + Rbar
+    H = 0.5 * (H + H.T)
+    F = A_aug.T @ Qbar @ B_aug       # (n, N) — maps x0 into linear cost term
+
+    # DAQP constraint: box bounds on all N variables
+    A_daqp = np.eye(N)
+    blower = -V_max * np.ones(N)
+    bupper =  V_max * np.ones(N)
+
+    x = np.zeros(2)
+    h = dict(t=[], pos=[], volt=[])
+    solve_times = []
+    primal_start = None
+    dual_start = None
+
+    for k in range(n_steps):
+        rk = ref[k];  xref = np.array([rk, 0.0])
+        x0_err = x - xref
+        f = F.T @ x0_err              # linear cost vector (N,)
+
+        t0 = time.perf_counter()
+        U_opt, _fval, exitflag, info = daqp.solve(
+            H, f, A_daqp, bupper, blower,
+            primal_start=primal_start,
+            dual_start=dual_start,
+            iter_limit=400)
+        dt = time.perf_counter() - t0
+        solve_times.append(dt)
+
+        if exitflag == 1:
+            u = float(U_opt[0])
+            primal_start = U_opt
+            dual_start = info.get('lam', None)
+        else:
+            u = 0.0
+
+        u = np.clip(u, -V_max, V_max)
+        x = Ad @ x + Bd.flatten() * u
+        h['t'].append(k*Ts); h['pos'].append(x[0]); h['volt'].append(u)
+
+    return h, solve_times
 
 h_lqr   = run_lqr()
 h_naive = run_naive()
-h_mpc   = run_qp_mpc()
+h_mpc,   t_osqp = run_qp_mpc()
+h_mpc_d, t_daqp = run_qp_mpc_daqp()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -167,16 +232,19 @@ t = h_lqr['t']
 ax_pos.plot(t, ref,           'k--', alpha=0.25, lw=1, label='reference (2 rad)')
 ax_pos.plot(t, h_lqr['pos'],  '#f0883e', lw=1.2, label='LQR (unconstrained)')
 ax_pos.plot(t, h_naive['pos'],'#f85149', lw=1.5, label='naive sat. — clip LQR')
-ax_pos.plot(t, h_mpc['pos'],  '#00bcd4', lw=2.0, label='QP-MPC — constrained QP')
+ax_pos.plot(t, h_mpc['pos'],   '#00bcd4', lw=2.0, label='QP-MPC (OSQP)')
+ax_pos.plot(t, h_mpc_d['pos'], '#7c4dff', lw=1.2, ls='--',
+            label='QP-MPC (DAQP)')
 ax_pos.set_ylabel('θ [rad]')
-ax_pos.legend(fontsize=8, loc='lower right')
+ax_pos.legend(fontsize=7.5, loc='lower right', ncol=2)
 ax_pos.grid(True, alpha=0.15)
 ax_pos.set_ylim(-0.3, target * 1.4)
 
 # Voltage
 ax_volt.plot(t, h_lqr['volt'],  '#f0883e', lw=1.0)
 ax_volt.plot(t, h_naive['volt'],'#f85149', lw=1.5)
-ax_volt.plot(t, h_mpc['volt'],  '#00bcd4', lw=2.0)
+ax_volt.plot(t, h_mpc['volt'],   '#00bcd4', lw=2.0)
+ax_volt.plot(t, h_mpc_d['volt'], '#7c4dff', lw=1.0, ls='--')
 ax_volt.axhline(+V_max, color='red',  alpha=0.25, ls='--', lw=1)
 ax_volt.axhline(-V_max, color='red',  alpha=0.25, ls='--', lw=1)
 ax_volt.set_ylabel('V [V]')
@@ -184,8 +252,8 @@ ax_volt.set_xlabel('time [s]')
 ax_volt.grid(True, alpha=0.15)
 
 ax_pos.set_title(
-    f'LQR servo — {target:.0f} rad step, ±{V_max:.0f} V limit  |  '
-    f'K=[{K_lqr[0,0]:.0f}, {K_lqr[0,1]:.2f}]  |  N={12}',
+    f'QP-MPC servo — {target:.0f} rad step, ±{V_max:.0f} V limit  |  '
+    f'K=[{K_lqr[0,0]:.0f}, {K_lqr[0,1]:.2f}]  |  N=12  |  OSQP vs DAQP',
     fontweight='bold')
 
 fig.tight_layout(pad=1.0)
@@ -215,7 +283,8 @@ def metrics(h, name):
 
 rows = [metrics(h_lqr, 'LQR (unconstrained)'),
         metrics(h_naive, 'naive saturation'),
-        metrics(h_mpc, 'QP-MPC')]
+        metrics(h_mpc, 'QP-MPC (OSQP)'),
+        metrics(h_mpc_d, 'QP-MPC (DAQP)')]
 
 print(f"\n{'':>22} {'rise [ms]':>10} {'overshoot':>10} {'peak |V|':>10} {'oscill.':>8}")
 for name, t90, ovs, peak, n_cross in rows:
@@ -225,5 +294,27 @@ print(f"\nKey takeaway:")
 print(f"  • LQR demands {rows[0][3]:.0f} V — completely unrealistic")
 print(f"  • Naive saturation clips to ±{V_max:.0f} V but overshoots {rows[1][2]:.1f}% "
       f"(controller doesn't know it's saturated)")
-print(f"  • QP-MPC pre-emptively backs off → only {rows[2][2]:.1f}% overshoot")
+print(f"  • QP-MPC (OSQP) pre-emptively backs off → only {rows[2][2]:.1f}% overshoot")
 print(f"  • The voltage PROFILE is structurally different — not just clipped")
+
+# ——— Solver speed comparison ———
+
+if t_osqp and t_daqp:
+    t_osqp = np.array(t_osqp) * 1e6
+    t_daqp = np.array(t_daqp) * 1e6
+    n_osqp = len(t_osqp)
+    n_daqp = len(t_daqp)
+    print(f"\n{'—'*50}")
+    print(f"QP solver speed comparison  ({n_osqp} solves each, Ts={Ts*1e3:.0f} ms, N=12)")
+    print(f"{'—'*50}")
+    print(f"{'':>18} {'mean [µs]':>10} {'median [µs]':>10} {'max [µs]':>10} {'total [ms]':>10}")
+    print(f"{'OSQP':>18} {np.mean(t_osqp):10.1f} {np.median(t_osqp):10.1f} "
+          f"{np.max(t_osqp):10.1f} {np.sum(t_osqp)/1e3:10.2f}")
+    print(f"{'DAQP':>18} {np.mean(t_daqp):10.1f} {np.median(t_daqp):10.1f} "
+          f"{np.max(t_daqp):10.1f} {np.sum(t_daqp)/1e3:10.2f}")
+    ratio = np.mean(t_daqp) / np.mean(t_osqp) if np.mean(t_osqp) > 0 else float('inf')
+    faster = "OSQP" if ratio > 1 else "DAQP"
+    r = ratio if ratio > 1 else 1/ratio
+    print(f"\n  → {faster} is {r:.1f}× faster on average")
+    print(f"  → OSQP overhead includes cvxpy problem-compilation step")
+    print(f"  → DAQP uses direct C API (no modelling layer)")
