@@ -142,20 +142,38 @@ The tradeoff is a larger but sparser problem. The NLP is solved by SQP or interi
 
 DDP (Jacobson & Mayne, 1970) and its simplified variant iLQR (Tassa et al., 2014) are trajectory optimization methods that do backwards Riccati-like passes on the nonlinear dynamics, linearized around the current trajectory:
 
-```
-Repeat (backwards pass):
-  Simulate current control sequence through f → (x̄_0,...,x̄_N)
-  Linearize f, quadratize cost around (x̄_i, ū_i):
-    f(x,u) ≈ A_i δx + B_i δu
-    ℓ(δx,δu) ≈ ½δx^T Q_i δx + δx^T S_i δu + ½δu^T R_i δu + q_i^T δx + r_i^T δu
-  Backwards Riccati recursion:
-    K_i = (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T V_{i+1} A_i + S_i^T)
-    k_i = (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T v_{i+1} + r_i)
-    V_i = Q_i + A_i^T V_{i+1} A_i - K_i^T (R_i + B_i^T V_{i+1} B_i) K_i
-    v_i = q_i + A_i^T v_{i+1} - K_i^T (R_i + B_i^T V_{i+1} B_i) k_i
-  Forwards pass:  δu_i = -K_i δx_i - k_i  (feedback + feedforward)
-  Line search on the feedforward gains k_i
-```
+**Repeat until convergence:**
+
+1. **Simulate** the current control sequence through $f$ to get a nominal trajectory $(\bar{x}_0, \ldots, \bar{x}_N)$, $(\bar{u}_0, \ldots, \bar{u}_{N-1})$.
+
+2. **Linearize** dynamics and **quadratize** cost around each $(\bar{x}_i, \bar{u}_i)$. With $\delta x = x - \bar{x}_i$ and $\delta u = u - \bar{u}_i$:
+
+$$\begin{aligned}
+f(x, u) &\approx \bar{x}_{i+1} + A_i \,\delta x + B_i \,\delta u \\[4pt]
+\ell(x, u) &\approx \ell_i + q_i^T \delta x + r_i^T \delta u
+               + \tfrac{1}{2}\delta x^T Q_i \,\delta x
+               + \delta x^T S_i \,\delta u
+               + \tfrac{1}{2}\delta u^T R_i \,\delta u
+\end{aligned}$$
+
+where $A_i = \frac{\partial f}{\partial x}$, $B_i = \frac{\partial f}{\partial u}$ evaluated at $(\bar{x}_i, \bar{u}_i)$, and $Q_i, S_i, R_i, q_i, r_i$ are the Taylor coefficients of the cost.
+
+3. **Backwards Riccati recursion** — march $i = N-1, \ldots, 0$:
+
+$$\boxed{\begin{aligned}
+K_i &= (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T V_{i+1} A_i + S_i^T) \\[4pt]
+k_i &= (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T v_{i+1} + r_i) \\[4pt]
+V_i &= Q_i + A_i^T V_{i+1} A_i - K_i^T (R_i + B_i^T V_{i+1} B_i) K_i \\[4pt]
+v_i &= q_i + A_i^T v_{i+1} - K_i^T (R_i + B_i^T V_{i+1} B_i) k_i
+\end{aligned}}$$
+
+with terminal conditions $V_N = Q_f$ and $v_N = q_f$ from the terminal cost.
+
+4. **Forwards pass** — march $i = 0, \ldots, N-1$ with a line-search parameter $\alpha \in (0, 1]$:
+
+$$\delta u_i = -K_i \,\delta x_i - \alpha\,k_i, \qquad \delta x_{i+1} = A_i \,\delta x_i + B_i \,\delta u_i$$
+
+The feedback gain $K_i$ corrects deviations. The feedforward $k_i$ shifts the trajectory toward the optimum. The line search on $\alpha$ ensures monotonic cost reduction.
 
 This is the *nonlinear generalization of the Riccati recursion.* At each iteration, DDP computes a locally-optimal feedback policy $\delta u = -K \delta x - k$ around the current nominal trajectory, where $k_i$ is the feedforward improvement and $K_i$ is the feedback gain. A line search in the forwards pass ensures monotonic cost reduction.
 
