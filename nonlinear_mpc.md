@@ -1,0 +1,327 @@
+# Beyond Linearity: Nonlinear Model Predictive Control
+
+**Everything so far assumed $x_{k+1} = A x_k + B u_k$. That assumption bought us a lot — closed-form Riccati solutions, convex QPs, guaranteed global optimality. Reality is nonlinear. This is a tour of what changes, what breaks, and how the field has responded.**
+
+---
+
+## 1. Why linearity was a crutch
+
+The entire edifice of LQR and linear MPC rests on one property: the dynamics are affine, and the cost is quadratic. Together they give you:
+
+1. **The cost remains quadratic after condensing.** The value function stays quadratic at every step of Bellman's recursion. This is what makes the Riccati equation work.
+
+2. **The QP is convex.** $H \succeq 0$ is guaranteed. Any local minimum is global. The solver cannot get stuck.
+
+3. **$H$ is independent of the state.** You factorize it once and reuse it forever. The online computation is just a matrix-vector multiply per time step plus a QP solve with fixed Hessian.
+
+All three collapse when $x_{k+1} = f(x_k, u_k)$ with nonlinear $f$.
+
+---
+
+## 2. What breaks
+
+### 2.1 The cost is no longer quadratic in $U$
+
+With linear dynamics, condensing produced $J = \frac{1}{2} U^T H U + (F^T x_0)^T U + \text{const}$. With nonlinear dynamics $x_{k+1} = f(x_k, u_k)$, the state trajectory becomes a nonlinear function of $U$:
+
+$$x_k = \underbrace{f(f(\ldots f(x_0, u_0), u_1), \ldots, u_{k-1})}_{\text{nonlinear in } u_0, \ldots, u_{k-1}}$$
+
+When you substitute this into a quadratic stage cost $\ell(x_k, u_k) = x_k^T Q x_k + u_k^T R u_k$, the result is a general non-convex function of $U$. No condensing trick can make it quadratic. No Riccati recursion can decompose it.
+
+### 2.2 The optimization is non-convex
+
+The Hessian of $J(U)$ is no longer constant. It depends on $U$ through the linearization of $f$. A QP solver, which assumes a fixed positive-definite Hessian, is not directly applicable.
+
+You can still *approximate* the Hessian. That's what SQP does (Section 4). But the approximation introduces error, and convergence is no longer one-shot.
+
+### 2.3 $H$ depends on the trajectory
+
+In linear MPC, $H = 2(\mathcal{B}^T \bar{Q} \mathcal{B} + \bar{R})$ is computed once from $A$ and $B$. In nonlinear MPC, the equivalent of $A$ and $B$ — the Jacobians $\frac{\partial f}{\partial x}$ and $\frac{\partial f}{\partial u}$ — are evaluated at the current guess of the state and control trajectory. As the solver iterates, the linearization point moves, and the effective $H$ changes. Pre-factorization is no longer a one-time cost — it's paid at every SQP iteration, or at best once per MPC time step if you do single-shooting RTI.
+
+### 2.4 The principle of optimality still holds, but...
+
+Bellman's principle is general — it works for any dynamics and any cost. The dynamic programming equation:
+
+$$V_k(x) = \min_u \big[ \ell(x, u) + V_{k+1}(f(x, u)) \big]$$
+
+is valid for nonlinear $f$. The problem is that $V_k(x)$ is no longer quadratic. It's a general nonlinear function on $\mathbb{R}^n$, and representing it exactly requires an infinite amount of information. This is the **curse of dimensionality** — the reason Bellman himself coined the term.
+
+So yes, the principle holds. But computing $V_k(x)$ in closed form is impossible for nonlinear systems. You either approximate it (DDP, iLQR) or avoid computing it altogether and solve the full NLP directly (multiple shooting).
+
+---
+
+## 3. The hierarchy of approaches
+
+There are roughly four levels of ambition in handling nonlinearity, trading off online computation against accuracy.
+
+### 3.1 Level 1: Single linearization per step (LTV-MPC)
+
+**The simplest thing that sometimes works.**
+
+At each time step, linearize $f(x, u)$ once around the current state $x_k$ and the shifted previous control sequence:
+
+$$x_{i+1} \approx f(\bar{x}_i, \bar{u}_i) + \underbrace{\frac{\partial f}{\partial x}\bigg|_{\bar{x}_i, \bar{u}_i}}_{A_i} (x_i - \bar{x}_i) + \underbrace{\frac{\partial f}{\partial u}\bigg|_{\bar{x}_i, \bar{u}_i}}_{B_i} (u_i - \bar{u}_i) + \underbrace{f(\bar{x}_i, \bar{u}_i) - A_i \bar{x}_i - B_i \bar{u}_i}_{d_i,\ \text{affine offset}}$$
+
+This is an LTV (linear time-varying) system: $x_{i+1} = A_i x_i + B_i u_i + d_i$. The affine offset $d_i$ captures the nonlinearity not explained by the linear terms at the linearization point.
+
+You then condense this LTV system into a QP — same structure as the linear case, but $A$ and $B$ change at each time step. The Hessian $H$ must be re-formed (not just re-factored) at each time step because the prediction matrices $\mathcal{A}$ and $\mathcal{B}$ depend on the time-varying $A_i, B_i$.
+
+```
+Each MPC step (single-linearization):
+  1. Shift previous solution: (u_0,...,u_{N-1}) → (u_1,...,u_{N-1}, u_{N-1})
+  2. Simulate the shifted sequence through f to get (x̄_0,...,x̄_N)
+  3. Linearize f around (x̄_i, ū_i) → A_i, B_i, d_i
+  4. Condense the LTV system → H, F, g
+  5. Solve QP → U*
+  6. Apply u*_0
+```
+
+**When it works:** Smooth nonlinearities, slow dynamics, high control frequency relative to the system bandwidth. The MPC's re-planning at each step compensates for linearization error.
+
+**When it fails:** Strong nonlinearities that cause the linearized model to be a poor predictor even one step ahead. A quadrotor at hover linearizes fine. A quadrotor doing a flip does not.
+
+### 3.2 Level 2: Sequential Quadratic Programming (SQP)
+
+**Iterate the linearization within the same time step.**
+
+Instead of linearizing once, you solve a sequence of QPs, each using the previous QP's solution as the new linearization point:
+
+```
+Within one MPC time step:
+  Initialize (X̄, Ū) from previous step's solution, shifted
+  Repeat:
+    Simulate: X̄ ← f(x_k, Ū)
+    Linearize f around (X̄, Ū) → A_i, B_i, d_i
+    Build QP for ΔU:  min ½ΔU^T H ΔU + g^T ΔU   s.t. constraints
+    Solve for ΔU
+    Update: Ū ← Ū + α·ΔU       (α from line search or trust region)
+    Compute continuity gap: ||X̄_next - f(X̄, Ū)||
+  Until gap < ε and ||ΔU|| < ε
+  Apply Ū[0]
+```
+
+Each QP subproblem has the same structure as linear MPC — $H$ is block-structured, constraints are linear. But $A_i, B_i$ change at each iteration, so $H$ changes. This is the workhorse of general nonlinear optimization (SQP underlies SNOPT, acados, and most production NLP solvers).
+
+SQP converges quadratically near the solution when exact Hessians are used, and superlinearly with good approximations (BFGS updates).
+
+**The Real-Time Iteration (RTI)** is the practical compromise: do exactly *one* SQP iteration per MPC time step. The idea, due to Diehl et al. (2002), is that the optimizer "tracks" the true optimum across successive time steps rather than converging fully within each step. As $x_k$ changes by a small amount between steps, the previous optimal trajectory is an excellent warm-start, and one SQP iteration keeps you close to optimality. This is what makes nonlinear MPC feasible at 50–200 Hz on embedded hardware for autonomous driving and drones.
+
+### 3.3 Level 3: Direct Multiple Shooting
+
+**Make the state trajectory an explicit decision variable.**
+
+Instead of condensing (eliminating states and optimizing only over $U$), multiple shooting keeps both the states $x_1, \ldots, x_N$ and controls $u_0, \ldots, u_{N-1}$ as decision variables, and enforces dynamics as equality constraints:
+
+$$\begin{aligned}
+\min_{x_1,\ldots,x_N, u_0,\ldots,u_{N-1}} \quad & \sum_{k=0}^{N-1} \ell(x_k, u_k) + V_f(x_N) \\
+\text{s.t.} \quad & x_{k+1} = \Phi(x_k, u_k) \quad k = 0, \ldots, N-1 \quad \text{(continuity)} \\
+& x_0 = \hat{x} \quad \text{(initial state)} \\
+& g(x_k, u_k) \leq 0 \quad \text{(path constraints)} \\
+& h(x_N) \leq 0 \quad \text{(terminal constraints)}
+\end{aligned}$$
+
+where $\Phi$ is a numerical integrator (RK4, say) that propagates the continuous-time dynamics $\dot{x} = f_c(x, u)$ over one sampling interval.
+
+The continuity constraints ensure the optimizer finds a dynamically consistent trajectory. At convergence, the integrated dynamics match the decision-variable states. During optimization, the gap is non-zero — this is the "shooting" gap that the optimizer drives to zero.
+
+**Why this is better than condensing for nonlinear systems:**
+
+1. **The NLP has exploitable sparsity.** Each continuity constraint $x_{k+1} - \Phi(x_k, u_k) = 0$ couples only $(x_k, u_k, x_{k+1})$. The KKT matrix is banded. Specialized solvers (acados, Forces Pro) exploit this for $O(N)$ complexity in the horizon length, compared to $O(N^3)$ for condensing.
+
+2. **Better numerical conditioning.** The decision variables $(x_k, u_k)$ have physical meaning. The Hessian doesn't blow up for long horizons the way a condensed Hessian can.
+
+3. **Initialization is more flexible.** You can initialize the state trajectory from a previous simulation or a coarse plan, giving the solver a much better starting point than guessing $U$.
+
+4. **Path constraints on states are natural.** They become simple bounds or inequalities on the decision variables $x_k$.
+
+The tradeoff is a larger but sparser problem. The NLP is solved by SQP or interior-point methods, with the sparsity pattern exploited in the linear algebra.
+
+### 3.4 Level 4: Differential Dynamic Programming (DDP) / iLQR
+
+**Apply Bellman directly to the nonlinear problem, with local quadratic approximations.**
+
+DDP (Jacobson & Mayne, 1970) and its simplified variant iLQR (Tassa et al., 2014) are trajectory optimization methods that do backwards Riccati-like passes on the nonlinear dynamics, linearized around the current trajectory:
+
+```
+Repeat (backwards pass):
+  Simulate current control sequence through f → (x̄_0,...,x̄_N)
+  Linearize f, quadratize cost around (x̄_i, ū_i):
+    f(x,u) ≈ A_i δx + B_i δu
+    ℓ(δx,δu) ≈ ½δx^T Q_i δx + δx^T S_i δu + ½δu^T R_i δu + q_i^T δx + r_i^T δu
+  Backwards Riccati recursion:
+    K_i = (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T V_{i+1} A_i + S_i^T)
+    k_i = (R_i + B_i^T V_{i+1} B_i)^{-1} (B_i^T v_{i+1} + r_i)
+    V_i = Q_i + A_i^T V_{i+1} A_i - K_i^T (R_i + B_i^T V_{i+1} B_i) K_i
+    v_i = q_i + A_i^T v_{i+1} - K_i^T (R_i + B_i^T V_{i+1} B_i) k_i
+  Forwards pass:  δu_i = -K_i δx_i - k_i  (feedback + feedforward)
+  Line search on the feedforward gains k_i
+```
+
+This is the *nonlinear generalization of the Riccati recursion.* At each iteration, DDP computes a locally-optimal feedback policy $\delta u = -K \delta x - k$ around the current nominal trajectory, where $k_i$ is the feedforward improvement and $K_i$ is the feedback gain. A line search in the forwards pass ensures monotonic cost reduction.
+
+**Key properties:**
+- **Linear in the horizon.** The backwards pass is $O(N)$ — far cheaper than solving an $N m \times N m$ condensed QP.
+- **No explicit QP solver needed.** The Riccati recursion replaces it.
+- **Handles constraints poorly.** DDP/iLQR is fundamentally unconstrained (like LQR). Box constraints on controls can be handled by clamping in the forwards pass, but this breaks the Riccati optimality guarantees. General inequality constraints require an augmented Lagrangian or barrier extension.
+- **Local convergence.** Like Newton's method, DDP converges quadratically near the optimum but can diverge from poor initializations.
+
+DDP and its variants (iLQR, SLQ, FDDP) are widely used in robotics for trajectory optimization — walking robots, manipulation, autonomous driving. Their strength is speed and the natural feedback policy they produce. Their weakness is constraint handling, which is why constrained variants (box-DDP, control-limited DDP) are active research areas.
+
+#### Crocoddyl: DDP in practice
+
+[Crocoddyl](https://github.com/loco-3d/crocoddyl) (Control-RObot-COntrol via Differential DYnamic Library) is an open-source C++ library with Python bindings, developed by the LAAS-CNRS and Inria robotics groups. It implements DDP, FDDP (Feasibility-driven DDP), and multiple-shooting DDP — all built on top of the rigid-body dynamics library [Pinocchio](https://github.com/stack-of-tasks/pinocchio).
+
+The name is a play on "crocodile" (DDP → crocodile → crocoddyl), because DDP is to trajectory optimization what a crocodile is to a swamp: ancient, efficient, and still the apex predator after 50 years.
+
+**A concrete scenario — quadruped trotting:**
+
+A 12-DOF quadruped robot (e.g., Solo, ANYmal) needs to trot at 1 m/s. You specify:
+
+- A contact schedule: which feet are on the ground at which times (e.g., a 4-phase crawl or 2-phase trot).
+- Contact constraints: when foot $i$ is in contact, its velocity is zero and it stays within a friction cone.
+- A cost: track a desired CoM velocity, keep the torso upright, minimize joint torques and contact forces.
+
+Crocoddyl models this as a sequence of constrained optimal control problems — one per gait phase — each solved by DDP with the contact forces as part of the control vector. A typical setup:
+
+```python
+import crocoddyl
+import pinocchio
+
+# Build the robot model from URDF
+model = pinocchio.buildModelFromUrdf("solo.urdf")
+state = crocoddyl.StateMultibody(model)
+actuation = crocoddyl.ActuationModelFull(state)
+
+# Running cost: track desired velocity + regularize torques
+running_model = crocoddyl.IntegratedActionModelEuler(
+    crocoddyl.DifferentialActionModelFreeFwdDynamics(
+        state, actuation,
+        crocoddyl.CostModelSum(state, actuation)))
+running_model.differential.costs.add(
+    "velTrack", crocoddyl.CostModelResidual(
+        state, crocoddyl.ResidualModelFrameVelocity(...)), weight=10)
+running_model.differential.costs.add(
+    "torqueReg", crocoddyl.CostModelResidual(
+        state, crocoddyl.ResidualModelControl(state)), weight=0.01)
+
+# Stack N shooting nodes → the OCP
+problem = crocoddyl.ShootingProblem(x0, [running_model]*N, running_model)
+
+# FDDP solver: feasibility-driven DDP (handles infeasible warm-starts)
+solver = crocoddyl.SolverFDDP(problem)
+solver.solve([x0]*N, [np.zeros(12)]*N)  # warm-start from standing
+```
+
+Each FDDP iteration does one backwards Riccati pass (the $O(N)$ recursion from Section 3.4) followed by a forwards line search that ensures the dynamics are satisfied — the "feasibility-driven" part means it won't produce a trajectory that violates the contact constraints even at early iterations. A typical solve takes 5–20 iterations for a 50-node horizon, running at replanning rates of 50–100 Hz on a modern laptop CPU.
+
+The output is a torque feedforward trajectory plus a time-varying feedback gain $K_k$ for each node — exactly the $u_k = u^{\text{ff}}_k - K_k (x_k - \bar{x}_k)$ structure from trajectory tracking. The robot executes the first torque command, re-measures its state, shifts the trajectory, and re-solves. This is MPC with a DDP engine instead of a QP engine.
+
+**Why DDP for legged robots rather than multiple shooting?** Legged robots are underactuated, make and break contact, and have short flight phases where you need a solution fast. DDP's backwards passes are $O(N)$ with no matrix factorization of size $N$, which matters when you have 12 states and a 50-node horizon at 100 Hz. Multiple shooting with a general NLP solver would be 10–100× slower per iteration on the same problem.
+
+The library is production-grade: it has been used to control the Solo quadruped, the Talos humanoid, and the Tiago mobile manipulator in real-time experiments. If you want to see DDP-based nonlinear MPC running on real hardware, Crocoddyl is the reference implementation.
+
+#### The shift: why RL is displacing DDP/MPC for humanoid locomotion
+
+Despite the mathematical elegance of DDP-based MPC, if you look at what powers the current generation of humanoid robots in 2025–2026 — Unitree H1, Tesla Optimus, Figure 02, Boston Dynamics Atlas (the electric one) — the control stack is not DDP. It's a learned policy from a neural network, typically trained in simulation with reinforcement learning (RL) and deployed zero-shot on hardware via domain randomization.
+
+This is a genuine regime change, and it's worth understanding why it happened.
+
+**1. DDP requires an explicit contact schedule; RL discovers contact timing.**
+
+DDP needs you to specify *when* each foot is in contact. For a quadruped trotting, this is easy — four phases, fixed timing. For a humanoid walking on uneven terrain, pushing a cart, or recovering from a shove, the contact sequence is part of the solution, not part of the input. DDP can handle variable contact timing through complementarity constraints or mixed-integer formulations, but these turn the smooth OCP into a combinatorial one. RL doesn't care — the policy learns contact implicitly through trial and error in simulation, with no explicit mode enumeration.
+
+**2. The model gap is real, and RL cheats by training on the gap.**
+
+DDP's dynamics model — usually rigid-body dynamics with simplified contact — is wrong in ways that matter. Gearbox backlash, cable stretch, foot deformation, actuator bandwidth limits, sensor latency. DDP gives you an optimal plan for the wrong model, and the feedback term $-K_k(x_k - \bar{x}_k)$ can only correct so much. RL trains in a simulator where you *choose* what physics to include — you can add random motor lag, foot slip, mass variations, and sensor noise during training. The resulting policy has seen the gap before and learned to compensate. It's not "optimal" in the classical sense, but it's robust.
+
+**3. Perception integration is natural in RL, bolted-on in MPC.**
+
+A humanoid walking through a doorway or stepping onto a box needs to fuse vision, proprioception, and foot contact into a single control decision. In an MPC pipeline, this typically means: run a perception module to extract a height map or cost map, feed it into a footstep planner, feed the footsteps into a trajectory optimizer, feed the trajectory to a whole-body controller — a chain of explicit optimization problems, each with its own assumptions and failure modes. In an RL pipeline, the observation vector can include a height-map encoding, joint states, base velocity, and previous actions — and the policy learns the mapping from pixels to torques end-to-end. The intermediate representations (footsteps, CoM trajectory) disappear. This reduces engineering complexity and eliminates the compounding errors of chained optimizers.
+
+**4. Deployment: one forward pass vs. an optimization loop.**
+
+At runtime, an RL policy is a single neural network forward pass — typically 0.1–0.5 ms on a GPU or onboard accelerator, deterministic in latency. DDP, even with FDDP optimizations, is 2–20 ms of optimization on a CPU, and the solve time varies with how far the warm-start is from the optimum. For a 50-DOF humanoid running at 500+ Hz joint control, that latency budget is tight. And you're sharing it with state estimation, perception, and communication.
+
+**5. The training pain is amortized.**
+
+The counterargument in favor of MPC is that it doesn't need training — you write down the dynamics and cost, and it works. RL requires weeks of GPU training in simulation, careful reward shaping, domain randomization tuning, and sim-to-real validation. That's a huge upfront cost. But for a product (Optimus, Atlas, H1) where you'll ship the same policy to thousands of units, that upfront cost is amortized. MPC is quicker to prototype; RL is cheaper to deploy at scale.
+
+**Where DDP/MPC still wins (for now):**
+
+This is not to say DDP-based control is obsolete. It remains dominant where:
+
+- The contact mode is known and simple (quadrupeds, fixed-gait locomotion).
+- The task requires precise constraint satisfaction (industrial manipulation with tight tolerances).
+- The environment is structured and the model is good (factory floors, lab benches).
+- You need interpretable failure modes — MPC violating a constraint has a clear optimization meaning; an RL policy outputting a dangerously large torque is a black box to debug.
+
+And the line is blurring. Some of the best results combine both: an RL policy proposes a reference trajectory, and a DDP/MPC layer tracks it with constraint guarantees. This is roughly what Boston Dynamics has described for their Spot controller. The RL handles the "what to do" (contact strategy, gait selection), the MPC handles the "how to do it" (torque computation under joint limits).
+
+**The bottom line:** The history of control has been a steady march from hand-tuned (PID) to model-based optimal (LQR) to constrained online optimization (MPC). The fourth act, now playing out in humanoid robots, is to replace the whole stack — model, optimizer, constraints — with a learned mapping from observation to action. It's philosophically closer to PID than to LQR: no explicit model at runtime, no online optimization, just a function of the current state. The difference is that PID's function is three gains, and RL's function is a few million parameters.
+
+---
+
+## 4. The landscape
+
+| Approach | QPs / NLPs per step | Dynamics satisfaction | Constraint handling | Typical use |
+|----------|---------------------|-----------------------|---------------------|-------------|
+| **LTV-MPC** (single linearization) | 1 QP | Not guaranteed, error grows with horizon | Linear constraints on $U$ | Slow processes, mild nonlinearities |
+| **SQP** (full convergence) | 2–10 QPs | Within tolerance | Linear constraints in each QP | Medium-speed systems with moderate nonlinearity |
+| **RTI** (1 SQP iter / step) | 1 QP | Improves over time, not within step | Same as SQP | Autonomous driving, drones, fast embedded NMPC |
+| **Multiple shooting** | 1 NLP (SQP or IP) | Exact at convergence | Full — path constraints, terminal constraints | Chemical processes, rocket landing, legged locomotion |
+| **DDP / iLQR** | 0 QPs (Riccati passes) | Exact at convergence | Poor natively; augmented Lagrangian for constraints | Trajectory optimization, robot motion planning |
+
+---
+
+## 5. Where the field is now
+
+The frontier of nonlinear MPC is about making it faster and handling harder problems:
+
+**Learned dynamics.** Instead of deriving $f(x, u)$ from first principles, fit a neural network to data. The network's Jacobians feed into the SQP or multiple-shooting solver. This is standard in model-based RL and increasingly used in industrial MPC where first-principles modeling is expensive.
+
+**Sampling-based MPC (MPPI).** For systems too nonlinear or non-smooth for gradient-based optimization (contact, hybrid dynamics), Model Predictive Path Integral control samples thousands of random control sequences, simulates them in parallel on a GPU, and weights them by cost. No gradients. No QPs. Just brute-force simulation + exponential weighting. Used in aggressive autonomous driving and some legged robot controllers.
+
+**Embedded optimization.** Solvers like acados, Forces Pro, and HPIPM can solve the NLPs from multiple-shooting formulations in under a millisecond on embedded ARM processors for systems with 5–10 states and 10–50 step horizons. This is what makes nonlinear MPC practical on drones and small robots.
+
+**Non-convex constraint handling.** The hardest problems — obstacle avoidance (non-convex feasible sets), contact dynamics (complementarity constraints), hybrid systems (mode switching) — remain partially open. Convex relaxations, mixed-integer formulations, and sampling-based methods each cover parts of the space, but there is no universal solution.
+
+---
+
+## 6. What to take away
+
+If you've followed the progression through this repository — PID → LQR → linear MPC → nonlinear MPC — here is the arc:
+
+1. **PID** works when the system is simple and you can tune by feel.
+2. **LQR** works when you have a good linear model and constraints are loose. It gives you provable optimality and guaranteed stability margins.
+3. **Linear MPC** (condensed QP) works when constraints matter. It reduces the dynamic problem to a QP solved online.
+4. **Nonlinear MPC** works when the linear model isn't good enough. It trades the one-shot QP for iteration: SQP loops, multiple shooting, or Riccati-like backwards passes on the nonlinear dynamics.
+
+Each step in this progression adds realism — and computation. PID is negligible. LQR is one matrix solve. Linear MPC is one QP per step. Nonlinear MPC is multiple QPs or a full NLP per step.
+
+The choice of where to stop on this ladder depends on three things: how nonlinear your plant actually is, how fast your control loop must run, and whether the cost of being slightly suboptimal (linearizing a nonlinear plant) is higher than the cost of the extra computation.
+
+---
+
+## 7. References
+
+1. **Diehl, M., Bock, H.G., Schlöder, J.P., Findeisen, R., Nagy, Z., & Allgöwer, F. (2002).** "Real-time optimization and nonlinear model predictive control of processes governed by differential-algebraic equations." *Journal of Process Control.* — The RTI scheme: one SQP iteration per time step.
+
+2. **Gros, S., Zanon, M., Quirynen, R., Bemporad, A., & Diehl, M. (2020).** "From linear to nonlinear MPC: bridging the gap via the real-time iteration." *International Journal of Control.* — A survey of linear-to-nonlinear MPC transition strategies.
+
+3. **Jacobson, D.H. & Mayne, D.Q. (1970).** *Differential Dynamic Programming.* Elsevier. — The original DDP: backwards Riccati passes on nonlinear dynamics.
+
+4. **Tassa, Y., Mansard, N., & Todorov, E. (2014).** "Control-limited differential dynamic programming." *IEEE ICRA.* — iLQR with box constraints on controls; widely implemented in robotics.
+
+5. **Rawlings, J.B., Mayne, D.Q., & Diehl, M. (2017).** *Model Predictive Control: Theory, Computation, and Design.* Nob Hill. — Chapters 8–9 cover nonlinear MPC comprehensively.
+
+6. **Biegler, L.T. (2010).** *Nonlinear Programming: Concepts, Algorithms, and Applications to Chemical Processes.* SIAM. — The authoritative reference on SQP and interior-point methods for dynamic optimization.
+
+7. **Verschueren, R., Frison, G., Kouzoupis, D., Frey, J., van Duijkeren, N., Zanelli, A., Novoselnik, B., Albin, T., Quirynen, R., & Diehl, M. (2022).** "acados — a modular open-source framework for fast embedded optimal control." *Mathematical Programming Computation.* — The solver framework behind much of modern embedded NMPC.
+
+8. **Williams, G., Aldrich, A., & Theodorou, E.A. (2017).** "Model Predictive Path Integral Control: From Theory to Parallel Computation." *Journal of Guidance, Control, and Dynamics.* — MPPI: sampling-based nonlinear MPC with GPU acceleration.
+
+9. **Kouzoupis, D., Frison, G., Zanelli, A., & Diehl, M. (2018).** "Recent advances in quadratic programming algorithms for nonlinear model predictive control." *Vietnam Journal of Mathematics.* — How QP solvers are adapted for the SQP subproblems in NMPC.
+
+---
+
+*This document completes the controller-evolution arc in the `Controllers-from-PID-to-QP_MPC` repository. Start with `pid_explorer.html` (classical control), continue through `lqr_explorer.html` (optimal control), `servo_qp_mpc.html` (constrained linear MPC), and this document for the nonlinear frontier. For the LP → QP → LQR optimization hierarchy, see `from_lp_to_qp_to_lqr.md`. For trajectory tracking with LQR and MPC, see `trajectory_tracking_lqr_mpc.md`.*
