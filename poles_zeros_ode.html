@@ -324,7 +324,7 @@ $$\lambda^3 + (2\zeta\omega_n + K_d\omega_n^2)\lambda^2 + \omega_n^2(1+K_p)\lamb
 
 Now the PID gains directly enter the coefficients:
 
-- **$K_p$**: appears in the quadratic coefficient. Increasing $K_p$ increases the effective stiffness (the $\lambda$ coefficient), which generally shifts poles toward higher frequency — but also reduces damping, because the $\lambda^2$ coefficient doesn't keep pace unless $K_d$ is also increased.
+- **$K_p$**: appears in the linear coefficient (the $\lambda$ term, $\omega_n^2(1+K_p)\lambda$). Increasing $K_p$ increases the effective stiffness, which generally shifts poles toward higher frequency — but also reduces damping, because the quadratic $\lambda^2$ coefficient doesn't change with $K_p$ (only $K_d$ affects it).
 
 - **$K_d$**: appears **only** in the $\lambda^2$ coefficient (multiplying $\omega_n^2$). It adds pure damping — it shifts poles *left* in the complex plane without changing the frequency much. This is why $K_d$ reduces oscillation: it increases the $\sigma$ in $e^{-\sigma t}$.
 
@@ -380,7 +380,7 @@ This is why PID tuning often involves placing controller zeros near (or on) slow
 | Pole in RHP ($\sigma > 0$) | Denominator root with positive real part | A mode $e^{+\sigma t}$ that grows without bound |
 | Zero at $-z$ | $s+z$ in numerator | $\dot{u} + zu$ on the RHS — modifies how input excites each mode |
 | RHP zero | $s - z$ with $z>0$ | Causes inverse response — residue sign flips, output initially goes the wrong way |
-| $K_p$ increase | Shifts poles toward imaginary axis | Reduces the damping term's influence in the ODE |
+| $K_p$ increase | Shifts poles vertically (increases $\omega_d$, constant $\sigma$) | Increases the linear ($\lambda$) coefficient — raises effective natural frequency without adding damping |
 | $K_d$ increase | Shifts poles left | Increases the $\dot{y}$ coefficient in the ODE — pure energy dissipation |
 | $K_i > 0$ | Adds pole at origin, adds controller zeros | Adds $\int e\,dt$ term — guarantees $e \to 0$, increases system order by 1 |
 
