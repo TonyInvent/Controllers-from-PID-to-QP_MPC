@@ -254,7 +254,15 @@ The corresponding ODE is:
 
 $$\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = \dot{u} + z\,u$$
 
-The right-hand side now involves the **derivative** of the input. For a step input ($u(t)=1$, $\dot{u}(t)=0$ for $t > 0$), the forced term is $z \cdot 1$. The particular solution is $y_p = z / \omega_n^2$.
+The right-hand side now involves the **derivative** of the input. For a step input ($u(t)=1$, $\dot{u}(t)=0$ for $t > 0$), the forcing term simplifies to $z \cdot 1 = z$. The ODE becomes:
+
+$$\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = z$$
+
+To find the **particular solution** (the forced steady-state response), assume a constant $y_p$: then $\dot{y}_p = 0$ and $\ddot{y}_p = 0$. Substitute:
+
+$$0 + 0 + \omega_n^2 y_p = z \quad\Longrightarrow\quad y_p = \frac{z}{\omega_n^2}$$
+
+Equivalently, from the transfer function: $G(0) = \frac{0 + z}{0^2 + 2\zeta\omega_n\cdot 0 + \omega_n^2} = \frac{z}{\omega_n^2}$, which is the **DC gain** from $u$ to $y$. The particular solution is the DC gain times the step amplitude.
 
 But the critical thing is how zeros affect the **residues** — the coefficients in front of each mode. When you do a partial fraction expansion of $Y(s) = G(s)/s$:
 
