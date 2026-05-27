@@ -514,7 +514,24 @@ The choice of where to stop on this ladder depends on three things: how nonlinea
 
 <script>
 const md = document.getElementById('md-source').textContent;
-document.getElementById('content').innerHTML = marked.parse(md);
+var mathBlocks = [];
+var p = md;
+// Protect display math $$...$$ from markdown parsing
+p = p.replace(/\$\$([\s\S]*?)\$\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+// Protect inline math $...$
+p = p.replace(/\$([^$]+)\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+var html = marked.parse(p);
+// Restore math blocks
+html = html.replace(/@@@MATH(\d+)@@@/g, function(m, idx) {
+  return mathBlocks[parseInt(idx)];
+});
+document.getElementById('content').innerHTML = html;
 renderMathInElement(document.getElementById('content'), {
   delimiters: [
     {left: '$$', right: '$$', display: true},
