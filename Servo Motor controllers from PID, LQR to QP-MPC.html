@@ -186,6 +186,8 @@ body {
 
 **Visual:** A grid of cards — the welcome page of the project. Five simulators fade in: PID Explorer, Servo Motor PID, LQR Explorer, QP-MPC Explorer, Zero-Effect Explorer. Then a "Deep Dives" shelf slides in: Poles/Zeros & ODEs, Trajectory Tracking, Nonlinear MPC. Finally the two podcast covers: "Servo Motor Controllers" and "The Century of Feedback."
 
+![Slide 0 — Prologue](assets/servo-motor-controllers-slides/slide-01-welcome-grid.png)
+
 ---
 
 **NARRATOR:**
@@ -220,6 +222,8 @@ This script traces the central story. The rest is there when you're ready to go 
 
 **Visual:** A brushed DC motor spinning. Three labels appear beside it — *PID*, *LQR*, *QP-MPC* — each fading into the next. Subtitle: "One motor. One tuning problem. A hundred years of ideas."
 
+![Slide 1 — Title Card](assets/servo-motor-controllers-slides/slide-02-dc-motor-control-evolution.png)
+
 ---
 
 **NARRATOR:**
@@ -237,6 +241,8 @@ This is the story of those three answers. PID. LQR. QP-MPC. And the historical c
 ### Intuition becomes mathematics
 
 **Visual:** A ship's steering engine, circa 1910. Then a pneumatic PID controller from a 1930s refinery. Overlay: the three-term equation `u = Kp·e + Ki·∫e dt + Kd·de/dt`.
+
+![Slide 2 — Act I: PID](assets/servo-motor-controllers-slides/slide-03-pid-history.png)
 
 ---
 
@@ -269,6 +275,8 @@ By the 1950s, PID was everywhere. And that's exactly when a completely different
 ### The math that bridges intuition to optimality
 
 **Visual:** A transfer function $G(s) = \omega_n^2/(s^2 + 2\zeta\omega_n s + \omega_n^2)$ written on a blackboard. An arrow connects it to the ODE $\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = \omega_n^2 u$. Then the same ODE, but now with PID substituted in — the coefficients change, the poles migrate, the step response reshapes.
+
+![Slide 3 — Interlude: Poles, Zeros & ODEs](assets/servo-motor-controllers-slides/slide-04-transfer-function-to-ode.png)
 
 ---
 
@@ -303,6 +311,8 @@ Why does this matter for our story? Because LQR is about to replace "drag the sl
 ### The Space Race rewrites control theory
 
 **Visual:** Sputnik beeping in orbit (1957). A Saturn V on the pad. Kalman at his blackboard. The Riccati equation. Transition to a state-space block diagram: `ẋ = Ax + Bu`, `y = Cx`.
+
+![Slide 4 — Act II: State-Space & LQR](assets/servo-motor-controllers-slides/slide-05-space-age-lqr.png)
 
 ---
 
@@ -343,6 +353,8 @@ Some extensions — LQI (LQR with integral action), anti-windup heuristics — p
 ### Constraints break optimality, and computers fix it
 
 **Visual:** An oil refinery at night — miles of pipes and distillation columns. A control room filled with CRT monitors. A graph showing a long prediction horizon with constraints drawn as horizontal lines. The QP formulation: `min ½UᵀHU + fᵀU s.t. u_min ≤ u_k ≤ u_max`.
+
+![Slide 5 — Act III: MPC & QP-MPC](assets/servo-motor-controllers-slides/slide-06-refinery-qpmc.png)
 
 ---
 
@@ -386,6 +398,8 @@ But QP-MPC — for all its power — still assumes a *linear* model: $x_{k+1} = 
 
 **Visual:** A smooth nonlinear manifold replacing the linear hyperplane. A trajectory snaking through it. DDP iterations visualized — forward rollout, backward Riccati-like sweep (now state-dependent). Labels: DDP, iLQR, SQP, Real-Time Iteration.
 
+![Slide 6 — Beyond Linearity: Nonlinear MPC](assets/servo-motor-controllers-slides/slide-07-nonlinear-mpc-manifold.png)
+
 ---
 
 **NARRATOR:**
@@ -418,7 +432,9 @@ The frontier is moving fast. Learned dynamics (fitting $f$ from data using neura
 
 ### The motor on your desk
 
-**Visual:** The same DC motor from Slide 1. Three controller blocks arranged in a row: PID, LQR, QP-MPC. Below each: *Trial-and-error tuning*, *Optimal unconstrained gains*, *Constrained online optimization*. The QP-MPC block lights up. Caption: "Each generation's answer to the same question."
+**Visual:** The same DC motor from Slide 1. Four controller blocks arranged in a row: PID, LQR, QP-MPC, Nonlinear MPC. Below each: *Trial-and-error tuning*, *Optimal unconstrained gains*, *Constrained online optimization*, *Handling true nonlinear dynamics*. The QP-MPC block lights up. Caption: "Each generation's answer to the same question."
+
+![Slide 7 — Epilogue](assets/servo-motor-controllers-slides/slide-08-controller-comparison.png)
 
 ---
 
@@ -445,6 +461,8 @@ The motor hasn't changed. But we have. And this project — the simulators, the 
 ## Slide 8 — Appendix: One Motor, Five Ways to Control It
 
 **Visual:** A grid of five simulation panels from the project's simulators. Top row: PID Explorer (pole-zero map + step response), Servo Motor PID (3rd-order motor with voltage traces), LQR Explorer (Q/R tuning with CARE solver). Bottom row: QP-MPC Explorer (hard constraint boundaries visible as horizontal limits), Zero-Effect Explorer (step responses under different zero placements). Overlay caption: "Five interactive simulators. One motor. No installation required."
+
+![Slide 8 — Appendix](assets/servo-motor-controllers-slides/slide-09-simulator-grid.png)
 
 ---
 
