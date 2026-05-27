@@ -172,7 +172,7 @@ body {{
 <script>
 const md = document.getElementById('md-source').textContent;
 document.getElementById('content').innerHTML = marked.parse(md);
-renderMathInElement(document.getElementById('content'), {
+renderMathInElement(document.getElementById('content'), {{
   delimiters: [
     {{left: '$$', right: '$$', display: true}},
     {{left: '$', right: '$', display: false}},
@@ -180,7 +180,7 @@ renderMathInElement(document.getElementById('content'), {
     {{left: '\\[', right: '\\]', display: true}}
   ],
   throwOnError: false
-});
+}});
 </script>
 
 </body>
