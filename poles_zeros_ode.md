@@ -1,0 +1,218 @@
+# Poles, Zeros, and Differential Equations
+
+**You've played with the sliders in the PID Explorer. You've seen poles move and step responses change shape. But to truly understand *why* a pole at −2 + j5 means oscillation at 5 rad/s with a decay envelope of e^(−2t), you have to go back to differential equations. This document walks that path.**
+
+---
+
+## 1. Every transfer function is a differential equation in disguise
+
+A transfer function is not a separate thing. It is shorthand for a linear ODE with constant coefficients.
+
+Take a plant:
+
+$$G(s) = \frac{Y(s)}{U(s)} = \frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}$$
+
+Cross-multiply:
+
+$$(s^2 + 2\zeta\omega_n s + \omega_n^2) Y(s) = \omega_n^2 U(s)$$
+
+The operator $s$ is the Laplace-domain alias for the derivative operator $d/dt$. So $sY(s)$ ↔ $\dot{y}(t)$, $s^2Y(s)$ ↔ $\ddot{y}(t)$. Reverse the Laplace transform and you get the ODE:
+
+$$\boxed{\ddot{y}(t) + 2\zeta\omega_n\,\dot{y}(t) + \omega_n^2\,y(t) = \omega_n^2\,u(t)}$$
+
+This is the **governing equation**. Everything the PID Explorer shows you — every step response, every overshoot, every oscillation — is a solution to this ODE (or its closed-loop extension).
+
+**The denominator of $G(s)$ is the left-hand side of the ODE. The numerator is the right-hand side's differential operator applied to the input.**
+
+---
+
+## 2. Poles = the homogeneous solution
+
+### 2.1 The characteristic equation
+
+Set the input to zero ($u(t) = 0$). What remains is the **homogeneous equation**:
+
+$$\ddot{y}(t) + 2\zeta\omega_n\,\dot{y}(t) + \omega_n^2\,y(t) = 0$$
+
+Assume a solution of the form $y(t) = e^{\lambda t}$. Substitute:
+
+$$\lambda^2 e^{\lambda t} + 2\zeta\omega_n\,\lambda e^{\lambda t} + \omega_n^2 e^{\lambda t} = 0$$
+
+Factor out $e^{\lambda t}$ (which is never zero):
+
+$$\boxed{\lambda^2 + 2\zeta\omega_n\lambda + \omega_n^2 = 0}$$
+
+This is the **characteristic equation**. Its roots are the **poles** of $G(s)$. They are exactly the values of $s$ that make the denominator zero.
+
+### 2.2 What each pole means
+
+The roots are:
+
+$$\lambda_{1,2} = -\zeta\omega_n \pm \omega_n\sqrt{\zeta^2 - 1}$$
+
+Depending on $\zeta$, three regimes emerge:
+
+| $\zeta$ | Poles | Homogeneous solution $y_h(t)$ | Behavior |
+|---|---|---|---|
+| $\zeta > 1$ | Two real: $-\sigma_1, -\sigma_2$ | $A e^{-\sigma_1 t} + B e^{-\sigma_2 t}$ | Sum of two decaying exponentials — no oscillation |
+| $\zeta = 1$ | Repeated: $-\sigma$ | $(A + Bt)e^{-\sigma t}$ | Fastest non-oscillatory return to equilibrium |
+| $\zeta < 1$ | Complex: $-\sigma \pm j\omega_d$ | $e^{-\sigma t}\big(A\cos\omega_d t + B\sin\omega_d t\big)$ | Damped oscillation |
+
+where $\sigma = \zeta\omega_n$ and $\omega_d = \omega_n\sqrt{1-\zeta^2}$.
+
+**This is the key insight**: the real part $\sigma$ controls the decay *envelope*. The imaginary part $\omega_d$ controls the oscillation *frequency*. Every pole on the complex plane corresponds to a specific term in $y_h(t)$:
+
+- **Pole at $−\sigma$**: contributes $e^{-\sigma t}$
+- **Pole at $−\sigma \pm j\omega_d$**: contributes $e^{-\sigma t}\sin(\omega_d t + \phi)$
+- **Pole at $+ \sigma$** (RHP): contributes $e^{+\sigma t}$ — grows without bound — **unstable**
+- **Pole at $0 \pm j\omega$**: contributes $\sin(\omega t)$ — undamped oscillation — **marginally stable**
+
+When you drag the $K_p$ slider and watch the closed-loop poles march toward the imaginary axis (reducing $\zeta_{\text{eff}}$), you are literally moving the $\sigma$ in $e^{-\sigma t}$ closer to zero — slower decay, more visible oscillation.
+
+### 2.3 The full homogeneous solution
+
+For an $n$th-order system with poles $\lambda_1, \ldots, \lambda_n$ (assume distinct):
+
+$$y_h(t) = C_1 e^{\lambda_1 t} + C_2 e^{\lambda_2 t} + \cdots + C_n e^{\lambda_n t}$$
+
+Each pole contributes one **mode**. The coefficients $C_i$ are set by initial conditions. The response you see on the step-response plot is the sum of these modes plus the forced response.
+
+---
+
+## 3. Zeros = how the input couples to each mode
+
+### 3.1 What zeros do to the coefficients
+
+A pole determines *what modes exist*. A zero determines *how strongly each mode is excited by the input*.
+
+Consider a system with a zero at $s = -z$:
+
+$$G(s) = \frac{s + z}{s^2 + 2\zeta\omega_n s + \omega_n^2}$$
+
+The corresponding ODE is:
+
+$$\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = \dot{u} + z\,u$$
+
+The right-hand side now involves the **derivative** of the input. For a step input ($u(t)=1$, $\dot{u}(t)=0$ for $t > 0$), the forced term is $z \cdot 1$. The particular solution is $y_p = z / \omega_n^2$.
+
+But the critical thing is how zeros affect the **residues** — the coefficients in front of each mode. When you do a partial fraction expansion of $Y(s) = G(s)/s$:
+
+$$\frac{s+z}{s(s^2 + 2\zeta\omega_n s + \omega_n^2)} = \frac{A}{s} + \frac{B}{s - \lambda_1} + \frac{C}{s - \lambda_2}$$
+
+The zero at $−z$ appears in the numerator of $B$ and $C$. It can:
+- **Reduce** the residue of a nearby pole (zero-pole cancellation in the limit as $z \to \lambda_i$)
+- **Flip the sign** of a residue (causing inverse response — the output initially moves the *wrong* direction for RHP zeros)
+- **Amplify** the residue of a distant pole
+
+### 3.2 The physical intuition
+
+Think of the ODE as $\mathcal{L}[y] = \mathcal{R}[u]$, where $\mathcal{L}$ is the differential operator from the denominator (poles) and $\mathcal{R}$ is the differential operator from the numerator (zeros).
+
+- $\mathcal{L}$ describes **how the system stores and dissipates energy** — inertia, friction, springs. It defines the natural modes.
+- $\mathcal{R}$ describes **which combinations of the input and its derivatives actually push the system**. A zero at $−z$ means the system is "blind" to the mode $e^{-zt}$ in the input.
+
+**The fundamental relationship**:
+
+$$\text{Step response} = \underbrace{\sum_i C_i e^{\lambda_i t}}_{\text{modes from poles}} + \underbrace{y_{ss}}_{\text{DC gain}}$$
+
+The poles $\lambda_i$ determine *the exponents*. The zeros determine *the coefficients $C_i$*. Both determine *what you see on the plot*.
+
+### 3.3 Why derivative action speeds things up
+
+In the PID Explorer, adding $K_d$ introduces controller zeros. The closed-loop transfer function becomes:
+
+$$T(s) = \frac{(K_d s^2 + K_p s + K_i)\,\omega_n^2}{s^3 + (2\zeta\omega_n + K_d\omega_n^2)s^2 + \omega_n^2(1+K_p)s + K_i\omega_n^2}$$
+
+Look at the numerator: the terms $K_d s^2 + K_p s + K_i$ mean the ODE's right-hand side is:
+
+$$K_d\,\ddot{u} + K_p\,\dot{u} + K_i\,u$$
+
+For a step in the reference $r(t)$, the derivative terms $\dot{r}$ and $\ddot{r}$ produce impulses at $t=0$. These impulses *kick* the system hard at the initial instant, then vanish. The result: the system reaches the target faster (the poles didn't change much, but the coefficients on the modes shifted energy toward faster-decaying components).
+
+---
+
+## 4. The closed-loop ODE — what PID actually does
+
+The open-loop plant ODE is:
+
+$$\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = \omega_n^2 u$$
+
+The PID controller is (with derivative-on-output for the D term):
+
+$$u = K_p(r - y) - K_d\,\dot{y} + K_i\!\int_0^t \!(r - y)\,d\tau$$
+
+Substitute $u$ into the plant ODE. Let $e = r - y$, and define $e_I = \int e\,dt$:
+
+$$\ddot{y} + 2\zeta\omega_n\dot{y} + \omega_n^2 y = \omega_n^2\big[K_p e - K_d\dot{y} + K_i e_I\big]$$
+
+Since $y = r - e$, we have $\dot{y} = \dot{r} - \dot{e}$ and $\ddot{y} = \ddot{r} - \ddot{e}$. For a step reference, $\dot{r} = \ddot{r} = 0$ for $t > 0$, so $\dot{y} = -\dot{e}$ and $\ddot{y} = -\ddot{e}$. Also note that $\dot{e}_I = e$. The closed-loop ODE in terms of the error is:
+
+$$\boxed{\ddot{y} + \big(2\zeta\omega_n + K_d\omega_n^2\big)\dot{y} + \omega_n^2(1+K_p)y = \omega_n^2\big[K_p r + K_i e_I\big]}$$
+
+This is a **third-order** ODE (after differentiating for the integrator). Every pole in the closed-loop system is a root of the characteristic equation:
+
+$$\lambda^3 + (2\zeta\omega_n + K_d\omega_n^2)\lambda^2 + \omega_n^2(1+K_p)\lambda + K_i\omega_n^2 = 0$$
+
+Now the PID gains directly enter the coefficients:
+
+- **$K_p$**: appears in the quadratic coefficient. Increasing $K_p$ increases the effective stiffness (the $\lambda$ coefficient), which generally shifts poles toward higher frequency — but also reduces damping, because the $\lambda^2$ coefficient doesn't keep pace unless $K_d$ is also increased.
+
+- **$K_d$**: appears **only** in the $\lambda^2$ coefficient (multiplying $\omega_n^2$). It adds pure damping — it shifts poles *left* in the complex plane without changing the frequency much. This is why $K_d$ reduces oscillation: it increases the $\sigma$ in $e^{-\sigma t}$.
+
+- **$K_i$**: appears in the constant term. A non-zero constant term means $\lambda=0$ is no longer a solution — it removes the pole at the origin for the error dynamics, which means $\lim_{t\to\infty} e(t) = 0$ (zero steady-state error). But it also adds phase lag that can destabilize the system.
+
+---
+
+## 5. Reading the root locus through the ODE lens
+
+The **root locus** answers: as one parameter (usually $K_p$) varies from 0 to ∞, how do the roots of the closed-loop characteristic equation move?
+
+Mathematically, this is simply tracking the solutions of:
+
+$$\lambda^n + a_{n-1}\lambda^{n-1} + \cdots + a_1\lambda + a_0 = 0$$
+
+as one of the $a_i$ changes with gain.
+
+When you drag $K_p$ in the PID Explorer with $K_i = 0$, you are watching the roots of:
+
+$$\lambda^3 + (2\zeta\omega_n + K_d\omega_n^2)\lambda^2 + \omega_n^2(1+K_p)\lambda = 0$$
+
+Factor out $\lambda$ (the integrator pole is cancelled by the controller zero when $K_i = 0$):
+
+$$\lambda^2 + (2\zeta\omega_n + K_d\omega_n^2)\lambda + \omega_n^2(1+K_p) = 0$$
+
+This is a **quadratic**. Its roots are:
+
+$$\lambda_{1,2} = -\frac{\zeta\omega_n + \tfrac{1}{2}K_d\omega_n^2}{1} \pm \sqrt{\big(\zeta\omega_n + \tfrac{1}{2}K_d\omega_n^2\big)^2 - \omega_n^2(1+K_p)}$$
+
+- The real part: $-\sigma = -(\zeta\omega_n + \frac{1}{2}K_d\omega_n^2)$ — **independent of $K_p$** in this PD case. The damping is set by $K_d$ and the natural damping.
+- The discriminant: $D = \sigma^2 - \omega_n^2(1+K_p)$. As $K_p$ increases, $D$ becomes more negative → the roots become complex → oscillation appears.
+
+**This is the mathematical reason** for what you see in the simulator: increasing $K_p$ without $K_d$ pulls the poles toward the imaginary axis along a line of constant real part (in the PD-only case), reducing $\zeta_{\text{eff}}$ until the system oscillates.
+
+---
+
+## 6. Pole-zero cancellation — when a zero sits on a pole
+
+If a controller zero exactly matches a plant pole, that pole's mode has a zero coefficient in the response — it becomes **uncontrollable from the reference**, or more precisely, its residue in the partial fraction expansion vanishes.
+
+In the ODE, if a mode $e^{\lambda t}$ appears in both the homogeneous solution and the forced solution with equal-and-opposite coefficients, they cancel. The system behaves as if that mode doesn't exist for that particular input.
+
+This is why PID tuning often involves placing controller zeros near (or on) slow plant poles — to "erase" sluggish modes from the step response.
+
+---
+
+## 7. Summary: the ODE is the ground truth
+
+| Concept | Transfer function view | ODE view |
+|---|---|---|
+| Pole at $-\sigma$ | $1/(s+\sigma)$ | A mode $e^{-\sigma t}$ in $y_h(t)$ |
+| Pole at $-\sigma \pm j\omega$ | $1/(s^2 + 2\sigma s + \sigma^2+\omega^2)$ | A mode $e^{-\sigma t}\sin(\omega t + \phi)$ in $y_h(t)$ |
+| Pole in RHP ($\sigma > 0$) | Denominator root with positive real part | A mode $e^{+\sigma t}$ that grows without bound |
+| Zero at $-z$ | $s+z$ in numerator | $\dot{u} + zu$ on the RHS — modifies how input excites each mode |
+| RHP zero | $s - z$ with $z>0$ | Causes inverse response — residue sign flips, output initially goes the wrong way |
+| $K_p$ increase | Shifts poles toward imaginary axis | Reduces the damping term's influence in the ODE |
+| $K_d$ increase | Shifts poles left | Increases the $\dot{y}$ coefficient in the ODE — pure energy dissipation |
+| $K_i > 0$ | Adds pole at origin, adds controller zeros | Adds $\int e\,dt$ term — guarantees $e \to 0$, increases system order by 1 |
+
+Every time you move a slider in the PID Explorer, you are modifying the coefficients of a differential equation. The poles and zeros on the map are just a compact way of visualizing the solutions to that equation. The step response is a numerical solution to the same equation. **The ODE is what the system actually obeys.**

@@ -12,6 +12,9 @@ TEMPLATE = '''<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <style>
 :root {{
   --bg: #0d1117;
@@ -169,6 +172,15 @@ body {{
 <script>
 const md = document.getElementById('md-source').textContent;
 document.getElementById('content').innerHTML = marked.parse(md);
+renderMathInElement(document.getElementById('content'), {
+  delimiters: [
+    {{left: '$$', right: '$$', display: true}},
+    {{left: '$', right: '$', display: false}},
+    {{left: '\\(', right: '\\)', display: false}},
+    {{left: '\\[', right: '\\]', display: true}}
+  ],
+  throwOnError: false
+});
 </script>
 
 </body>

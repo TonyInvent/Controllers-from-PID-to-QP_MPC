@@ -309,6 +309,67 @@ footer a:hover { text-decoration: underline; }
 
 </div>
 
+<div style="text-align:center;padding:0 24px 0;max-width:1200px;margin:0 auto;">
+  <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-secondary);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:12px;">
+    Deep Dives
+  </div>
+</div>
+
+<div class="cards">
+
+  <a href="poles_zeros_ode.html" class="card c-pid">
+    <div class="card-icon">&#x1F4D0;</div>
+    <span class="card-tag tag-pid">Fundamentals &middot; ODE</span>
+    <h2>Poles, Zeros &amp; Differential Equations</h2>
+    <p>
+      Every transfer function is a differential equation in disguise. Learn why
+      a pole at &minus;&sigma; + j&omega; means oscillation at &omega; rad/s with decay
+      e<sup>&minus;&sigma;t</sup>, and how zeros determine which modes the input excites.
+    </p>
+    <div class="card-features">
+      <span>ODE &harr; TF mapping</span>
+      <span>homogeneous modes</span>
+      <span>zero residues</span>
+      <span>root locus via ODE</span>
+    </div>
+  </a>
+
+  <a href="trajectory_tracking_lqr_mpc.html" class="card c-lqr">
+    <div class="card-icon">&#x1F3AF;</div>
+    <span class="card-tag tag-lqr">Tracking &middot; LQR + MPC</span>
+    <h2>Trajectory Tracking with LQR &amp; MPC</h2>
+    <p>
+      Regulation asks "push to zero." Tracking asks "follow this moving target."
+      The feedback gain doesn't change at all — just add a feedforward term that
+      translates the reference into control space.
+    </p>
+    <div class="card-features">
+      <span>feedforward design</span>
+      <span>error coordinates</span>
+      <span>reference trajectory</span>
+      <span>LQR &amp; MPC tracking</span>
+    </div>
+  </a>
+
+  <a href="nonlinear_mpc.html" class="card c-mpc">
+    <div class="card-icon">&#x1F300;</div>
+    <span class="card-tag tag-mpc">Nonlinear &middot; Advanced</span>
+    <h2>Beyond Linearity: Nonlinear MPC</h2>
+    <p>
+      What happens when x_{k+1} = f(x_k, u_k) instead of A x_k + B u_k.
+      DDP, SQP, and the tools that replace Riccati equations when dynamics go
+      nonlinear — a tour of what breaks and how the field has responded.
+    </p>
+    <div class="card-features">
+      <span>DDP / iLQR</span>
+      <span>SQP</span>
+      <span>non-convex cost</span>
+      <span>real-time iteration</span>
+    </div>
+  </a>
+
+</div>
+
 <div class="cards" style="padding-top:0">
   <a href="The%20Century%20of%20Feedback%20-%20A%20History%20of%20Control%20Theory.html" class="card" style="border-left: 2px solid var(--accent);">
     <div class="card-icon" style="font-size:0.75rem;color:var(--accent);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">&#x1F3A7; Podcast</div>
