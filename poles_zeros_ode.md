@@ -161,13 +161,35 @@ This is a **third-order** ODE (after differentiating for the integrator). Every 
 
 $$\lambda^3 + (2\zeta\omega_n + K_d\omega_n^2)\lambda^2 + \omega_n^2(1+K_p)\lambda + K_i\omega_n^2 = 0$$
 
-Now the PID gains directly enter the coefficients:
+Unlike the 2nd-order plant ODE — where each coefficient maps directly to a physical effect (the $\dot{y}$ coefficient sets the decay rate, the $y$ coefficient sets the restoring force) — this cubic has **three** roots, not two. A 3rd-order system does not have a single "damping ratio" or "natural frequency." Those concepts only apply to a complex-conjugate *pair* within the roots.
 
-- **$K_p$**: appears in the linear coefficient (the $\lambda$ term, $\omega_n^2(1+K_p)\lambda$). Increasing $K_p$ increases the effective stiffness, which generally shifts poles toward higher frequency — but also reduces damping, because the quadratic $\lambda^2$ coefficient doesn't change with $K_p$ (only $K_d$ affects it).
+The cleanest way to build intuition is to reduce to 2nd order first, then add the third root back.
 
-- **$K_d$**: appears **only** in the $\lambda^2$ coefficient (multiplying $\omega_n^2$). It adds pure damping — it shifts poles *left* in the complex plane without changing the frequency much. This is why $K_d$ reduces oscillation: it increases the $\sigma$ in $e^{-\sigma t}$.
+**PD control ($K_i = 0$): back to 2nd order**
 
-- **$K_i$**: appears in the constant term. A non-zero constant term means $\lambda=0$ is no longer a solution — it removes the pole at the origin for the error dynamics, which means $\lim_{t\to\infty} e(t) = 0$ (zero steady-state error). But it also adds phase lag that can destabilize the system.
+The constant term vanishes, so $\lambda = 0$ is a root. Factor it out:
+
+$$\lambda\big[\lambda^2 + (2\zeta\omega_n + K_d\omega_n^2)\lambda + \omega_n^2(1+K_p)\big] = 0$$
+
+The $\lambda=0$ root means the error dynamics can sustain a constant offset (the plant itself has no integrator). The bracket is a clean 2nd-order system. Its effective parameters are:
+
+$$\omega_{\text{eff}} = \omega_n\sqrt{1+K_p}, \qquad \zeta_{\text{eff}} = \frac{2\zeta\omega_n + K_d\omega_n^2}{2\omega_n\sqrt{1+K_p}}$$
+
+Now the mapping from gains to physical behavior is transparent:
+- **$K_p$** increases $\omega_{\text{eff}}$ — it stiffens the system, shortening rise time. But since $K_p$ also appears in the *denominator* of $\zeta_{\text{eff}}$, raising $K_p$ reduces the effective damping ratio unless $K_d$ is also increased. This is why high-gain P control oscillates.
+- **$K_d$** appears only in the numerator of $\zeta_{\text{eff}}$ — it adds pure damping without affecting natural frequency. This is why derivative action kills overshoot without slowing the response.
+
+**Full PID ($K_i > 0$): adding the third root**
+
+With $K_i > 0$, the constant term is non-zero and the system is genuinely cubic. The three roots are typically **one real pole + one complex-conjugate pair**. No single formula for $\zeta_{\text{eff}}$ captures the whole system, but the qualitative effects carry over:
+
+- **$K_p$** still primarily controls the oscillation frequency of the complex pair (via the $\lambda^1$ coefficient).
+- **$K_d$** still primarily adds damping, pulling both the complex pair and the real pole leftward (via the $\lambda^2$ coefficient).
+- **$K_i$** controls the real pole. Small $K_i$ leaves it near the origin (slow reset of steady-state error). Moderate $K_i$ pushes it leftward (faster reset). Excessive $K_i$ pulls it back rightward and can destabilize — the classic integrator-windup instability.
+
+**The dominant-pole picture**
+
+In most well-tuned PID loops, the real pole is reasonably fast (it decays like $e^{-10t}$ or quicker) and the complex pair dominates the visible step response — oscillation frequency, overshoot, rise time. This is why the 2nd-order intuition from the PD case usually carries over to full PID: you are watching the complex pair. The real pole mainly affects the long settling tail as the error creeps toward zero.
 
 ---
 
@@ -200,13 +222,41 @@ $$\lambda_{1,2} = -\frac{\zeta\omega_n + \tfrac{1}{2}K_d\omega_n^2}{1} \pm \sqrt
 
 ---
 
-## 6. Pole-zero cancellation — when a zero sits on a pole
+## 6. Pole-zero cancellation
 
-If a controller zero exactly matches a plant pole, that pole's mode has a zero coefficient in the response — it becomes **uncontrollable from the reference**, or more precisely, its residue in the partial fraction expansion vanishes.
+### 6.1 Why cancel a pole?
 
-In the ODE, if a mode $e^{\lambda t}$ appears in both the homogeneous solution and the forced solution with equal-and-opposite coefficients, they cancel. The system behaves as if that mode doesn't exist for that particular input.
+Every pole in the open-loop transfer function contributes **phase lag**. A pole at $s = -p$ shifts the phase by:
 
-This is why PID tuning often involves placing controller zeros near (or on) slow plant poles — to "erase" sluggish modes from the step response.
+$$\angle G(j\omega) = -\arctan\left(\frac{\omega}{p}\right)$$
+
+At the pole frequency ($\omega = p$) this is −45°. As frequency increases, it approaches −90°. Multiple poles stack — two poles mean −180° of phase lag at high frequencies. Once the total phase lag around the loop hits −180° at the gain crossover frequency, the phase margin is gone and the system oscillates.
+
+A **slow pole** (small $p$) is especially harmful: it starts contributing phase lag at low frequencies, right where you need control bandwidth. To maintain stability, you are forced to keep the gain low — which limits speed and disturbance rejection.
+
+Placing a controller zero at $s = -z$ injects phase **lead**:
+
+$$\angle (j\omega + z) = +\arctan\left(\frac{\omega}{z}\right)$$
+
+If $z = p$, the zero's positive phase cancels the pole's negative phase at every frequency. The Bode plot looks as if the pole never existed — the phase margin that the pole was consuming is recovered, and the loop gain can be raised.
+
+This is the purpose of pole-zero cancellation: not cosmetic simplification, but **recovering phase margin** so the controller can be more aggressive without going unstable.
+
+### 6.2 How cancellation works mechanically
+
+When a controller zero exactly matches a plant pole, the pole's residue in the partial fraction expansion of the closed-loop transfer function vanishes. The mode $e^{-pt}$ still exists mathematically, but the input cannot excite it — its coefficient is zero.
+
+In the ODE, the mode appears in both the homogeneous solution and the forced solution with equal-and-opposite coefficients. They cancel. The system responds as if that pole is not there.
+
+This is why PID tuning often places controller zeros near slow plant poles: to "erase" the sluggish modes that eat phase margin and limit performance.
+
+### 6.3 The catch
+
+Exact cancellation requires exact knowledge of the pole location. In practice, parameter uncertainty means the zero never lands perfectly on the pole. The result is a **dipole** — a pole and zero close together but not coincident. A dipole leaves a small residual mode: a long, slow tail in the step response.
+
+Cancellation is also safe only for **stable poles** (in the LHP). A RHP pole cannot be cancelled by a RHP zero — any mismatch leaves an unstable mode that grows without bound.
+
+In practice, partial cancellation is usually enough. Placing a zero somewhat left of a slow pole reduces its residue to the point where the sluggish mode is no longer visible in the step response, without requiring an exact match.
 
 ---
 
@@ -219,7 +269,7 @@ This is why PID tuning often involves placing controller zeros near (or on) slow
 | Pole in RHP ($\sigma > 0$) | Denominator root with positive real part | A mode $e^{+\sigma t}$ that grows without bound |
 | Zero at $-z$ | $s+z$ in numerator | $\dot{u} + zu$ on the RHS — modifies how input excites each mode |
 | RHP zero | $s - z$ with $z>0$ | Causes inverse response — residue sign flips, output initially goes the wrong way |
-| $K_p$ increase | Shifts poles vertically (increases $\omega_d$, constant $\sigma$) | Increases the linear ($\lambda$) coefficient — raises effective natural frequency without adding damping |
+| $K_p$ increase | Raises oscillation frequency of complex poles (higher $\omega_d$) | Increases the $\lambda^1$ coefficient — raises $\omega_{\text{eff}}$ but reduces $\zeta_{\text{eff}}$ (unless $K_d$ compensates) |
 | $K_d$ increase | Shifts poles left | Increases the $\dot{y}$ coefficient in the ODE — pure energy dissipation |
 | $K_i > 0$ | Adds pole at origin, adds controller zeros | Adds $\int e\,dt$ term — guarantees $e \to 0$, increases system order by 1 |
 
