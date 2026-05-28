@@ -221,6 +221,18 @@ def main():
             script_dir / "The Century of Feedback - A History of Control Theory-zh.md",
             script_dir / "The Century of Feedback - A History of Control Theory-zh.html",
         ),
+        (
+            script_dir / "bellman_to_lqr.md",
+            script_dir / "bellman_to_lqr.html",
+        ),
+        (
+            script_dir / "from_lp_to_qp_to_lqr.md",
+            script_dir / "from_lp_to_qp_to_lqr.html",
+        ),
+        (
+            script_dir / "from_lp_to_qp_to_lqr-zh.md",
+            script_dir / "from_lp_to_qp_to_lqr-zh.html",
+        ),
     ]
 
     for md_path, html_path in pairs:
