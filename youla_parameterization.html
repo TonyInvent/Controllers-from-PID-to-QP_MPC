@@ -197,22 +197,23 @@ Internal Model Control (IMC) rearranges the block diagram:
 
 ```
                  ┌─────────┐
-    r ───(+)───→ │  Q(s)   │───→ u ──→ [G(s)] ──→ y
-          ↑      └─────────┘
-          │           ↑
-          │      ┌─────────┐
-          └──────│ G̃(s)    │←── (internal model)
-                 └─────────┘
+    r ──(+)──→  │  Q(s)   │──→ u ──┬──→ [G(s)] ──→ y
+         ↑      └─────────┘        │
+         │                         │
+         │                    ┌─────────┐
+         └──(-)───────────────│ G̃(s)    │
+           (y − ŷ)            └─────────┘
 ```
 
 Here's what's happening:
 
-- We run a model $\tilde{G}(s)$ of the plant in parallel with the real plant
-- We subtract the model output from the real output: $y - \tilde{G}u$
-- That difference is fed back (negatively) to the reference
-- The block $Q(s)$ is the **design parameter** — this is what we get to choose
+- $Q(s)$ receives $r - (y - \hat{y})$ and produces the control signal $u$
+- $u$ splits: one copy drives the real plant $G(s)$, the other drives an internal model $\tilde{G}(s)$
+- $\tilde{G}(s)$ predicts what the plant *should* produce: $\hat{y} = \tilde{G}(s) \cdot u$
+- The feedback signal is $y - \hat{y}$ — the difference between actual and predicted output
+- That difference is subtracted from the reference $r$
 
-If the model is perfect ($\tilde{G} = G$), then $y - \tilde{G}u = d$, the disturbance at the plant output. The feedback path carries **only the disturbance**. The reference $r$ passes through $Q$ and $G$ in a pure feedforward path — no feedback loop at all!
+If the model is perfect ($\tilde{G} = G$), then $y - \hat{y} = d$, the disturbance at the plant output. The feedback path carries **only the disturbance**. The reference $r$ passes through $Q$ and $G$ in a pure feedforward path — no feedback loop at all!
 
 $$y = G Q \, r + (1 - G Q) \, d$$
 
