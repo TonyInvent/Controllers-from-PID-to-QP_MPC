@@ -53,3 +53,5 @@ Each HTML simulator is a self-contained file with three layers: inline CSS (dark
 **Podcast rendering:** `generate_podcast_html.py` embeds markdown content into a styled HTML template using `marked.js` (CDN) for client-side rendering. Input: `*.md` → output: `*.html`.
 
 **Testing:** `test_lqr.js` extracts the inline JS from `lqr_explorer.html`, evaluates it in Node.js with mocked DOM (no browser needed), and runs 16 integration tests against the CARE solver, simulation engine, and fallback gain logic using real `numeric.js` from npm.
+
+**Diagram validation:** After creating or editing any `.md` file that contains ASCII box-drawing diagrams (`┌┐└┘├┤│─`), run `python diagram_check.py <file>` to verify alignment before committing. All box corners must vertically align with their side bars.
