@@ -1,5 +1,6 @@
 *.pyc
 __pycache__/
 .DS_Store
+.claude/
 *.png
 !assets/servo-motor-controllers-slides/*.png
