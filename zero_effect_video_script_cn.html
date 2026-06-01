@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频脚本：零点如何改变你的二阶系统</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #58a6ff;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --orange: #f0883e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.7;
+  min-height: 100vh;
+}
+
+.back-bar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.back-bar a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.back-bar a:hover { text-decoration: underline; }
+
+#content {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+#content h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.5px;
+}
+#content h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 28px 0 10px;
+  color: #f0f6fc;
+}
+#content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 22px 0 8px;
+  color: #c9d1d9;
+}
+#content p {
+  margin: 8px 0 14px;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+#content ul, #content ol {
+  margin: 8px 0 14px;
+  padding-left: 24px;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+#content li { margin: 4px 0; }
+#content strong { color: #f0f6fc; }
+#content em { color: #d2d9e0; }
+#content code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  background: var(--surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--orange);
+}
+#content pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 12px 0 18px;
+}
+#content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+#content blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 8px 16px;
+  margin: 12px 0 18px;
+  background: rgba(88,166,255,0.06);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+#content blockquote p { color: inherit; }
+#content a { color: var(--accent); text-decoration: none; }
+#content a:hover { text-decoration: underline; }
+#content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+#content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0 18px;
+  font-size: 0.85rem;
+}
+#content th, #content td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+#content th { background: var(--surface); font-weight: 600; }
+#content img { max-width: 100%; border-radius: 6px; }
+
+.loading {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-secondary);
+}
+</style>
+</head>
+<body>
+
+<div class="back-bar">
+  <a href="index.html">&larr; Back to simulators</a>
+</div>
+
+<div id="content">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<script type="text/markdown" id="md-source">
+# 视频脚本：零点如何改变你的二阶系统
+
+**预计时长：** 12–15 分钟
+**配套代码：** `zero_effect_demo.py`（Python 三张图）
+
+
+## 场景〇 — 开头暴击（0:00–0:45）
+
+**【画面：图 1 全屏展示（左右两个面板同时出现），然后镜头推到左半边 LHP 零点那组曲线】**
+
+> 你看到的这六条阶跃响应曲线，来自**同一个二阶被控对象**。极点一模一样，自然频率一模一样，阻尼比一模一样。但它们长得天差地别。
+>
+> 这条几乎没过冲，那条冲过设定值将近一倍。右边这条更离谱——它**先往反方向跑**。
+>
+> 整组实验，我只改了一样东西：**一个零点**。
+>
+> **给你的问题：** 你平时调 PID 的时候，加微分环节就是在加零点。你有没有想过——这个零点到底放在哪里了？它会对你的动态响应干什么？
+>
+> 看完这个视频，你就能回答这个问题。
+
+
+## 场景一 — 基准线：没有零点的二阶系统（0:45–2:30）
+
+**【画面：图 1 左面板，高亮 "no zero (baseline)" 那条曲线，其他曲线变灰】**
+
+> 先从最熟悉的开始。标准二阶系统：
+>
+> *G(s)* = ωₙ² / (s² + 2ζωₙ s + ωₙ²)
+>
+> 两个极点，零点为零。在我们的演示里，ζ = 0.5（欠阻尼），ωₙ = 2 rad/s。
+>
+> 阶跃响应是教科书式的欠阻尼曲线：先快速上升，冲过头，振荡一两下，最终稳定到 1。这个阻尼比对应的超调量大约 16%。这就是我们的基准线。
+
+**【画面：切到图 3，把零点隐掉，只留两个共轭极点】**
+
+> 这两个极点长这样，在左半平面，是一对共轭复数。实部决定衰减速度，虚部决定振荡频率。这俩数就决定了你看到的全部行为。
+>
+> 好，现在我要加一个零点进去。会发生什么？
+
+
+## 场景二 — 零点到底是什么？一个直觉（2:30–4:00）
+
+**【画面：手写风格的公式推导动画，或者PPT式分步展示】**
+
+> 传递函数本质上就是一个分式，分子多项式和分母多项式的比值。分母的根是极点——它们决定了系统有哪些"模式"、能怎么运动。分子的根是零点——它们决定了每种模式被输入**激发多少**。
+>
+> 但说人话，零点的作用是：它在原系统的输出上，**叠加了一个微分项**。
+>
+> 如果原来没有零点时的输出是 *y(t)*，那么在 s = −z 加一个零点后，输出近似变成了：
+>
+> **y(t) + (1/z) · dy/dt**
+>
+> 你看这个式子：输出 = 原来的响应 + 一个缩放过的**斜率**。响应上升最快的时候，斜率最大，这个微分项给的"额外推力"也最大。就是这个推力，造就了你马上要看到的所有现象。
+>
+> **给你的问题：** 根据这个直觉——微分项什么时候影响最大？是响应的早期还是晚期？这告诉你零点的作用集中在哪个时间段？
+
+
+## 场景三 — 左半平面零点：微分的"临门一脚"（4:00–6:30）
+
+**【画面：图 1 左面板，一条一条地出曲线，每条之间停 2 秒】**
+
+> 来看效果。在左半平面加零点，s = −10、−4、−1.5、−0.8，四条线和基准线对比。
+
+**【高亮 z = −10 vs baseline】**
+
+> 先看 z = −10。这个零点离原点很远，距离是自然频率的五倍。阶跃响应几乎没变。为什么？微分项的系数是 1/10 = 0.1，太小了。**结论：离原点很远的零点，几乎看不见。**
+
+**【高亮 z = −4，然后 z = −1.5】**
+
+> z = −4，近了。超调明显变大，上升时间缩短了一点。微分效应开始发力。
+>
+> z = −1.5——现在零点已经在极点半径内侧了。超调猛增，上升时间进一步缩短。
+
+**【高亮 z = −0.8，换个醒目的颜色】**
+
+> z = −0.8——零点比极点的实部更靠近原点。你看这个超调，巨大。微分推力太强了，直接主导了早期响应。
+>
+> **关键问题：** 为什么零点离原点越近，影响越大？（回头看那个式子——dy/dt 前面的系数是 1/z。z 越小，权重越大。）
+>
+> **核心结论：** 左半平面零点给你一个**交易**——用更多超调换更快的上升速度。零点离原点越近，这个交易越激烈。这就是 PID 调参里的微分环节在干的事——你放了一个零点，**放在哪里，决定了你的系统有多激进**。
+
+
+## 场景四 — 右半平面零点：系统在骗你（6:30–9:00）
+
+**【画面：图 1 右面板，一条一条出曲线】**
+
+> 现在说诡异的部分。如果零点在**右半平面**呢？s = +6、+2.5、+1.2、+0.7。
+>
+> 右半平面零点，分子项变成 (1 − s/z) 而不是 (1 + s/z)。输出变成：
+>
+> **y(t) − (1/z) · dy/dt**
+>
+> 微分项被**减掉**了。来看效果。
+
+**【高亮 z = +6】**
+
+> z = +6——离得远，基本看不到影响。同一个规律。
+
+**【高亮 z = +2.5，然后 z = +1.2】**
+
+> z = +2.5——你能看到了。响应在爬升之前，**先往下走了一截**。为什么？因为刚加阶跃输入时，斜率最陡，微分项 y(t) − (1/z)·dy/dt 里后面的减法项压过了前面的 y(t)，输出就成了负数。
+>
+> z = +1.2——负向更深，恢复更慢。
+
+**【高亮 z = +0.7，停顿一下】**
+
+> z = +0.7——你看。系统先大幅跌到负值，然后慢慢爬回来，穿过零点，最终才到达设定值。想象一下：如果这是个真实工业过程，操作工看到输出往反方向跑，他会怎么做？大概率会继续加大输入——然后系统变得更糟。
+>
+> **给你的问题：** 你能不能想出一个真实的物理系统，"加输入后输出先往反方向跑"？
+>
+> 经典例子：**锅炉汽包水位。** 你往锅炉里加冷水 → 水位反而先**下降**（冷水让汽泡坍塌）→ 然后水量积累，水位才上升。那个初始下降，就是右半平面零点在物理世界里的体现。它不是传感器坏了，不是阀门卡了——它长在物理规律里，你拿不掉。
+>
+> **核心结论：** 右半平面零点是硬限制，任何控制器都消除不了。它给你的系统设定了一个**带宽上限**——你没法让系统快过大约 z/2，否则反向超调会让你无法接受。你越想快，它越跟你对着干。
+
+
+## 场景五 — 不止一个零点：叠加效应（9:00–10:15）
+
+**【画面：图 2】**
+
+> 那多个零点呢？为了保持传递函数是正则的（分母阶次 ≥ 分子阶次），我加了一个快速极点 s = −10。这个极点快到几乎不影响二阶特性。
+
+**【逐条展示曲线】**
+
+> 基准线：加了快速极点后的三阶系统和原来二阶几乎一样。
+>
+> 一个零点 z = −3：超调变大，意料之中。
+>
+> 两个零点 z = −3 和 −5：超调更大——每个零点贡献自己的微分推力，效果叠加。
+>
+> 两个零点 z = −1.5 和 −3：一个近一个中——超调暴涨。
+
+**【停顿】**
+
+> **给你的问题：** 既然零点加越多超调越大，为什么还要加？有什么好处？
+>
+> 答案是：**速度。** 看每条曲线初始段的斜率。有零点的系统，碰到设定值的时间更短。在很多应用里——机器人控制、伺服系统、航天——快速打到目标，比一个干净无超调的响应更重要。零点，就是你买速度的代价。
+>
+> 控制设计的艺术，就是理解这个速度与超调之间的交易，知道把你的零点放在哪里，能拿到你想要的那个平衡点。
+
+
+## 场景六 — 融会贯通（10:15–12:00）
+
+**【画面：回到图 1，左右两个面板同时出现，用光标或高亮引导】**
+
+> 让我们串起来，把点连成线。
+
+**【用指针在图上比划】**
+
+> **第一条：** 零点在原系统响应上叠加一个正比于斜率的项。
+>
+> **第二条：** 零点的**符号**决定这个项是叠加（左半平面）还是抵消（右半平面）。
+>
+> **第三条：** 零点的**大小**——离原点的距离——决定这个微分项的权重。越近越强。
+>
+> **第四条：** 左半平面零点（最小相位零点）创造的是一个**你可以选择的**速度与超调之间的权衡。
+>
+> **第五条：** 右半平面零点（非最小相位零点）创造的是一个**你逃不掉的**限制——消除不掉的反向超调和一道硬性的速度天花板。
+
+**【画面：简单框图——控制器 → 被控对象 → 输出】**
+
+> **最后一个核心问题：** 你调 PID，把微分增益往上拧的时候，你在放一个零点。你知道它跑到哪里去了吗？它是一个**帮你提速**的左半平面零点，还是跟你被控对象相互作用、实际产生了一个**带反向超调**的等效右半平面零点？
+>
+> 下次你看一个阶跃响应，问自己三件事：
+> - 超调或反向超调，有没有超出仅凭极点就能解释的范围？
+> - 如果有，我的零点在哪里？
+> - 这些零点是在**帮**我，还是在**坑**我？
+
+
+## 场景七 — 结尾（12:00–12:30）
+
+**【画面：三张 PNG 图的缩略图 + 代码地址/二维码】**
+
+> 生成这三张图的所有代码都在下面的链接里，大约 150 行 Python，依赖 `control` 和 `matplotlib` 两个库。**强烈建议你自己跑一遍**——改改零点的位置，试试不同的阻尼比，加更多零点，亲手看曲线的变化。
+>
+> 理解零点最好的方式，不是背结论。是**动手拖它**，看阶跃响应在屏幕上跟着变。
+>
+> 觉得有用的话，一键三连，我们下期见。
+
+
+---
+
+## 拍摄/制作备注
+
+| 场景 | 主要画面 | 时长 |
+|------|---------|------|
+| 〇 | 图 1 全屏 → 推镜头到 LHP 面板 | 0:45 |
+| 一 | 图 1 左（只高亮基准线）+ 图 3 只展示极点 | 1:45 |
+| 二 | 自定义动画（微分公式推导） | 1:30 |
+| 三 | 图 1 左（逐条动画弹出） | 2:30 |
+| 四 | 图 1 右（逐条动画弹出） | 2:30 |
+| 五 | 图 2 | 1:15 |
+| 六 | 图 1 全屏 + 框图 | 1:45 |
+| 七 | 三张缩略图 + 代码链接 | 0:30 |
+
+**动画建议：**
+- 场景三/四：每条曲线逐条出现，中间停顿 2 秒给观众消化
+- 场景二：屏幕左侧展示公式 *y(t) ± (1/z)·dy/dt*，右侧在曲线上用箭头动画标注微分"推力"的方向和大小
+- 场景六：未讨论到的曲线变灰，当前讨论的曲线高亮
+
+**Bilibili 适配建议：**
+- 关键公式和结论可以做成分屏字幕卡，方便观众截图
+- 微分项的公式建议中英对照展示：*输出* = y(t) + (1/z)·dy/dt
+- 锅炉水位的例子配上实拍素材或示意动画会更生动，B 站观众喜欢具象化的解释
+- 结尾三连引导可以用"点赞收藏加关注"的自然口吻，不要生硬
+
+</script>
+
+<script>
+const md = document.getElementById('md-source').textContent;
+var mathBlocks = [];
+var p = md;
+// Protect display math $$...$$ from markdown parsing
+p = p.replace(/\$\$([\s\S]*?)\$\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+// Protect inline math $...$
+p = p.replace(/\$([^$]+)\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+var html = marked.parse(p);
+// Restore math blocks
+html = html.replace(/@@@MATH(\d+)@@@/g, function(m, idx) {
+  return mathBlocks[parseInt(idx)];
+});
+document.getElementById('content').innerHTML = html;
+renderMathInElement(document.getElementById('content'), {
+  delimiters: [
+    {left: '$$', right: '$$', display: true},
+    {left: '$', right: '$', display: false}
+  ],
+  throwOnError: false
+});
+</script>
+
+</body>
+</html>

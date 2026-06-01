@@ -337,6 +337,24 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+
+  <a href="pure_pd_unimplementable.html" class="card c-pid">
+    <div class="card-icon">&#x26A1;</div>
+    <span class="card-tag tag-pid">PD &middot; Properness &middot; Practice</span>
+    <h2>Why Pure PD Is Unimplementable</h2>
+    <p>
+      Theory says pure PD can't exist &mdash; improper transfer function, infinite
+      HF gain. Yet your MCU code runs fine without a dedicated LPF. The answer:
+      your hardware already contains four implicit low-pass filters.
+    </p>
+    <div class="card-features">
+      <span>causality &amp; properness</span>
+      <span>noise amplification</span>
+      <span>filtered derivative</span>
+      <span>implicit LPFs</span>
+      <span>when it fails</span>
+    </div>
+  </a>
   <a href="bellman_to_lqr.html" class="card c-lqr">
     <div class="card-icon">&#x1F9E0;</div>
     <span class="card-tag tag-lqr">Bellman &middot; Riccati</span>
@@ -373,6 +391,25 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+
+  <a href="youla_parameterization.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9EC;</div>
+    <span class="card-tag tag-lqr">Youla &middot; Convexity &middot; Meta</span>
+    <h2>Youla Parameterization</h2>
+    <p>
+      One knob, all controllers. Pick any stable Q(s) and you get a stabilizing
+      controller. PID, LQR, H&infin;, MPC &mdash; they're all points in the same convex
+      set, selected by different objectives. The result that turned control design
+      from art into engineering.
+    </p>
+    <div class="card-features">
+      <span>IMC warm-up</span>
+      <span>coprime factorization</span>
+      <span>affine in Q</span>
+      <span>convex optimization</span>
+      <span>bumpless transfer</span>
+    </div>
+  </a>
   <a href="from_lp_to_qp_to_lqr.html" class="card c-mpc">
     <div class="card-icon">&#x1F4C8;</div>
     <span class="card-tag tag-mpc">Optimization &middot; Condensing</span>
