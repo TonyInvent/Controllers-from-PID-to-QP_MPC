@@ -320,6 +320,25 @@ footer a:hover { text-decoration: underline; }
 
 <div class="cards">
 
+
+  <a href="core_problems_controller_design.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9E9;</div>
+    <span class="card-tag tag-lqr">Framework &middot; Nine Problems</span>
+    <h2>Core Problems in Controller Design</h2>
+    <p>
+      Every controller, from PID to nonlinear MPC, is an answer to the same nine
+      fundamental problems &mdash; measurement, inertia, constraints, uncertainty,
+      disturbances, nonlinearity, stability, computation, and trade-offs. The
+      framework that explains why the field evolved the way it did.
+    </p>
+    <div class="card-features">
+      <span>9 problem taxonomy</span>
+      <span>Luenberger &amp; Kalman</span>
+      <span>H&infin; &amp; robustness</span>
+      <span>evolutionary arc table</span>
+      <span>separation principle</span>
+    </div>
+  </a>
   <a href="poles_zeros_ode.html" class="card c-pid">
     <div class="card-icon">&#x1F4D0;</div>
     <span class="card-tag tag-pid">Fundamentals &middot; ODE</span>
@@ -353,6 +372,25 @@ footer a:hover { text-decoration: underline; }
       <span>filtered derivative</span>
       <span>implicit LPFs</span>
       <span>when it fails</span>
+    </div>
+  </a>
+
+  <a href="ip_controller.html" class="card c-pid">
+    <div class="card-icon">&#x1F39B;&#xFE0F;</div>
+    <span class="card-tag tag-pid">IP &middot; Set-Point Filter &middot; 2-DOF</span>
+    <h2>The IP Controller</h2>
+    <p>
+      Kill overshoot without touching disturbance rejection. Move the
+      proportional term from the error to the feedback path, and the closed-loop
+      zero disappears. Equivalent to a first-order low-pass filter on the
+      reference — and the algebra is exact.
+    </p>
+    <div class="card-features">
+      <span>proportional kick</span>
+      <span>filter equivalence</span>
+      <span>2-DOF architecture</span>
+      <span>bumpless transfer</span>
+      <span>three lines of C</span>
     </div>
   </a>
   <a href="bellman_to_lqr.html" class="card c-lqr">
