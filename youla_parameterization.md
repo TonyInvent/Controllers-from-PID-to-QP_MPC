@@ -35,7 +35,7 @@ But what if we restructure the loop?
 Internal Model Control (IMC) rearranges the block diagram:
 
 ```
-                 ┌─────────┐
+                ┌─────────┐
     r ──(+)──→  │  Q(s)   │──→ u ──┬──→ [G(s)] ──→ y
          ↑      └─────────┘        │
          │                         │
