@@ -147,7 +147,37 @@ body {
 @media (max-width: 800px) {
   .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
          grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
-  .plot-step, .plot-pzmap { height: 300px; }
+  /* Plot heights — responsive */
+  .plot-step, .plot-pzmap { height: min(50vh, 350px); }
+  /* Slider thumbs — larger touch targets */
+  .param-row input[type=range]::-webkit-slider-thumb { width: 24px; height: 24px; }
+  .param-row input[type=range]::-moz-range-thumb { width: 24px; height: 24px; }
+  /* Slider track — taller for touch */
+  .param-row input[type=range] { height: 6px; min-height: 28px; }
+  /* Sidebar */
+  .sidebar { padding: 12px 10px; gap: 8px; }
+  /* param-row */
+  .param-row { gap: 8px; margin: 8px 0; }
+  .param-row label { font-size: 14px; }
+  .param-row .val { font-size: 12px; }
+  /* preset-btn */
+  .preset-btn { font-size: 12px; padding: 6px 12px; margin: 2px; }
+  /* section-title */
+  .param-group h3 { font-size: 12px; }
+  /* readout */
+  .readout-item .rv { font-size: 20px; }
+  .readout-item .rl { font-size: 11px; }
+  /* insight */
+  .insight { font-size: 14px; padding: 12px 16px; }
+  /* header */
+  .header h1 { font-size: 14px; }
+  /* toggle — touch-friendly */
+  .toggle-row label { font-size: 14px; }
+  .toggle-row input[type=checkbox] { width: 20px; height: 20px; }
+  /* badge */
+  .badge { font-size: 10px; padding: 4px 10px; }
+  /* metrics overlay */
+  .metrics-overlay .metric { font-size: 11px; padding: 3px 8px; }
 }
 </style>
 </head>
