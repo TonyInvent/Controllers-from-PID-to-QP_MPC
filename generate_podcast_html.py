@@ -215,7 +215,7 @@ def main():
     script_dir = Path(__file__).resolve().parent
 
     # Files to skip (not deep-dive content)
-    skip = {'README.md', 'README_cn.md', 'AGENTS.md', 'CLAUDE.md'}
+    skip = {'README.md', 'README_cn.md', 'AGENTS.md', 'CLAUDE.md', 'diagram_check.md'}
 
     md_files = sorted(script_dir.glob('*.md'))
     count = 0
