@@ -62,6 +62,17 @@ def check_file(filepath: Path) -> list[str]:
                             f"on line {adj_li} (closest at col {closest}, gap {abs(closest-col)})"
                         )
 
+        # Warn about Unicode chars with ambiguous monospace width
+        AMBIGUOUS = set("▶►→←↑↓↔↕➔➤")
+        for li, line in enumerate(lines):
+            for ci, ch in enumerate(line):
+                if ch in AMBIGUOUS:
+                    issues.append(
+                        f"{filepath.name}: block {bi}, line {li}, col {ci}: "
+                        f"ambiguous-width char U+{ord(ch):04X} '{ch}' — "
+                        f"use ASCII instead (> -> <-) for portable monospace alignment"
+                    )
+
 
 def main():
     if len(sys.argv) < 2:

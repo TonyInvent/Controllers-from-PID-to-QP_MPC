@@ -27,3 +27,4 @@ python diagram_check.py *.md
 - Top border `┌─────────┐` one space to the right of the `│ Q(s) │` content line.
 - A `└` corner aligning with the wrong box's vertical bar (happens when two boxes share a line).
 - Using non-monospace rendering (HTML, variable-width fonts) — the checker validates source, not rendered output.
+- Unicode arrow characters (`▶`, `→`, `←`, `↑`, `↓`) in diagram blocks — they may render wider than 1em in VS Code/browsers. Use ASCII (`>`, `->`, `<-`, `^`, `v`) instead.
