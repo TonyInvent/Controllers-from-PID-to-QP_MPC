@@ -29,6 +29,22 @@
 | `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
 | `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版50分钟播客，反馈控制的250年演化史，从瓦特讲到SpaceX |
 
+
+### 深度文章
+
+| 文件 | 主题 |
+|------|------|
+| `poles_zeros_ode.md` / `.html` | 极点、零点和微分方程——每个传递函数背后的 ODE |
+| `pure_pd_unimplementable.md` / `.html` | 为什么纯 PD 物理不可实现——以及为什么 MCU 代码依然能用 |
+| `ip_controller.md` / `.html` | IP 控制器——通过移动比例项来消除超调 |
+| `core_problems_controller_design.md` / `.html` | 控制器设计的九个核心问题 |
+| `bellman_to_lqr.md` / `.html` | 从 Bellman 原理到 Riccati 方程——控制的动态规划 |
+| `care_vs_dare.md` / `.html` | 连续 vs 离散代数 Riccati 方程——何时用哪个 |
+| `youla_parameterization.md` / `.html` | Youla 参数化——所有稳定控制器在一个凸空间内 |
+| `from_lp_to_qp_to_lqr.md` / `.html` (`-zh.md` / `-zh.html`) | LP → QP → LQR——现代控制下的优化引擎 |
+| `trajectory_tracking_lqr_mpc.md` / `.html` | 轨迹跟踪——LQR 和 MPC 如何跟踪移动目标 |
+| `nonlinear_mpc.md` / `.html` | 超越线性——动力学变非线性时会发生什么 |
+| `questions.md` / `questions.html` | 控制理论常见问答 |
 ### Python 演示
 
 两个 Python 脚本依赖不同，建议使用虚拟环境：
@@ -47,6 +63,16 @@ python3 servo_qp_mpc.py
 ```
 
 或一次性装齐：  `pip install control matplotlib numpy scipy cvxpy`
+
+### 工具脚本
+
+| 文件 | 功能 |
+|------|------|
+| `generate_podcast_html.py` | 从所有 `.md` 文件生成自包含 HTML 页面（marked.js + KaTeX） |
+| `diagram_check.py` | 验证 markdown 中 ASCII 框图的对齐 |
+| `cjk_diagram.py` | CJK 感知的框图对齐辅助工具 |
+| `interior_point_demo.py` | QP 内点法演示 |
+| `lp_geometry_demo.py` | 线性规划几何可视化 |
 
 ## 立刻体验
 
@@ -68,6 +94,7 @@ open zero_effect_explorer.html      # 零点效应探索器
 3. **`lqr_explorer.html`** — 发现最优状态反馈：声明你在意什么，数学还你最优增益
 4. **`servo_qp_mpc.html`** — 加入硬约束：12V 电源满足不了 LQR 的要求时，QP-MPC 找到约束最优解
 5. **`zero_effect_explorer.html`** — 深入零点：传递函数视角解释*为什么*微分作用能加速响应
+6. **深度文章** — 打开深度文章区的任意 `.html` 文件，探索仿真器背后的理论
 
 ## 你将学到什么
 

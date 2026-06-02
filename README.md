@@ -29,6 +29,22 @@ Interactive simulators tracing the evolution of feedback control — from classi
 | `The Century of Feedback - A History of Control Theory.md` | **New** — 50-minute expanded podcast: the full 250-year arc from Watt to SpaceX, with inventor stories and historical context |
 | `The Century of Feedback - A History of Control Theory-zh.md` | **新** —— 中文版，50分钟播客，反馈控制的250年演化史 |
 
+
+### Deep dives
+
+|File|Topic|
+|---|---|
+|`poles_zeros_ode.md` / `.html`|Poles, zeros, and differential equations — the ODE behind every transfer function|
+|`pure_pd_unimplementable.md` / `.html`|Why pure PD is physically unimplementable — and why MCU code works anyway|
+|`ip_controller.md` / `.html`|The IP controller — killing overshoot by moving the proportional term|
+|`core_problems_controller_design.md` / `.html`|The nine fundamental problems every controller must solve|
+|`bellman_to_lqr.md` / `.html`|From Bellman's principle to the Riccati equation — dynamic programming for control|
+|`care_vs_dare.md` / `.html`|Continuous vs discrete algebraic Riccati equations — when to use which|
+|`youla_parameterization.md` / `.html`|Youla parameterization — all stabilizing controllers in one convex space|
+|`from_lp_to_qp_to_lqr.md` / `.html` (`-zh.md` / `-zh.html`)|LP → QP → LQR — the optimization engine under modern control|
+|`trajectory_tracking_lqr_mpc.md` / `.html`|Trajectory tracking — how LQR and MPC follow moving targets|
+|`nonlinear_mpc.md` / `.html`|Beyond linearity — what happens when dynamics go nonlinear|
+|`questions.md` / `questions.html`|Control theory FAQ — common questions and their answers|
 ### Python demos
 
 The two Python scripts need different dependencies.  Use a virtual environment:
@@ -48,6 +64,16 @@ python3 servo_qp_mpc.py
 
 Or install everything at once:  `pip install control matplotlib numpy scipy cvxpy`
 
+
+### Tools
+
+|File|What it does|
+|---|---|
+|`generate_podcast_html.py`|Generate self-contained HTML pages from all `.md` files using marked.js + KaTeX|
+|`diagram_check.py`|Validate ASCII box-drawing alignment in markdown code blocks|
+|`cjk_diagram.py`|CJK-aware diagram alignment helper|
+|`interior_point_demo.py`|Interior-point method demonstration for QP|
+|`lp_geometry_demo.py`|Linear programming geometry visualization|
 ## Try it now
 
 ```bash
@@ -68,6 +94,7 @@ Start here and work forward — the historical progression is also the pedagogic
 3. **`lqr_explorer.html`** — discover optimal state feedback: declare what you care about, math returns the gains
 4. **`servo_qp_mpc.html`** — add hard constraints: when the 12V supply can't deliver what LQR demands, QP-MPC finds the constrained optimum
 5. **`zero_effect_explorer.html`** — deep-dive on zeros: the transfer-function view that explains *why* derivative action speeds things up
+6. **Deep dives** — open any `.html` from the deep dives section to explore the theory behind the simulators
 
 ## What you'll learn
 
@@ -485,7 +512,7 @@ At each 1 ms step:
   ┌─────────────┐     ┌─────────────────────┐      ┌──────────────┐
   │ measure x   │ ──> │ condense into QP    │  ──> │ OSQP solves  │
   │ error x₀    │     │ H, F precomputed    │      │ min ½UᵀHU +  │
-  │             │     │ x₀ -> linear term    │      │ (Fᵀx₀)ᵀU     │
+  │             │     │ x₀ -> linear term   │      │ (Fᵀx₀)ᵀU     │
   └─────────────┘     └─────────────────────┘      │ s.t. |u|≤V   │
                                                    └──────┬───────┘
                                                           │
