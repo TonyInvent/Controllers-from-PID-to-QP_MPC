@@ -299,6 +299,18 @@ body {
       </div>
     </div>
 
+    <!-- Poles & Zeros Explained -->
+    <div class="param-group collapsed" id="pzHelpGroup">
+      <h3 onclick="this.parentElement.classList.toggle('collapsed')">
+        <span class="collapse-icon">▼</span> Poles &amp; Zeros Explained
+      </h3>
+      <div class="param-body" style="font-size:11px;color:var(--text-dim);line-height:1.5;">
+        <p style="margin:0 0 6px;"><strong style="color:#06d6a0;">CL poles (×):</strong> eigenvalues of <em>A−BK</em> — where the closed-loop dynamics live. All must be in LHP for stability. Real part = decay speed, imaginary part = oscillation frequency.</p>
+        <p style="margin:0 0 6px;"><strong style="color:#8888aa;">OL poles (×):</strong> the motor's natural dynamics — fixed for a given motor (one at <em>s=0</em> from the mechanical integrator, plus electrical/mechanical poles).</p>
+        <p style="margin:0;"><strong style="color:#4cc9f0;">Ctr zeros (○):</strong> LQR doesn't produce zeros naturally. These are derived by asking: if this LQI controller were an equivalent compensator <em>C(s)</em> from error to control, what zeros would it have? They show whether the controller acts more like PD (real-axis zeros), PI (single zero), or has complex zeros — the bridge between Q/R weights and classical intuition.</p>
+      </div>
+    </div>
+
     <!-- Presets -->
     <div class="param-group">
       <h3>Presets</h3>
