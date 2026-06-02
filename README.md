@@ -71,7 +71,6 @@ Or install everything at once:  `pip install control matplotlib numpy scipy cvxp
 |---|---|
 |`generate_podcast_html.py`|Generate self-contained HTML pages from all `.md` files using marked.js + KaTeX|
 |`diagram_check.py`|Validate ASCII box-drawing alignment in markdown code blocks|
-|`cjk_diagram.py`|CJK-aware diagram alignment helper|
 |`interior_point_demo.py`|Interior-point method demonstration for QP|
 |`lp_geometry_demo.py`|Linear programming geometry visualization|
 ## Try it now

@@ -70,7 +70,6 @@ python3 servo_qp_mpc.py
 |------|------|
 | `generate_podcast_html.py` | 从所有 `.md` 文件生成自包含 HTML 页面（marked.js + KaTeX） |
 | `diagram_check.py` | 验证 markdown 中 ASCII 框图的对齐 |
-| `cjk_diagram.py` | CJK 感知的框图对齐辅助工具 |
 | `interior_point_demo.py` | QP 内点法演示 |
 | `lp_geometry_demo.py` | 线性规划几何可视化 |
 
