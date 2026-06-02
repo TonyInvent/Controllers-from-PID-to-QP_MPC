@@ -483,7 +483,7 @@ Key solver choices and why they matter for a real-time control loop:
 ```
 At each 1 ms step:
   ┌─────────────┐     ┌─────────────────────┐      ┌──────────────┐
-  │ measure x   │ ──▶ │ condense into QP    │ ──▶  │ OSQP solves  │
+  │ measure x   │ ──▶ │ condense into QP    │  ──▶ │ OSQP solves  │
   │ error x₀    │     │ H, F precomputed    │      │ min ½UᵀHU +  │
   │             │     │ x₀ → linear term    │      │ (Fᵀx₀)ᵀU     │
   └─────────────┘     └─────────────────────┘      │ s.t. |u|≤V   │
