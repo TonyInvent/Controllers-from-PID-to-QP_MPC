@@ -68,10 +68,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .metric { font-size: 11px; font-family: var(--mono); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; color: var(--text-dim); }
 
 @media (max-width: 800px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
-         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
-  .plot-step, .plot-pzmap { height: min(50vh, 350px); }
-  .sidebar { padding: 12px 10px; gap: 8px; }
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight";
+         height: auto; gap: 2px; }
+  .plot-step, .plot-pzmap { height: min(60vw, 380px); min-height: 260px; }
+  .sidebar { padding: 10px 10px; gap: 8px; max-height: none; overflow-y: visible; }
   .param-group { padding: 10px 12px; }
   .param-row { gap: 8px; margin: 8px 0; }
   .param-row label { font-size: 14px; width: 32px; }

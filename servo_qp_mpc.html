@@ -145,8 +145,9 @@ footer .note strong { color: var(--accent); }
 
 /* Responsive */
 @media (max-width: 1100px) {
-  .main-grid { grid-template-columns: 1fr; }
-  .left-panel, .right-panel { max-height: none; }
+  html, body { height: auto; overflow: auto; }
+  .main-grid { height: auto; grid-template-rows: auto; grid-template-columns: 1fr; }
+  .left-panel, .right-panel { max-height: none; overflow-y: visible; }
 
   /* Sidebar */
   .left-panel, .right-panel { padding: 12px 10px; }
@@ -174,7 +175,7 @@ footer .note strong { color: var(--accent); }
   .metric .label { font-size: 0.6875rem; }
 
   /* Plot heights */
-  .chart-container { height: min(40vh, 280px); }
+  .chart-container { height: min(40vw, 300px); min-height: 220px; }
 
   /* Slider thumbs & tracks */
   .param-row input[type=range] {

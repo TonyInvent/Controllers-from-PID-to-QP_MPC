@@ -145,17 +145,18 @@ body {
 
 /* Responsive */
 @media (max-width: 800px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: 44px auto auto auto auto;
+  html, body { height: auto; overflow: auto; }
+  .app { height: auto; grid-template-columns: 1fr; grid-template-rows: auto;
          grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight"; overflow-y: auto; }
   /* Plot heights — responsive */
-  .plot-step, .plot-pzmap { height: min(50vh, 350px); }
+  .plot-step, .plot-pzmap { height: min(60vw, 380px); min-height: 260px; }
   /* Slider thumbs — larger touch targets */
   .param-row input[type=range]::-webkit-slider-thumb { width: 24px; height: 24px; }
   .param-row input[type=range]::-moz-range-thumb { width: 24px; height: 24px; }
   /* Slider track — taller for touch */
   .param-row input[type=range] { height: 6px; min-height: 28px; }
   /* Sidebar */
-  .sidebar { padding: 12px 10px; gap: 8px; }
+  .sidebar { max-height: none; overflow-y: visible; padding: 12px 10px; gap: 8px; }
   /* param-row */
   .param-row { gap: 8px; margin: 8px 0; }
   .param-row label { font-size: 14px; }
