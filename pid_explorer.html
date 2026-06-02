@@ -109,6 +109,26 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       </div>
     </div>
 
+    <!-- Damping Ratio Explained -->
+    <div class="param-group collapsed" id="zetaHelp">
+      <div class="section-title" onclick="var g=document.getElementById('zetaHelp');g.classList.toggle('collapsed');var b=g.querySelector('.param-body');b.style.display=g.classList.contains('collapsed')?'none':'block';" style="cursor:pointer;user-select:none;">
+        What is ζ? ▸
+      </div>
+      <div class="param-body" style="display:none;font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:6px;">
+        <p style="margin:0 0 6px;"><strong style="color:var(--accent);">ζ = damping ratio = actual / critical</strong></p>
+        <p style="margin:0 0 6px;">Think of a <strong style="color:#f0f0f0;">mass-spring-damper</strong>:<br>
+        <em style="color:var(--accent);">m·ẍ + c·ẋ + k·x = 0</em></p>
+        <p style="margin:0 0 4px;"><strong style="color:var(--orange);">c</strong> = damping coefficient — force <em>opposing</em> velocity. The faster the mass moves, the harder damping pushes back, always in the <em>counter</em> direction.</p>
+        <p style="margin:0 0 4px;"><strong style="color:#f0f0f0;">k</strong> = spring stiffness · <strong style="color:#f0f0f0;">m</strong> = mass</p>
+        <p style="margin:0;">ζ = <strong style="color:var(--accent);">c</strong> / 2√(km) — the ratio of actual damping to the amount needed for the fastest overshoot-free return (critical damping).</p>
+        <table style="margin-top:6px;font-size:10px;width:100%;">
+          <tr><td style="color:var(--warn);">ζ&lt;1</td><td>Underdamped — oscillates</td></tr>
+          <tr><td style="color:var(--accent);">ζ=1</td><td>Critically damped — fastest, no overshoot</td></tr>
+          <tr><td style="color:var(--cyan);">ζ&gt;1</td><td>Overdamped — slow, no oscillation</td></tr>
+        </table>
+      </div>
+    </div>
+
     <!-- PID Parameters -->
     <div class="param-group">
       <div class="section-title">PID Parameters &nbsp; C(s)=Kp + Kd·s + Ki/s</div>
