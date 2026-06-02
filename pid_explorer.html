@@ -273,8 +273,8 @@ function computePolesAndZeros(zeta, wn, kp, kd, ki) {
   // Closed-loop poles
   let clPoles;
   if (Math.abs(ki) < 1e-10 && Math.abs(kd) < 1e-10 && Math.abs(kp) < 1e-10) {
-    // No control: just plant poles
-    clPoles = computePlantPoles(zeta, wn);
+    // No control active — return empty CL poles (OL poles already drawn separately)
+    clPoles = [];
   } else {
     clPoles = solveCubic(a2, a1, a0);
     // Filter out spurious pole at s=0 when Ki=0 (cancelled by controller zero)
