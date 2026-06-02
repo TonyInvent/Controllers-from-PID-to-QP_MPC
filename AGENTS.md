@@ -54,4 +54,4 @@ Each HTML simulator is a self-contained file with three layers: inline CSS (dark
 
 **Testing:** `test_lqr.js` extracts the inline JS from `lqr_explorer.html`, evaluates it in Node.js with mocked DOM (no browser needed), and runs 16 integration tests against the CARE solver, simulation engine, and fallback gain logic using real `numeric.js` from npm.
 
-**Diagram validation:** After creating or editing any `.md` file that contains ASCII box-drawing diagrams (`┌┐└┘├┤│─`), run `python diagram_check.py <file>` to verify alignment before committing. All box corners must vertically align with their side bars.
+**Diagram validation:** After creating or editing any `.md` file that contains ASCII box-drawing diagrams (`┌┐└┘├┤│─`), run `python diagram_check.py <file>` to verify alignment before committing. All box corners must vertically align with their side bars. **NEVER put CJK text (Chinese/Japanese/Korean) inside box-drawing diagrams** — it's visually impossible to align across renderers. Keep box content in English; put Chinese explanations in the paragraph below the diagram.

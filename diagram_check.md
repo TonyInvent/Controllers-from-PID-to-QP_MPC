@@ -28,6 +28,4 @@ python diagram_check.py *.md
 - A `└` corner aligning with the wrong box's vertical bar (happens when two boxes share a line).
 - Using non-monospace rendering (HTML, variable-width fonts) — the checker validates source, not rendered output.
 - Unicode arrow characters (`▶`, `→`, `←`, `↑`, `↓`) in diagram blocks — they may render wider than 1em in VS Code/browsers. Use ASCII (`>`, `->`, `<-`, `^`, `v`) instead.
-- **CJK characters in diagrams** — Chinese/Japanese/Korean text occupies 2 visual columns per character. The checker counts bytes, not visual columns, so CJK-aware padding must be verified manually in a monospace terminal.
-
-For CJK diagrams, use `cjk_diagram.py <file>` to auto-align box content with correct visual-width padding. The script reads the top border to determine box boundaries, then recomputes trailing spaces accounting for each CJK character's 2-column width.
+- **CJK text inside box-drawing diagrams is forbidden.** CJK characters are 2 visual columns wide per character, but different renderers (terminal, VS Code, browser, GitHub) compute the ratio slightly differently (1.98×–2.03×). This makes pixel-perfect alignment impossible across environments. Keep box content in English even in Chinese documents — the Chinese explanation goes in the paragraph below the diagram.
