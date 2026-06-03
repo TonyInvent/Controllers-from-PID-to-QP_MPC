@@ -1,246 +1,251 @@
-# Why Audio Amplifier Design Speaks a Different Language from Control Theory
+# Why Audio Amplifier Design Speaks a Language Incommensurable with Control Theory
 
-**A control theorist looks at a high-end audio power amplifier and sees a feedback control system. An audio designer looks at the same schematic and sees an amplifier with negative feedback. They are the same thing. So why are the textbooks, the measurements, and the design priorities so different?**
-
----
-
-## 1. The same loop, two tribes
-
-An audio power amplifier is a feedback control system. Period.
-
-- **The "plant"** is the output stage — a pair of power transistors driving a loudspeaker load.
-- **The "controller"** is the input stage plus the voltage amplifier stage plus the frequency compensation network.
-- **The "feedback network"** is a resistive voltage divider from output to input.
-- **The "setpoint"** is the music signal.
-- **The "disturbance"** is power supply ripple, load variation, thermal drift, and the nonlinearity of the output transistors themselves.
-- **The "error signal"** is the difference between the input and the attenuated output — exactly what a differential pair generates.
-
-Every concept maps. Stability margin. Loop gain. Disturbance rejection. Bandwidth. Slew rate. Output impedance. They are the same mathematics, applied to the same physics.
-
-And yet. Walk into an audio engineering conference and a control conference, and you will hear two completely different languages. The audio engineer talks about THD, TIM, "sonic signature," and whether 40 dB of feedback is "too much." The control engineer talks about phase margin, sensitivity functions, and whether the loop is robust to plant uncertainty. They could be describing the same amplifier, but they would not recognize each other's descriptions.
-
-Why?
+**A control theorist regards a high-end audio power amplifier and apprehends a feedback control system. An audio designer scrutinizes the identical schematic and perceives an amplifier with negative feedback appended to it. They are the selfsame entity. Why, then, are the textbooks mutually unintelligible, the measurement regimes orthogonal, and the design priorities hermetically sealed from one another?**
 
 ---
 
-## 2. The historical fork
+## 1. The selfsame loop, two mutually uncomprehending tribes
 
-The two fields diverged around 1940 and never merged back.
+An audio power amplifier *is* a feedback control system. This is not an analogy. This is not a helpful conceptual mapping. It is the thing itself. The signal flow diagram of a power amplifier maps, without remainder, onto the standard control block diagram:
 
-### The control branch
+- **The "plant"** is the output stage — a coterie of power transistors propelling current into a loudspeaker whose impedance, across the audio band, resembles nothing so much as a drunken random walk.
+- **The "controller"** is the input differential pair, the voltage amplification stage, and that solitary compensation capacitor whose value you selected by intuition and hope.
+- **The "feedback network"** is the resistive divider from output to the inverting input — the simplest component in the entire apparatus, and the only one whose transfer function is genuinely flat.
+- **The "setpoint"** is the music signal — a broadband, non-stationary, spectrally capricious waveform bearing no resemblance whatsoever to the 1 kHz test tone that dominates the datasheet.
+- **The "disturbances"** are power supply ripple, load impedance vagaries, thermal drift in the bias network, and the obdurate nonlinearity of the output transistors — that pernicious proclivity of silicon to produce, absent correction, harmonics at percent levels from a nominally sinusoidal input.
+- **The "error signal"** is the difference between the input and the attenuated output — precisely and exactly what the differential pair generates. No metaphor required.
 
-Control theory grew out of industrial necessity — steam engines, chemical refineries, autopilots, servo mechanisms. The dominant intellectual force was applied mathematics. The problems were about stability and robustness, because a refinery blowing up is expensive and a plane crashing is everyone's problem. The culture rewarded proofs, guarantees, and generality.
+Every single concept maps. Stability margin. Loop gain. Disturbance rejection. Bandwidth. Slew rate. Output impedance. The mathematics is invariant. The physics is identical.
 
-By the 1960s, control theory had state-space methods, Lyapunov stability, and the beginnings of optimal control. The mathematics was formidable. But the problems they worked on — missile guidance, chemical process control, satellite attitude — had nothing to do with audio.
+And yet.
 
-### The audio branch
+Walk into an audio engineering conference and you will hear perorations about THD, TIM, "sonic signature," and whether 40 dB of feedback constitutes an unconscionable excess. Walk into a control conference and you will hear disquisitions on phase margin, the sensitivity function, and whether the loop possesses sufficient robustness to plant uncertainty. They could be describing the selfsame amplifier. Neither would recognize the other's description as referring to the same physical object.
 
-Audio grew out of telecommunications and consumer electronics. The dominant intellectual force was circuit design. The problems were about noise, distortion, bandwidth, and — critically — what things *sounded like*. The culture rewarded measurements (THD, SNR) and, controversially, subjective listening impressions. There were no proofs. There was folklore.
-
-Harold Black invented the negative feedback amplifier at Bell Labs in 1927. He was thinking like a control theorist — use feedback to linearize a nonlinear amplifier and reduce distortion. But the people who commercialized audio in the 1950s–70s were circuit designers, not control theorists. They thought in terms of tubes, then transistors, then op-amps. Their mental model of feedback was: "apply a fraction of the output back to the input, inverted. The distortion reduces by the loop gain. Watch out for oscillation."
-
-This mental model is *correct* — it's just a narrow slice of what control theory has to say about feedback. And for many years, it was enough.
-
-### What cemented the split
-
-Two things. First, the transistor era (1960s) made circuits complex enough that intuition broke down. Second, the "feedback wars" of the 1970s created a parallel mythology that has never been fully dismantled.
-
-The feedback wars were started by Matti Otala, a Finnish engineer who observed that certain transistor amplifiers with high global negative feedback sounded subjectively worse than simpler designs with less feedback. He proposed a mechanism — Transient Intermodulation Distortion (TIM) — and argued that high feedback was the culprit. The audiophile press ran with it. "Feedback is bad" became conventional wisdom. Low-feedback, even zero-feedback designs became commercially desirable.
-
-The tragedy, from a control theorist's perspective, is that Otala had identified a real phenomenon — slew-rate limiting caused by insufficient bandwidth in the forward path, combined with large feedback factors, creates nonlinear distortion that static THD measurements don't capture. But the diagnosis was wrong. The problem wasn't *feedback*. The problem was feedback applied to an amplifier whose open-loop bandwidth was too low, whose slew rate was inadequate, whose phase margin was questionable. The cure wasn't *less* feedback. The cure was better loop design — wider bandwidth, higher slew rate, proper compensation.
-
-The control theory community could have said this in 1975. The mathematics to analyze it — describing functions for nonlinear elements in a feedback loop, robustness margins, sensitivity functions — all existed. But nobody in audio was reading the control literature. And nobody in control was thinking about audio amplifiers.
-
-So the two tribes continued in parallel, each developing their own vocabulary, their own design rules, and their own mythology, talking about the same feedback loops in completely different terms.
+How did this happen?
 
 ---
 
-## 3. The measurement mismatch
+## 2. The historical divergence
 
-The single biggest driver of the language divide is **what each field considers important to measure**.
+The two fields bifurcated around 1940 and have remained in a state of mutual incomprehension ever since.
 
-### What audio measures
+### The control lineage
 
-| Measurement | What it captures | Why it matters to audio people |
-|------------|-----------------|-------------------------------|
-| **THD+N** (Total Harmonic Distortion + Noise) | Nonlinearity: 1 kHz in, measure everything at 2 kHz, 3 kHz... plus noise floor | "How clean is the amplifier?" |
-| **IMD** (Intermodulation Distortion) | 19 kHz + 20 kHz in, look for 1 kHz difference tone | "What happens with complex music signals?" |
-| **SINAD** (Signal-to-Noise and Distortion) | Single-number figure of merit | "Which amplifier is better?" |
-| **Damping factor** | $Z_\text{load} / Z_\text{out}$ at low frequency | "Can it control the woofer?" |
-| **Slew rate** | Max dV/dt the output can swing | "Can it track fast transients without distorting?" |
-| **Frequency response** | ±0.1 dB from 20 Hz to 20 kHz | "Is it tonally neutral?" |
+Control theory gestated in industrial exigency — steam engine governors, chemical refineries, naval autopilots, anti-aircraft servo mechanisms. The dominant intellectual tradition was applied mathematics of the most uncompromising sort. The preeminent problems concerned stability and robustness, because a refinery undergoing catastrophic disassembly is expensive and an aircraft augering into the ground represents a failure mode of singularly unacceptable character. The culture valorized proofs, guarantees, and generality. It produced theorems. It demanded apodictic certainty.
 
-Audio people are measuring *errors* at the output, at levels that would make a control engineer laugh: -120 dB is considered "good enough," -130 dB is "high end." They are measuring nonlinear effects — harmonics — which control theory largely ignores because it assumes linearity.
+By the 1960s, control theory had accreted state-space methods, Lyapunov stability, and the nascent apparatus of optimal control. The mathematics was rebarbative — dense, unapologetically recondite, impenetrable to anyone lacking graduate-level preparation. But the problems under investigation — missile guidance, chemical process regulation, satellite attitude control — had absolutely nothing to do with the reproduction of recorded music. The two domains shared no constituency, no journals, no conferences, no common language.
 
-### What control measures
+### The audio lineage
 
-| Measurement | What it captures | Why it matters to control people |
-|------------|-----------------|----------------------------------|
-| **Phase margin / Gain margin** | How close the loop is to instability | "Will this thing oscillate?" |
-| **Sensitivity function** $S(s)$ | Disturbance rejection vs frequency | "How well does it reject load changes?" |
-| **Complementary sensitivity** $T(s)$ | Tracking and noise amplification | "Does it follow the reference? Does it amplify sensor noise?" |
-| **Bandwidth / crossover frequency** | Where loop gain crosses 0 dB | "How fast can it respond?" |
-| **Step response** (overshoot, settling time) | Transient behavior | "Does it ring when hit with a disturbance?" |
-| **Robustness margins** | Stability under plant uncertainty | "Will it still work when the load changes?" |
+Audio gestated in telecommunications and consumer electronics. The dominant intellectual tradition was empirical circuit design. The preeminent problems involved noise, distortion, bandwidth, and — this is the ineluctable differentiator — what things *sounded like* when music passed through them. The culture valorized measurements (THD, SNR, and the invidious tendency to reduce entire systems to a single figure of merit) and, with considerable controversy, subjective listening impressions. There were no proofs. There was no mathematical apparatus of the sort that would earn a control theorist's respect. There was folklore. There was anecdote. There was, and remains, an entire subculture dedicated to the proposition that changing one's power cord alters the spatial characteristics of the stereo image.
 
-Notice the asymmetry. Audio measures what comes out of the box in the frequency domain, under steady-state sine waves — or at most, two-tone tests. Control measures the *stability boundary* and the *transient* behavior. The two communities are looking at the same loop through completely different lenses.
+Harold Black invented the negative feedback amplifier at Bell Labs in 1927, and his mental framework was entirely that of a control theorist — deploy feedback to linearize a nonlinear amplifier, thereby suppressing distortion. It is a perspicacious and elegant insight. But the people who commercialized audio amplification in the 1950s through the 1970s were circuit designers operating without the benefit of control-theoretic training. Their cognitive model of feedback was wholly operational and entirely superficial: "apply a fraction of the output back to the input, phase-inverted. Distortion attenuates by the loop gain. Take care to avoid oscillation."
 
-And here is the crucial point: **both sets of measurements come out of the same loop mathematics.** The sensitivity function $S(s)$ determines both THD reduction (audio's concern) and disturbance rejection (control's concern). The complementary sensitivity $T(s)$ determines both frequency response peaking (audio's ±0.1 dB obsession) and overshoot (control's settling time). The loop gain determines both damping factor (audio) and disturbance rejection at the output (control). They are the same quantities with different names.
+This mental model is not *wrong* — it is merely jejune. It captures the first-order consequence of feedback while remaining oblivious to the deeper structure: the sensitivity function, the waterbed effect, the Bode integral constraints, the shaping of output impedance by loop gain, the trade space between disturbance rejection and noise amplification. For decades, this jejune model sufficed. The amplifiers functioned. The music played. The customers purchased.
+
+### The obfuscations that made the divergence permanent
+
+Two phenomena cemented the schism. First, the transistor era of the 1960s produced circuits of sufficient complexity that intuitive design — the kind that sufficed for triodes and pentodes — collapsed entirely. The nonlinearities were more numerous, more spectrally distributed, and less amenable to empirical compensation.
+
+Second, the "feedback wars" of the 1970s erected an entire parallel mythology that has never been fully dismantled — indeed, it has ossified into received wisdom, a mendacious conventionality that persists to this day.
+
+The feedback wars were initiated by Matti Otala, a Finnish engineer of genuine observational acuity. He noticed — correctly — that certain transistor amplifiers employing copious global negative feedback produced subjectively inferior sound compared to simpler designs employing considerably less. He proposed a mechanism: Transient Intermodulation Distortion (TIM). He indicted high feedback as the malefactor. The audiophile press, ever hungry for a techno-narrative they could retail to their readership, embraced the indictment with truculent enthusiasm. "Feedback is deleterious" became an article of faith. Low-feedback and zero-feedback designs became commercially advantageous, and any engineer who demurred was dismissed as insufficiently sensitive to the subtleties of musical reproduction.
+
+The tragedy — and I use that word with deliberation, not as rhetorical hyperbole — is that Otala had identified a genuine phenomenon while arriving at a completely erroneous diagnosis. The problem was never *feedback*. The problem was feedback applied to an amplifier whose forward-path bandwidth was pusillanimous, whose slew rate was inadequate, and whose phase margin was tendentious at best. The correct remedy was not *less* feedback. It was competent loop design: wider bandwidth, higher slew rate, proper compensation. These are not matters of opinion. They are consequences of the Bode integral relations, which are as mathematically ineluctable as the conservation of energy.
+
+The control theory community could have articulated this in 1975. The requisite mathematics — describing functions for nonlinear elements embedded in feedback loops, robustness margins, sensitivity function analysis — was fully developed. But no one in the audio community was reading the control literature. And no one in the control community was thinking about audio amplifiers. The two tribes, ensconced in their separate epistemologies, proceeded in parallel, each developing its own vocabulary, its own design heuristics, and its own collection of increasingly elaborate myths about the identical feedback loops.
 
 ---
 
-## 4. The jargon translation table
+## 3. The metrological chasm
 
-If you know control theory and need to read an audio amplifier paper, here is your dictionary:
+The single most powerful driver of the linguistic divergence is **what each community considers worthy of measurement**.
 
-| Control theory term | Audio equivalent | Notes |
-|-------------------|------------------|-------|
-| Plant $G(s)$ | Open-loop amplifier (forward path) | The gain stages before feedback |
-| Controller $K(s)$ | Frequency compensation network | Usually just a capacitor — a pole at some frequency |
-| Feedback $H(s)$ | Feedback network | Resistive divider, almost always flat |
-| Loop gain $L(s) = GKH$ | Loop gain | Same concept, same Bode plot |
-| Sensitivity $S = 1/(1+L)$ | Distortion reduction factor | $S \approx 1/L$ when $L \gg 1$ — this is why "more feedback = less THD" |
-| Complementary sensitivity $T = L/(1+L)$ | Closed-loop gain | Audio people call this the "gain" and mostly ignore its dynamics |
-| Phase margin (PM) | Stability margin | Audio: "does it ring on square waves?" |
-| Gain margin (GM) | Margin before oscillation | Audio: "add a Zobel network if it oscillates" |
-| Crossover frequency $\omega_c$ | Unity-gain frequency, gain-bandwidth product | Where open-loop gain hits the closed-loop gain |
-| Disturbance rejection | PSRR, CMRR, load regulation | Power supply rejection, common-mode rejection, output impedance |
-| Reference tracking | Frequency response flatness | "±0.1 dB, 20 Hz – 20 kHz" |
-| Slew rate limiting | Slew rate limiting | This one they actually share — and it's where TIM comes from |
-| Nonlinear plant | Crossover distortion, transistor nonlinearity | Audio cares deeply; control often assumes linearity |
-| Noise shaping (ΔΣ) | Noise shaping in class-D modulators | The one place where audio people *invented* control theory they didn't know existed |
+### The audio metrological regime
 
-The translation makes it clear: nothing in audio is outside control theory. The mapping is complete. The difference is entirely in emphasis and measurement culture.
+| Measurement | What it apprehends | Audio's hermeneutic |
+|------------|-------------------|---------------------|
+| **THD+N** | Nonlinearity: inject 1 kHz, integrate everything at integer multiples plus the noise floor | "How pristine is this apparatus?" |
+| **IMD** | 19 kHz + 20 kHz stimulus, examine the 1 kHz difference product | "Behavior under the simulacrum of musical complexity?" |
+| **SINAD** | A single, question-begging scalar | "Which amplifier is superior — I require a unidimensional ranking" |
+| **Damping factor** | $Z_\text{load} / Z_\text{out}$ evaluated at bass frequencies | "Can it exercise dominion over the woofer?" |
+| **Slew rate** | Maximum dV/dt sustainable at the output | "Can it track transients without succumbing to nonlinearity?" |
+| **Frequency response** | ±0.1 dB, 20 Hz to 20 kHz | "Is it spectrally neutral?" |
+
+Audio engineers are measuring *errors* at the output, at magnitudes that would provoke incredulous laughter from a control engineer: -120 dB is considered merely "adequate," -130 dB qualifies as "high-end." They are measuring nonlinear artifacts — harmonics, intermodulation products, spectral impurities — that control theory largely disregards because its foundational assumption is linearity. Audio says: your assumption is false, here is the empirical evidence, and the human auditory system can detect these artifacts at levels your instruments barely resolve.
+
+### The control metrological regime
+
+| Measurement | What it apprehends | Control's hermeneutic |
+|------------|-------------------|-----------------------|
+| **Phase margin / Gain margin** | Proximity of the loop to the precipice of instability | "Will this contraption spontaneously oscillate?" |
+| **Sensitivity function** $S(s)$ | Disturbance attenuation as a function of frequency | "How effectively does it reject load perturbations?" |
+| **Complementary sensitivity** $T(s)$ | Tracking fidelity and noise amplification | "Does it follow the reference? Does it amplify sensor noise?" |
+| **Bandwidth / crossover frequency** | The frequency at which loop gain succumbs to unity | "How expeditious can the response be?" |
+| **Step response** (overshoot, settling time) | Transient comportment | "Does it ring when perturbed?" |
+| **Robustness margins** | Stability under the procrustean condition of plant uncertainty | "Will it remain stable when the customer connects a load of entirely unknown provenance?" |
+
+Observe the asymmetry. Audio measures what emerges from the output terminals under steady-state sinusoidal excitation — or, at its most ambitious, a dual-tone stimulus. Control measures the *stability boundary* and *transient* behavior. Two communities, regarding the selfsame loop through completely orthogonal optical instruments.
+
+And here is the crucial recognition that eludes both tribes: **both measurement suites derive from the identical loop mathematics.** The sensitivity function $S(s)$ determines simultaneously THD reduction (audio's obsession) and disturbance rejection (control's obsession). The complementary sensitivity $T(s)$ determines simultaneously frequency response peaking (audio's ±0.1 dB persnicketiness) and overshoot (control's settling time preoccupation). Loop gain determines simultaneously the damping factor (audio) and disturbance rejection at the output (control). They are the same quantities, designated by different nomenclature.
 
 ---
 
-## 5. The specific emphasis shifts and why they happened
+## 4. The Rosetta Stone: a lexicon for cross-tribal communication
+
+If you command control theory and must decipher an audio amplifier paper, this is your translation apparatus:
+
+| Control term | Audio vernacular | Annotation |
+|-------------|-----------------|------------|
+| Plant $G(s)$ | Open-loop amplifier (forward path) | The cascade of gain stages preceding the feedback summing junction |
+| Controller $K(s)$ | Frequency compensation network | Deceptively simple — frequently a single capacitor introducing a dominant pole. The entire loop's stability depends on this component's value |
+| Feedback $H(s)$ | Feedback network | A resistive divider. Almost invariably spectrally flat. The least interesting element in the entire system |
+| Loop gain $L(s) = GKH$ | Loop gain | The selfsame concept. The selfsame Bode plot. An island of terminological concord in a sea of mutual incomprehension |
+| Sensitivity $S = 1/(1+L)$ | Distortion reduction factor | $S \approx 1/L$ when $L \gg 1$ — the mathematical vindication of "more feedback reduces THD" |
+| Complementary sensitivity $T = L/(1+L)$ | Closed-loop gain | Audio's treatment of this quantity is jejune: they attend to its magnitude and ignore its phase dynamics entirely |
+| Phase margin | Stability margin | Audio: "does the square wave response exhibit ringing?" |
+| Gain margin | Margin prior to oscillation | Audio: "affix a Zobel network if oscillation manifests" |
+| Crossover frequency $\omega_c$ | Unity-gain frequency, GBW product | The frequency at which open-loop gain intersects the closed-loop gain |
+| Disturbance rejection | PSRR, CMRR, load regulation | A single concept, fragmented into three separate specifications by audio's taxonomic traditions |
+| Reference tracking | Frequency response flatness | "±0.1 dB, 20 Hz to 20 kHz" — they believe this is an independent metric. It is merely the magnitude of $T(s)$ |
+| Slew rate limiting | Slew rate limiting | A rare instance of terminological convergence — and the true provenance of TIM |
+| Nonlinear plant | Crossover distortion, transistor nonlinearity | Audio's defining preoccupation; control's simplifying assumption |
+| Noise shaping (ΔΣ) | Noise shaping in class-D modulators | The singular instance where audio practitioners independently invented control theory they did not know existed |
+
+The translation table makes manifest what should always have been obvious: nothing in audio amplifier design resides outside the purview of control theory. The mapping is complete, exhaustive, without lacuna. The differences are entirely cultural.
+
+---
+
+## 5. Three arenas where the emphasis is genuinely different
 
 ### 5.1 Distortion at -120 dB
 
-Control theory asks: "Is the output within 1% of the setpoint?" Audio asks: "Are there any components in the output that weren't in the input, at levels below one part per million?"
+Control theory asks, with perfect reasonableness: "Is the output within 1% of the setpoint?" Audio asks, with a fastidiousness bordering on the pathologically punctilious: "Does the output contain any spectral component absent from the input, at levels beneath one part per million?"
 
-The audio amplifier's "plant" (output stage) is strongly nonlinear — Class B crossover distortion creates harmonics at the percent level without feedback. Feedback pushes this down by the loop gain. At 1 kHz, loop gain might be 60 dB, reducing 1% open-loop distortion to 0.001% closed-loop. That's excellent.
+The amplifier's plant — the output stage — is obdurately nonlinear. Class B crossover distortion, absent correction, generates harmonics at percent levels. Feedback suppresses these by the loop gain. At 1 kHz, where loop gain may attain 60 dB, 1% open-loop distortion attenuates to 0.001% closed-loop. An impressive demonstration of feedback's linearizing power.
 
-But the audio engineer wants to know: what about at 6 kHz, where loop gain is only 24 dB? Now the 1% open-loop distortion becomes 0.06% closed-loop. That's audible. And what about the 7th harmonic of 3 kHz (21 kHz), where loop gain might be 10 dB and the amplifier is barely linearizing at all?
+But — and this is the distinction that separates the audio designer's world from the control theorist's — what transpires at 6 kHz? Loop gain there may be a mere 24 dB. The same 1% open-loop distortion now emerges as 0.06% closed-loop. Audible. Unambiguously. And what of the seventh harmonic of 3 kHz — at 21 kHz, where loop gain may have dwindled to 10 dB, and the amplifier has effectively ceased linearizing altogether?
 
-Control theory's linear approximations are blind to these effects. Audio amplifiers have to deal with a nonlinear plant whose nonlinearity is the *primary thing you are trying to suppress*, at frequencies where the loop is weak.
+Control theory's linear approximation is blind to these phenomena. It was never designed to apprehend them. The audio amplifier confronts a nonlinear plant whose nonlinearity is *the very thing you are endeavoring to extirpate* — at frequencies where the loop is too enfeebled to do its job adequately. This is why perspicacious audio designers obsess over open-loop linearity — Class A biasing, Hawksford error correction, Black's own feedforward — not because they mistrust feedback, but because they understand, with a clarity born of painful experience, that feedback's efficacy is frequency-dependent, and audio's demands extend across the entire audible spectrum. This is an integral constraint, not an aesthetic preference.
 
-This drives audio designers to obsess over open-loop linearity (Class A biasing, error correction, feedforward) — not because feedback "doesn't work," but because feedback's effectiveness drops with frequency, and audio demands linearity across the entire band.
+### 5.2 The load as protean adversary
 
-### 5.2 The load is a moving target
+In the vast majority of control applications, the plant is tolerably well-characterized. You possess reasonable knowledge of your motor's parameters, your reactor's dynamics, your aircraft's aerodynamic coefficients.
 
-In most control systems, the plant is well-characterized. You know your motor, your chemical reactor, your aircraft dynamics.
+In audio, the load is a loudspeaker. Not a specific, documented, characterized loudspeaker. A loudspeaker of unknown provenance, selected by a customer whose technical sophistication may not extend beyond reading the price tag. Its impedance, as a function of frequency, describes a trajectory more capricious than anything a control theorist would willingly countenance — from 2 Ω to 40 Ω, with phase angles spanning the inductive and capacitive quadrants. The amplifier must maintain stability into the entirety of this uncertainty set. And the feedback network — the $H(s)$ branch, two resistors and nothing more — constitutes the sole interface between the amplifier's carefully designed internals and this riot of electrical indeterminacy.
 
-In audio, the load is a loudspeaker. A random loudspeaker chosen by the customer. Its impedance varies from 2 Ω to 40 Ω across frequency, with capacitive and inductive phase angles. The amplifier must remain stable into *any* of them. And the feedback network — the $H(s)$ branch, a simple resistive divider — is the only interface between the amplifier and its environment.
+This is, in the most rigorous sense, a **robust control problem**. The amplifier must demonstrate stability for *all* admissible loads within a conspicuously large uncertainty set. Control theory has developed a formidable armamentarium for precisely this class of problem — H∞ synthesis, μ-analysis, the small-gain theorem. Audio designers address it with heuristic prescriptions: "insert an inductor in series with the output"; "affix a Zobel network"; "ensure the loop gain's traversal of 0 dB is not excessively precipitous."
 
-This is a **robust control problem**. The amplifier must be stable for *all* loads in a very large uncertainty set. The control theory community developed tools for exactly this (H∞, μ-synthesis, the small-gain theorem), but audio designers solve it with rules of thumb: "add an inductor in series with the output," "Zobel network on the output," "don't let the loop gain cross 0 dB too steeply."
+A control theorist would recognize: you are designing for a plant uncertainty set. Characterize $S(s)$ to bound the effect. An audio designer would prescribe: employ a Thiele network. They are solving the identical problem, with the identical mathematics operating silently beneath the surface of their disparate vocabularies.
 
-A control theorist would say: you're designing for a plant uncertainty set. Use $S(s)$ to bound the effect. An audio designer would say: use a Thiele network. They're solving the same problem.
+### 5.3 Class D: control theory arrives, but the marketing department renames it
 
-### 5.3 The switch to Class D
+Class D amplification represents the most dramatic and consequential collision between the audio and control traditions. A class D amplifier can be described, without the slightest exaggeration, as:
 
-Class D (switching) amplifiers are the most dramatic collision between audio and control theory. A class D amplifier is:
-- A switching converter (like a buck regulator)
-- Wrapped in a feedback loop
-- Driving an LC output filter
-- With a nonlinear modulator (comparator + triangle wave = PWM)
+- A switching converter topologically indistinguishable from a buck regulator
+- Enveloped in a feedback loop
+- Driving an LC output filter — a second-order resonant network that introduces a full 180° of phase shift at its resonant frequency
+- Incorporating a nonlinear modulator — a comparator and a triangular wave generator producing pulse-width modulation
 
-This is a control system with a nonlinear element inside the loop. The LC filter introduces a 180° phase shift at resonance — you need lead compensation or the loop oscillates. The modulator introduces a delay (the switching period). The power supply introduces disturbance (ripple injection into the output). And the whole thing must have a bandwidth extending to 40 kHz or more for truly high-performance audio.
+This configuration is a control system with a nonlinear element lodged *inside the loop*. The LC filter demands lead compensation lest the loop succumb to oscillation. The modulator introduces a delay equal to the switching period. The power supply injects disturbance directly into the output. And the entire apparatus must sustain a bandwidth extending beyond 40 kHz to satisfy the exigencies of genuinely high-performance audio reproduction.
 
-Control theory has a term for this: it's a switching regulator with voltage-mode control and an output filter. Power supply engineers analyze it with Bode plots and compensator design. Audio engineers call it "post-filter feedback class D" and analyze it with... well, many of them just try values until it works.
+Control theory possesses a perfectly adequate vocabulary for this: it is a switching regulator operating in voltage-mode control with an output filter. Power supply engineers analyze these structures with Bode plots and systematic compensator design. Audio engineers call it "post-filter feedback class D" and approach its analysis with... how shall I characterize this with precision? Many of them adjust component values iteratively until the oscillation desists.
 
-The best class D designers — the ones at Hypex, Purifi, TI, Infineon — use control theory explicitly. They model the PWM modulator as a gain block with a delay. They model the LC filter as a second-order plant. They design the compensator using standard loop-shaping techniques. The result is an amplifier with 120 dB SNR, 0.0001% THD, and stability into any load. It's a triumph of control theory applied to audio — but the marketing department calls it a "proprietary feedback topology," not "robust loop-shaped control."
+The preeminent class D designers — the cohort at Hypex, Purifi, Texas Instruments, and Infineon — employ control theory explicitly, without apology, and with manifest success. They model the PWM modulator as a gain element with a transport delay. They model the LC filter as a canonical second-order plant. They design the compensator through standard loop-shaping methodology. The result: amplifiers achieving 120 dB SNR, 0.0001% THD, and unconditional stability into any load impedance. It is an unqualified vindication of control-theoretic methodology applied to audio — though the marketing collateral describes it as a "proprietary feedback topology" rather than "robust loop-shaped control." The physics does not care what the brochure says.
 
 ---
 
-## 6. What audio can learn from control theory
+## 6. What audio can appropriate from control theory
 
-The audio world has been reinventing control theory by trial and error for 50 years. Here is what the control community figured out decades ago that would immediately improve any audio amplifier design:
+The audio community has, for approximately half a century, been independently rediscovering fragments of control theory through a process of unguided empirical exploration. The following represents knowledge the control community established decades ago, the immediate application of which would improve any audio amplifier design:
 
-### 6.1 Stop fearing high feedback. Fear bad loop design.
+### 6.1 The proper object of apprehension is not the quantity of feedback, but the quality of the loop
 
-This is the hill I will die on.
+This is the hill upon which I have elected to make my stand. I will not be dislodged.
 
-The "feedback is bad" audiophile movement is based on a category error. They observed that certain high-feedback amplifiers sound bad. They attributed the badness to the feedback. They should have attributed it to the *loop design*. An amplifier with 80 dB of loop gain and a 200 kHz unity-gain frequency, properly compensated for 60° phase margin, will sound clean, fast, and uncolored. An amplifier with 40 dB of loop gain, poor phase margin, and slew-rate limiting will sound "grainy" or "congested." The difference is not the *amount* of feedback. It's the *quality* of the feedback loop.
+The "feedback is deleterious" movement within audiophile culture rests upon a category error of breathtaking dimensions. Its proponents observed that certain amplifiers employing substantial feedback sounded inferior. They attributed this inferiority to the *quantity* of feedback. The correct attribution would have been to the *quality of the loop design*. An amplifier realizing 80 dB of loop gain with a 200 kHz unity-gain crossover, properly compensated to 60° of phase margin, will sound — and I select these adjectives with the precise intent that they convey — clean, expeditious, and spectrally neutral. An amplifier realizing 40 dB of loop gain with marginal phase margin and inadequate slew rate will sound, in the argot of the reviewing community, "grainy" or "congested." The distinction is not the *magnitude* of feedback. The distinction is the competence with which the feedback loop has been designed.
 
-Control theory teaches that feedback is a tool. Used well, it linearizes, rejects disturbances, and reduces output impedance. Used badly, it oscillates or rings. The *amount* of feedback is dictated by how much loop gain you can achieve before the phase lag from the plant and compensator forces you to cross 0 dB. This is Bode's integral theorem, not a matter of taste.
+Control theory instructs us, with the full authority of Bode's integral theorem, that feedback is an instrument of extraordinary power. Deployed with competence, it linearizes, rejects disturbances, and diminishes output impedance. Deployed incompetently, it oscillates or rings. The *quantity* of feedback realizable in a given design is dictated by the phase lag accumulated through the plant and compensator at the frequency where the loop gain must cross unity. This is not a matter of subjective preference. It is a theorem.
 
-### 6.2 Measure the loop, not just the output
+### 6.2 Measure the loop, not merely its output
 
-Audio reviews are obsessed with THD+N plots into 8 Ω resistive loads. This measures the *closed-loop output* under the easiest possible conditions. It tells you almost nothing about stability margins, load sensitivity, or transient behavior.
+The reviewing community's solipsistic fixation on THD+N measurements into a purely resistive 8 Ω load is, to put the matter with the precision it deserves, a metrological travesty. This measurement protocol evaluates the *closed-loop output* under the most accommodating conditions imaginable. It communicates approximately nothing about stability margins, load sensitivity, or transient comportment — the characteristics that distinguish a competent amplifier from an incompetent one.
 
-A control theorist would instead ask to see:
-- The Bode plot of the open loop gain
+A control theorist, presented with an amplifier for evaluation, would request, in this order:
+- The Bode plot of the open-loop gain, magnitude and phase
 - The phase margin and gain margin
-- The step response into a capacitive load
-- The output impedance vs frequency
+- The step response into a representative capacitive load
+- The output impedance as a function of frequency, 20 Hz to 200 kHz
 
-These four measurements tell you everything about how the amplifier *actually behaves as a feedback system*. The THD number is a consequence of the loop design — it should be derived, not primary.
+These four characterizations reveal everything of consequence about the amplifier's behavior *as a feedback system*. The THD figure is a *consequence* of the loop design. It should be derived, not fetishized.
 
-### 6.3 The sensitivity function is your friend
+### 6.3 The sensitivity function is your most powerful ally, and you do not know its name
 
-When an audio designer adds "more feedback," they are shaping the sensitivity function $S(s)$. Below the loop bandwidth, $|S| \ll 1$ — distortion and power supply noise are suppressed. At and above the loop bandwidth, $|S| \to 1$ — nothing is suppressed, and in fact there may be peaking.
+When an audio designer intones the phrase "add more feedback," what they are actually doing — whether they recognize it or not — is shaping the sensitivity function $S(s)$. Within the loop bandwidth, $|S| \ll 1$: distortion products and power supply artifacts are attenuated. At and beyond the loop bandwidth, $|S| \to 1$: nothing is attenuated, and indeed there may exist a region where $|S| > 1$ — a sensitivity peak — where the amplifier is actively *amplifying* its own errors.
 
-The art of amplifier design is shaping $S(s)$ to suppress what matters (power supply ripple at 100/120 Hz, distortion harmonics up to 20 kHz) while not creating a peak at ultrasonic frequencies that amplifies noise or rings on transients. This is a loop-shaping problem, exactly the kind solved by H∞ and mixed-sensitivity design. There is no reason audio designers should be doing this by instinct when the mathematics is available.
+The genuine craft of amplifier design consists in the judicious shaping of $S(s)$: achieving aggressive suppression in the frequency bands that matter (100/120 Hz supply ripple, distortion harmonics through 20 kHz) while preventing the formation of sensitivity peaks at ultrasonic frequencies that would amplify noise or precipitate ringing on transients. This is a loop-shaping problem. It is precisely the class of problem addressed by H∞ synthesis and mixed-sensitivity design. There exists no justification — none — for audio designers to conduct this shaping by instinct when the mathematical framework for doing so systematically has been available for forty years.
 
-### 6.4 Output impedance is $Z_\text{out}(s) = Z_\text{open}(s) \cdot |S(s)|$
+### 6.4 Output impedance is a function, not a scalar
 
-The amplifier's output impedance — what audio people call "damping factor" — is the open-loop output impedance divided by the loop gain. This is a direct consequence of feedback theory: feedback reduces the output impedance by the return difference $1+L$.
+The amplifier's output impedance — the quantity audio marketers designate with the meretricious term "damping factor" — is the open-loop output impedance divided by the return difference $1+L$. This follows directly, inexorably, from the algebra of feedback.
 
-But $L$ drops with frequency. So the output impedance *rises* with frequency. A "damping factor of 1000 at 100 Hz" sounds impressive. At 10 kHz, the same amplifier might have a damping factor of 10. The tweeter sees a completely different amplifier than the woofer. This is why some amplifiers sound "bright" or "bass-light" despite flat frequency response — the output impedance interacts with the speaker's own impedance curve to create a frequency-dependent voltage divider at the amplifier terminals.
+But $L$ is frequency-dependent. It declines — monotonically, in any competently designed system — as frequency increases. Consequently, the output impedance *ascends* with frequency. A specification of "damping factor 1000 at 100 Hz" sounds, to the uninitiated, splendid. But at 10 kHz, the same amplifier may exhibit a damping factor of 10 — two orders of magnitude inferior. The tweeter perceives a fundamentally different driving impedance than the woofer. This is why certain amplifiers, despite demonstrating a frequency response that appears spectrally neutral when measured into a resistor, are perceived as "bright" or "bass-shy" — the output impedance and the loudspeaker's own impedance curve form a frequency-dependent voltage divider at the amplifier terminals, imposing a subtle but audible equalization whose provenance is entirely in the loop dynamics.
 
-Control theory gives you the language to think about this: $Z_\text{out}(s)$ is a frequency-dependent quantity shaped by the loop gain. Audio marketing wants a single number. The physics says there isn't one.
-
----
-
-## 7. What control theory can learn from audio
-
-It's not a one-way street. Audio amplifier designers work under constraints that would make a control theorist uncomfortable, and they have developed some genuine insights.
-
-### 7.1 Distortion matters in the frequency domain
-
-Control theory is overwhelmingly a linear theory. Nonlinear effects are handled with describing functions, small-signal linearization, or worst-case robustness. None of this captures what audio people care about: the exact spectrum of distortion products from a nonlinear plant inside a feedback loop.
-
-Audio designers think about *where* the harmonics land (2nd harmonic at 2 kHz is less objectionable than 7th harmonic at 7 kHz, which is less displeasing than intermodulation products that land at non-harmonic frequencies). They have developed elaborate measurement protocols (CCIF, DFD, multitone) that probe the loop in ways control theory doesn't. Systems theory could learn from this: nonlinear feedback systems produce structured, not random, errors, and the structure matters.
-
-### 7.2 The plant can be improved, not just compensated
-
-Control theory assumes the plant is given. Audio designers spend enormous effort improving the "plant" — the output stage — to reduce its open-loop nonlinearity before feedback even enters. Class A biasing, error correction (Hawksford), feedforward (Black again, in a different form), compound transistor topologies.
-
-The insight: the more linear the plant is open-loop, the less work the feedback loop has to do, and the less demanding the loop design is. Audio designers intuitively understand that feedback linearization is multiplicative — final THD = open-loop THD / loop gain — and therefore optimizing the numerator is just as important as maximizing the denominator.
-
-Control theory could formalize this as a joint optimization over plant design and controller design, which is rarely done in practice because in most industries the plant and the controller are designed by different teams.
-
-### 7.3 Listening tests are real, if poorly controlled
-
-Control theorists dismiss subjective listening. This is understandable — the audiophile world is full of provable nonsense (cable elevators, CD demagnetizers, $10,000 power cords). But the core claim — that trained listeners can distinguish amplifiers that measure identically — has been validated in properly controlled blind tests.
-
-What this tells us is that our measurement suite is incomplete. There are aspects of amplifier behavior — dynamic behavior under music signals, recovery from momentary overload, distortion spectrum envelope — that are not captured by static sine-wave THD. Control theory's transient metrics (settling time, overshoot, integral absolute error) are closer to what the ear cares about, but even these don't fully explain the data.
-
-This is an opportunity. The ear is a sophisticated sensor. If it can detect differences that our instruments cannot, the correct response is to find better instruments, not to dismiss the ear. Control theory has the analytical tools. It just hasn't applied them to the right measurements yet.
+Control theory furnishes the conceptual framework: $Z_\text{out}(s)$ is a frequency-dependent quantity shaped by the loop gain. Audio's marketing apparatus demands a scalar. The physics, with its characteristic indifference to commercial convenience, declines to provide one.
 
 ---
 
-## 8. The unification
+## 7. What control theory can appropriate from audio
 
-In the end, an audio power amplifier *is* a control system. The open-loop amplifier is the plant. The compensation capacitor is the controller. The feedback resistors set the reference tracking. The power supply ripple is a disturbance. The loudspeaker load is uncertain plant dynamics.
+The intellectual commerce need not be unidirectional. Audio amplifier designers operate under constraints that would induce considerable discomfort in a control theorist, and in doing so have generated insights of genuine significance:
 
-The mathematics is identical. The differences are cultural, historical, and commercial. Audio's culture developed in isolation from control theory, accumulating its own jargon, its own folklore, and its own tribal disputes. The "feedback wars" of the 1970s were a control-theoretic debate conducted entirely without control theory — and they arrived at wrong conclusions because of it.
+### 7.1 Nonlinear distortion produces structured, not stochastic, spectral artifacts
 
-A generation of audio designers who learn Bode plots, sensitivity functions, and loop shaping — who see an amplifier as a feedback system rather than a circuit with "negative feedback added" — will produce better amplifiers. They will stop arguing about whether feedback is "good" or "bad" and start asking the right questions: how much loop gain at 20 kHz? What phase margin into a 2 µF load? Where is the sensitivity peak? These are control questions with audio answers.
+Control theory is, in its overwhelming preponderance, a linear theory. Nonlinear phenomena are addressed, when they cannot be ignored entirely, through describing functions, small-signal linearization about an operating point, or worst-case robustness characterizations. None of these approaches apprehends what audio practitioners consider paramount: the precise spectral distribution of distortion products generated by a nonlinear plant under closed-loop control.
 
-And a generation of control theorists who take audio seriously — with its extreme demands on linearity, bandwidth, and robustness into absurdly uncertain loads — might discover that the audio people's trial-and-error methods contain the seeds of new theory.
+Audio designers do not merely inquire "is there distortion?" They demand to know *where* the distortion products land in the frequency domain. The second harmonic of 2 kHz is relatively innocuous; the seventh harmonic of 7 kHz is rebarbative; intermodulation products falling at frequencies inharmonically related to the stimulus are more displeasing than either. They have elaborated a suite of measurement protocols — CCIF difference-frequency distortion, DFD, multitone testing — that interrogate the loop's nonlinear comportment in regimes control theory has historically neglected.
 
-The two tribes have been separate for 80 years. It's time to merge.
+The lesson is not trivial: nonlinear feedback systems produce structured, not random, errors. The structure of the error spectrum has perceptual significance. Systems theory should incorporate this recognition.
+
+### 7.2 The plant and the controller can be co-optimized
+
+Control theory, in its canonical formulation, treats the plant as exogenously given. The design problem is: given this plant, synthesize a controller satisfying the specifications. Audio designers operate under no such constraint. They invest considerable effort in improving the "plant" — the output stage — reducing its open-loop nonlinearity before feedback is even applied. Class A biasing, Hawksford error correction, compound transistor topologies: these are all strategies for rendering the plant more tractable *prior* to the application of feedback.
+
+The insight, which should be obvious but is rarely formalized: the more linear the plant in its open-loop configuration, the less work the feedback loop must perform, and the less exacting the loop design requirements become. Audio designers have internalized, at an intuitive level, that feedback linearization operates multiplicatively — THD$_\text{final}$ = THD$_\text{open}$ / loop gain — and therefore optimization of the numerator merits the same attention as maximization of the denominator.
+
+Control theory could formalize this as a problem of joint optimization over plant parameters and controller parameters. Such co-design is rarely practiced because, in the majority of engineering domains, the plant and the controller are designed by separate organizations that do not communicate. The audio amplifier, in which a single engineer designs both, represents an opportunity for theoretical unification.
+
+### 7.3 The ear is a sensor of nontrivial sophistication
+
+Control theorists evince a pronounced tendency to dismiss subjective listening evaluations as epistemologically vacuous. I share their disdain for the more flagrant excesses of audiophile culture — the cable elevators, the CD demagnetizers, the $10,000 power cords, the individuals who claim, with a straight face, to distinguish between USB cables in double-blind tests where their performance is statistically indistinguishable from random guessing. I have devoted a non-negligible portion of my professional life to the public dismantling of these superstitions.
+
+Nevertheless.
+
+Properly controlled, level-matched, double-blind listening tests have validated a proposition that should give us pause: trained listeners can reliably distinguish between amplifiers whose conventional measurement suites declare them identical. Not because the measurements are erroneous — they are not — but because the measurement suite is incomplete. There exist dimensions of amplifier behavior — dynamic comportment under music-like signals, recovery from momentary overload, the spectral envelope of distortion products under complex excitation — that static sine-wave THD measurements do not sample.
+
+Control theory's transient metrics — settling time, overshoot, integral absolute error — approach closer to the ear's actual concerns than steady-state harmonic measurements do. But they do not fully account for the data. This is not a refutation of measurement. It is an indication that our measurement apparatus requires augmentation. The ear is a sophisticated sensor. When it detects phenomena our instruments fail to register, the intellectually honest response is to develop better instruments — not to denigrate the sensor as hopelessly subjective.
+
+---
+
+## 8. The convergence that must occur
+
+In the final analysis, an audio power amplifier *is* a control system. Not analogously. Not metaphorically. The open-loop amplifier is the plant. The compensation capacitor is the controller. The feedback resistors establish reference tracking. The power supply ripple is a disturbance. The loudspeaker is — let me be entirely explicit — an uncertain, frequency-dependent, complex-impedance plant dynamics about which the designer possesses, at the time of design, precisely zero information.
+
+The mathematics is invariant under changes of nomenclature. The physics does not care whether you call it loop gain or loop gain, sensitivity or distortion reduction factor, phase margin or "the thing that makes square waves ring." The differences are cultural, historical, and commercial — a sediment of eighty years of intellectual isolation, accumulated jargon, folkloric design heuristics, and internecine disputes conducted without the benefit of a shared theoretical framework. The "feedback wars" of the 1970s constituted a debate about control theory, prosecuted without the vocabulary of control theory, and the erroneous conclusions that emerged have been propagating through the audio community ever since.
+
+A generation of audio designers who acquire fluency in Bode plots, sensitivity functions, and loop shaping — who apprehend an amplifier as a feedback system rather than a circuit to which negative feedback has been appended — will produce objectively superior amplifiers. They will desist from the sterile disputation over whether feedback is "beneficial" or "deleterious" and begin to pose the questions that actually matter: What loop gain at 20 kHz? What phase margin into a 2 µF capacitive load? Where does the sensitivity peak, and at what magnitude? These are control questions. They admit of audio answers.
+
+And a generation of control theorists who engage seriously with the audio amplifier problem — with its ferocious demands on linearity, its bandwidth requirements extending two decades beyond the typical control application, its requirement of unconditional stability into loads of absurd indeterminacy — may discover that the audio community's empirical tinkering harbors the seeds of theoretical developments that control theory has not yet formulated.
+
+The two tribes have maintained their mutual incomprehension for eighty years. The physics has been waiting for them to notice.
 
 ---
 
 ## About
 
-This document is written in the voice of **Bruno Putzeys** — audio engineer, control theory advocate, former designer at Philips, Hypex, Grimm Audio, and now Purifi Audio. He is known for applying rigorous control theory to class-D amplifier design, for arguing that "more feedback is better when done right," and for publicly dismantling audiophile myths about negative feedback.
+This document is written in the voice of **Bruno Putzeys** — audio engineer, control theory proselytizer, former principal at Philips, Hypex, and Grimm Audio, co-founder of Purifi Audio. He is known — and in certain audiophile circles, notorious — for applying rigorous control-theoretic methodology to class-D amplifier design, for advancing the proposition that properly-implemented feedback is an unqualified good regardless of quantity, and for the public excoriation of audiophile mythology concerning negative feedback. His AES presentations are erudite, confrontational, and worth considerably more of your attention than the average hi-fi magazine review.
 
-See: Putzeys, B. (2019). "The F-word, or why there is no such thing as too much feedback." *Linear Audio*, Vol. 17. And various presentations at AES conventions.
+See: Putzeys, B. (2019). "The F-word, or why there is no such thing as too much feedback." *Linear Audio*, Vol. 17. And the various AES convention recordings in which he dissects feedback mythology with the precision of a surgeon and the diplomacy of a grenade.
 
 ---
 
@@ -248,15 +253,15 @@ See: Putzeys, B. (2019). "The F-word, or why there is no such thing as too much 
 
 **Audio + control theory:**
 - Self, D. (2013). *Audio Power Amplifier Design.* Focal Press. — The standard reference on amplifier circuit design.
-- Cordell, B. (2011). *Designing Audio Power Amplifiers.* McGraw-Hill. — Comprehensive, with good coverage of compensation and stability.
-- Putzeys, B. (2011). "The F-word, or why there is no such thing as too much feedback." — The manifesto. Required reading.
+- Cordell, B. (2011). *Designing Audio Power Amplifiers.* McGraw-Hill. — Comprehensive; the compensation and stability chapters are particularly meritorious.
+- Putzeys, B. (2011). "The F-word, or why there is no such thing as too much feedback." — The manifesto. Required reading for anyone who has ever uttered the phrase "feedback is bad."
 
-**Control theory for audio people:**
-- Skogestad, S. & Postlethwaite, I. (2005). *Multivariable Feedback Control.* Wiley. — The best bridge between control theory and engineering practice.
-- Åström, K.J. & Murray, R.M. (2021). *Feedback Systems.* Princeton. — Accessible and comprehensive.
+**Control theory for audio practitioners:**
+- Skogestad, S. & Postlethwaite, I. (2005). *Multivariable Feedback Control.* Wiley. — The preeminent bridge between control theory and engineering practice.
+- Åström, K.J. & Murray, R.M. (2021). *Feedback Systems.* Princeton. — Accessible, comprehensive, and mathematically honest.
 
-**This project (related docs):**
-- `core_problems_controller_design.md` — the fundamental problems every controller (or amplifier) must solve.
-- `pure_pd_unimplementable.md` — why ideal derivative action can't be built, and what that means for feedback. Directly relevant to amplifier compensation.
-- `youla_parameterization.md` — the space of all stabilizing controllers. An amplifier is one point in this space.
-- `care_vs_dare.md` — discrete vs continuous Riccati equations. Class D modulators are discrete-time inside a continuous-time loop.
+**This project (related documents):**
+- `core_problems_controller_design.md` — the nine fundamental problems every controller — and every amplifier — must address.
+- `pure_pd_unimplementable.md` — why ideal differentiation cannot be physically realized, with direct implications for amplifier compensation.
+- `youla_parameterization.md` — the space of all stabilizing controllers. Your amplifier inhabits one point in this space.
+- `care_vs_dare.md` — continuous vs. discrete Riccati equations. Class D modulators are discrete-time elements within a continuous-time loop.
