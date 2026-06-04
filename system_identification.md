@@ -6,7 +6,7 @@
 
 ## 1. The problem you didn't know you had
 
-Open `servo_motor_pid.html`. Look at the parameters: armature resistance $R = 2.0\ \Omega$, torque constant $K_t = 0.12\ \text{N·m/A}$, rotor inertia $J = 0.0001\ \text{kg·m}^2$. Where did these numbers come from?
+Open `servo_motor_pid.html`. Look at the parameters: armature resistance $R = 2.0\ \Omega$, torque constant $K_t = 0.12$ N·m/A, rotor inertia $J = 0.0001$ kg·m². Where did these numbers come from?
 
 Not from Maxwell's equations. Not from first principles of electromagnetism. Somebody measured them — or guessed, or read a datasheet, or copied them from a similar motor. If the numbers are wrong, the simulated PID, LQR, and MPC are all optimizing for a motor that doesn't exist.
 
