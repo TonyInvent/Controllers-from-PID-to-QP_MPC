@@ -127,33 +127,32 @@ Now the pole and zero are swapped compared to lead:
 - Zero at $s = -1/T$
 - Pole at $s = -1/(\beta T)$
 
-Since $\beta > 1$, the *pole* is closer to the origin. At low frequencies, the gain approaches β; at high frequencies, it approaches 1. The lag network boosts low-frequency gain while leaving high-frequency behavior essentially unchanged.
+Since $\beta > 1$, the **pole** is closer to the origin than the zero. At DC ($s = 0$), the gain is 1; at high frequencies, it drops to $1/\beta$. The lag network is a **low-pass** filter — it passes low frequencies and attenuates high frequencies.
+
+By itself, the lag network doesn't boost DC gain. The boost comes from the **overall loop gain** $K$: you set $K$ high enough to meet steady-state accuracy at low frequencies, and the lag rolls off the gain before the crossover so the phase margin isn't destroyed. In the design procedure, the lag is always cascaded with an overall gain $K$ that provides the necessary DC amplification.
 
 ### 4.2 The trick: place the lag well below the crossover
 
 The lag network introduces *negative* phase (phase lag — hence the name) between the zero and the pole. If that phase dip lands near your crossover frequency, it reduces phase margin and potentially destabilizes the loop.
 
-The solution is simple: **place the zero at least a decade below the crossover frequency.** By the time the frequency reaches the crossover, the phase lag has faded to near zero. The lag acts like a pure gain boost at DC and low frequencies, and like a piece of wire at the crossover.
+The solution is simple: **place the zero at least a decade below the crossover frequency.** By the time the frequency reaches the crossover, the phase lag has faded to near zero. The lag acts like a constant gain at low frequencies (DC through roughly $\omega_z$), and like an attenuator at the crossover and above.
 
 ### 4.3 The design procedure
 
-**Step 1 — Determine how much DC gain boost you need.** If the bare plant has 5% steady-state error and you want 0.5%, you need roughly 10× more DC loop gain. Set β = 10.
+**Step 1 — Determine how much DC gain boost you need.** If the bare plant has 5% steady-state error and you want 0.5%, you need roughly 10× more DC loop gain. Set $\beta = 10$ and increase the overall gain $K$ by the same factor.
 
-**Step 2 — Place the zero a decade below crossover.** ω_z = ω_cp / 10, where ω_cp is the bare plant's 0 dB crossover. Then T = 1/ω_z.
+**Step 2 — Place the zero a decade below crossover.** $\omega_z = \omega_{cp} / 10$, where $\omega_{cp}$ is the bare plant's 0 dB crossover. Then $T = 1/\omega_z$.
 
-**Step 3 — Adjust gain.** Compensate so $|C(j\omega_{cp})| \approx 1$ — the lag should be transparent at the crossover:
-
-$$K_c = \frac{1}{|C_{\text{lag}}(j\omega_{cp})|}$$
+**Step 3 — The lag self-compensates.** Since the lag network has unity gain at high frequencies ($|C_{\text{lag}}(j\infty)| = 1/\beta \approx 0$ for large $\beta$), you don't need a separate gain correction at the crossover — the lag is already transparent there.
 
 ### 4.4 What lag does to the closed loop
 
-- **Dramatically better steady-state accuracy** — DC loop gain multiplies by β
+- **Dramatically better steady-state accuracy** — DC loop gain multiplies by the overall gain $K$, which the lag makes feasible without destabilising the loop
 - **Virtually unchanged phase margin** — the phase dip is far below the crossover
 - **Slightly slower response** — the crossover may shift slightly lower (lag adds a tiny bit of high-frequency attenuation)
 - **Potentially worse transient for large signals** — the lag pole is slow; it can cause "windup-like" behavior
 
-Lag is the compensator equivalent of **integral action** — it boosts low-frequency gain to eliminate steady-state error. The difference: integral action adds a pole at s = 0 (infinite DC gain, zero steady-state error guaranteed); lag adds a pole near s = 0 (finite but large DC gain, small but non-zero steady-state error). Lag is a practical approximation of integral action that avoids the 90° of phase lag an integrator brings.
-
+Lag is the compensator equivalent of **integral action** — it enables high low-frequency gain without destroying phase margin. The difference: integral action adds a pole at $s = 0$ (infinite DC gain, zero steady-state error guaranteed); lag adds a pole near $s = 0$ (finite but large DC gain, small but non-zero steady-state error). Lag is a practical approximation of integral action that avoids the 90° of phase lag an integrator brings.
 ---
 
 ## 5. Lead-lag: the best of both
