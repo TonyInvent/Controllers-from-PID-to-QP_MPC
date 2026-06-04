@@ -25,9 +25,27 @@ Now look at the relative positions of $z$ and $p$ on the negative real axis:
 
 Every other representation — $K_c\frac{Ts+1}{\alpha Ts+1}$, $K_c\frac{\beta Ts+1}{Ts+1}$, $\frac{s+z}{s+p}$ with various normalizations — is the same transfer function wearing different clothes. The $z,p$ parameterization is the most direct: you place a zero and a pole, and nature tells you whether it leads or lags.
 
-**Why does relative position determine everything?** Each pole and zero contributes phase to the Bode plot: a zero eventually adds $+90^\circ$, a pole eventually adds $-90^\circ$. When the zero is closer to the origin than the pole ($|z| < |p|$), the zero's phase contribution kicks in at a lower frequency — for a range of frequencies between $|z|$ and $|p|$, the net phase is positive. That's phase lead. Reverse the order, and you get phase lag over the intermediate range.
+### 1.1 Geometric intuition — why $|z| < |p|$ means lead
 
-The Bode magnitude tells the same story from a different angle. Between $|z|$ and $|p|$, the magnitude slope changes: if $|z| < |p|$, the zero kicks in first, raising the magnitude slope by $+20$ dB/decade before the pole brings it back down — a "bump" in both magnitude and phase. If $|p| < |z|$, the pole kicks in first, dropping the slope before the zero restores it — magnitude takes a step down between the two breakpoints.
+The cleanest way to see lead and lag is not through Bode formulas but through vectors on the s-plane. Evaluate the compensator at a frequency $\omega$ on the imaginary axis and rewrite it as a ratio of *differences*:
+
+$$C(j\omega) = K \cdot \frac{j\omega + z}{j\omega + p} = K \cdot \frac{j\omega - (-z)}{j\omega - (-p)}$$
+
+Each term $j\omega - s_0$ is a vector drawn from $s_0$ to the evaluation point $j\omega$. The zero at $-z$ gives you a vector from $-z$ to $j\omega$; the pole at $-p$ gives you a vector from $-p$ to $j\omega$. The magnitude and phase of $C(j\omega)$ are then:
+
+$$|C(j\omega)| = K \cdot \frac{\text{length of zero vector}}{\text{length of pole vector}}, \qquad \angle C(j\omega) = \angle(\text{zero vector}) - \angle(\text{pole vector})$$
+
+The phase is simply **the angle the zero vector makes with the horizontal, minus the angle the pole vector makes with the horizontal.** Both angles are measured from the positive real axis, and both lie between $0^\circ$ and $90^\circ$ since the vectors point from the negative real axis up to the positive imaginary axis.
+
+Now imagine both $-z$ and $-p$ sitting on the negative real axis, and pick a frequency somewhere between them. Trace the two vectors in your mind.
+
+**Lead — the zero is closer to the origin.** The zero sits at $-z$, the pole at $-p$, with $|z| < |p|$. From $j\omega$, look down and left: the vector to $-z$ has to drop further and angle more steeply than the vector to $-p$, because $-z$ is nearer and the vertical distance to $j\omega$ is proportionally larger compared to the short horizontal reach. The zero vector is therefore more nearly vertical than the pole vector — its angle with the horizontal is larger. Since the phase of $C(j\omega)$ is the zero angle minus the pole angle, and the zero angle is larger, the result is positive. That positive phase is **lead.** Between $|z|$ and $|p|$, every frequency enjoys this geometry: the closer zero always wins the angle race.
+
+**Lag — the pole is closer to the origin.** Now swap positions. The pole at $-p$ is nearer the origin, the zero at $-z$ is further out. At any frequency between the two breakpoints, the pole vector — reaching from a nearer point — is the steeper one. Its angle is larger. Subtract it from the zero's angle and you get a negative number. That negative phase is **lag.** The compensator is pulling phase *down* over that frequency range.
+
+**The limits.** When $\omega$ is far below both breakpoints, the evaluation point hugs the origin. Both vectors are nearly horizontal, both angles near zero. The compensator approximates a real gain: $C \approx K \cdot z/p$. When $\omega$ is far above both breakpoints, the evaluation point climbs high on the imaginary axis. Both vectors point nearly straight up at $90^\circ$. Their angles cancel: $C \approx K$. Everything interesting — the phase bump, the magnitude slope change — happens in the band between the two breakpoints where one vector has already started to tilt upward while the other is still shallow. That is where one angle dominates the other.
+
+The Bode magnitude tells the same story. If $|z| < |p|$, the zero kicks in first, raising the magnitude slope by $+20$ dB/decade before the pole arrives to flatten it — a simultaneous bump in magnitude and phase. If $|p| < |z|$, the pole arrives first, dropping the slope before the zero restores it — magnitude takes a step down between the two breakpoints, and phase goes negative.
 
 ---
 
