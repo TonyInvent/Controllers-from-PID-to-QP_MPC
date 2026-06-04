@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Identification Explorer — Black-Box Modeling</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0; --accent2: #06d6a0;
+  --warn: #f72585; --orange: #f77f00; --baseline: #666688; --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --pink: #f72585; --green: #06d6a0; --cyan: #4cc9f0;
+  --gold: #ffd166; --violet: #b388ff; --copper: #e07b50;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar plot1" "sidebar plot2" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 12px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 16px;
+           display: flex; flex-direction: column; gap: 12px; }
+.plot-io, .plot-step { position: relative; min-height: 0; background: var(--surface); }
+.plot-io { grid-area: plot1; } .plot-step { grid-area: plot2; }
+.plot-io canvas, .plot-step canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; z-index: 2; pointer-events: none; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 2px; }
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.param-row label { font-size: 13px; width: 42px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; background: var(--accent); border: 2px solid var(--surface); }
+.param-row .val { width: 48px; text-align: right; font-size: 13px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+.param-row select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-family: var(--font); font-size: 12px; outline: none; }
+.param-row select:focus { border-color: var(--accent); }
+
+.btn-row { display: flex; gap: 8px; }
+.btn { font-size: 12px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; transition: all 0.15s; font-family: var(--font); flex: 1; text-align: center; }
+.btn:hover { border-color: var(--accent); color: #fff; background: rgba(76,201,240,0.12); }
+.btn.primary { background: rgba(76,201,240,0.18); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.btn.primary:hover { background: rgba(76,201,240,0.28); }
+
+.readout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.readout-item { background: var(--surface2); border-radius: 6px; padding: 8px 10px; text-align: center; }
+.readout-item .rv { font-family: var(--mono); font-size: 18px; color: var(--accent); }
+.readout-item .rl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.plant-badge { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 4px;
+              background: rgba(179,136,255,0.15); color: var(--violet); border: 1px solid rgba(179,136,255,0.3);
+              font-family: var(--mono); letter-spacing: 0.5px; margin-left: auto; }
+
+.tf-display { background: var(--bg); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px;
+              color: var(--accent2); line-height: 1.6; word-break: break-all; }
+.tf-display .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 4px; }
+.tf-display .eq { color: var(--text); }
+
+@media (max-width: 800px) {
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight";
+         height: auto; gap: 2px; }
+  .plot-io, .plot-step { height: min(60vw, 380px); min-height: 260px; }
+  .sidebar { padding: 10px 10px; gap: 8px; max-height: none; overflow-y: visible; }
+  .param-group { padding: 10px 12px; }
+  .param-row { gap: 8px; margin: 8px 0; }
+  .param-row label { font-size: 14px; width: 36px; }
+  .param-row input[type="range"] { height: 6px; min-height: 28px; }
+  .param-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; }
+  .param-row .val { font-size: 14px; width: 48px; }
+  .btn { font-size: 13px; padding: 9px 16px; }
+  .section-title { font-size: 12px; }
+  .readout-item .rv { font-size: 20px; }
+  .readout-item .rl { font-size: 11px; }
+  .insight { font-size: 14px; padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header"><div class="dot"></div>System Identification Explorer &nbsp; <span class="plant-badge" id="plantBadge">Plant ?</span></div>
+
+  <div class="sidebar">
+    <!-- Excitation Controls -->
+    <div class="param-group">
+      <div class="section-title">PRBS Excitation</div>
+      <div class="param-row">
+        <label>Amplitude</label>
+        <input type="range" id="prbsAmp" min="0.5" max="5" step="0.1" value="2">
+        <span class="val" id="prbsAmpVal">2.0</span>
+      </div>
+      <div class="param-row">
+        <label>Bit duration</label>
+        <input type="range" id="prbsBit" min="2" max="12" step="1" value="5">
+        <span class="val" id="prbsBitVal">5</span>
+      </div>
+      <div class="param-row">
+        <label>Samples</label>
+        <input type="range" id="prbsLen" min="60" max="400" step="20" value="200">
+        <span class="val" id="prbsLenVal">200</span>
+      </div>
+    </div>
+
+    <!-- Plant Selection (hidden from student: just a "New Plant" button) -->
+    <div class="param-group">
+      <div class="section-title">Hidden Plant</div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnNewPlant">New Plant</button>
+        <button class="btn" id="btnReveal" style="flex:0 0 auto;font-size:10px;padding:7px 10px;">Reveal</button>
+      </div>
+      <div class="tf-display" id="hiddenTF" style="display:none;margin-top:8px;">
+        <span class="label">Hidden Plant TF</span>
+        <span id="hiddenTFEq" class="eq">—</span>
+      </div>
+    </div>
+
+    <!-- Model Structure -->
+    <div class="param-group">
+      <div class="section-title">Model Structure</div>
+      <div class="param-row">
+        <label>Structure</label>
+        <select id="modelStructure">
+          <option value="1,1,1">ARX(1,1,1) — 1st order</option>
+          <option value="2,2,1" selected>ARX(2,2,1) — 2nd order</option>
+          <option value="2,2,2">ARX(2,2,2) — 2nd order + delay</option>
+          <option value="3,3,1">ARX(3,3,1) — 3rd order</option>
+          <option value="2,1,1">ARX(2,1,1) — 2 poles, 1 zero</option>
+        </select>
+      </div>
+      <div class="param-row">
+        <label>Val. split</label>
+        <input type="range" id="valSplit" min="10" max="50" step="5" value="25">
+        <span class="val" id="valSplitVal">25%</span>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn primary" id="btnFit">Fit Model</button>
+        <button class="btn" id="btnExcite">New Excitation</button>
+      </div>
+    </div>
+
+    <!-- Fit Results Readout -->
+    <div class="param-group">
+      <div class="section-title">Fit Results</div>
+      <div class="readout-grid">
+        <div class="readout-item"><div class="rv" id="rvTrainRMSE">—</div><div class="rl">Train RMSE</div></div>
+        <div class="readout-item"><div class="rv" id="rvValRMSE">—</div><div class="rl">Val. RMSE</div></div>
+        <div class="readout-item"><div class="rv" id="rvR2">—</div><div class="rl">R² (train)</div></div>
+        <div class="readout-item"><div class="rv" id="rvCond">—</div><div class="rl">Cond. Number</div></div>
+      </div>
+    </div>
+
+    <!-- Identified TF -->
+    <div class="param-group">
+      <div class="section-title">Identified Model</div>
+      <div class="tf-display" id="identTF">
+        <span class="label">Discrete ARX</span>
+        <span id="identTFEq" class="eq">Not fitted yet</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="plot-io" id="plotIO">
+    <div class="plot-label">Input &amp; Output Data — Training / Validation</div>
+    <canvas id="canvasIO"></canvas>
+  </div>
+
+  <div class="plot-step" id="plotStep">
+    <div class="plot-label">Step Response — Hidden Plant vs Identified Model</div>
+    <canvas id="canvasStep"></canvas>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span id="insightIcon">💡</span> <span id="insightText">Click "New Plant" to set up a hidden system, then "Fit Model" to identify it from I/O data.</span>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   DOM REFS
+   ═══════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const canvasIO = $('canvasIO'), canvasStep = $('canvasStep');
+const ctxIO = canvasIO.getContext('2d'), ctxStep = canvasStep.getContext('2d');
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HIDDEN PLANT DEFINITIONS
+   Each plant: { name, type, params, tfLabel (for reveal), simulate(t, u, dt) }
+   ═══════════════════════════════════════════════════════════════════════ */
+const HIDDEN_PLANTS = [
+  {
+    name: 'Plant A — 1st order',
+    type: '1st-order',
+    tfLabel: 'G(s) = 2 / (3s + 1)',
+    params: { K: 2, tau: 3 },
+    /* dx/dt = (K*u - x) / tau,  y = x */
+    simulate: function(tArr, uArr, dt) {
+      const y = new Float64Array(tArr.length);
+      let x = 0; // initial state
+      for (let k = 1; k < tArr.length; k++) {
+        const u = uArr[k - 1];
+        // RK4 for first-order: dx/dt = (K*u - x) / tau
+        const f = (xv, uv) => (this.params.K * uv - xv) / this.params.tau;
+        const dt2 = dt * 0.5;
+        const k1 = f(x, u);
+        const k2 = f(x + dt2 * k1, u);
+        const k3 = f(x + dt2 * k2, u);
+        const k4 = f(x + dt * k3, u);
+        x += (dt / 6) * (k1 + 2*k2 + 2*k3 + k4);
+        y[k] = x;
+      }
+      y[0] = 0;
+      return y;
+    }
+  },
+  {
+    name: 'Plant B — 2nd order underdamped',
+    type: '2nd-under',
+    tfLabel: 'G(s) = 1 / (s² + s + 4)',
+    params: { K: 1, wn: 2, zeta: 0.25 },
+    /* ÿ + 2ζωₙẏ + ωₙ²y = K ωₙ² u */
+    simulate: function(tArr, uArr, dt) {
+      const y = new Float64Array(tArr.length);
+      let x1 = 0, x2 = 0; // state: x1=y, x2=ẏ
+      const { K, wn, zeta } = this.params;
+      const w2 = wn * wn;
+      for (let k = 1; k < tArr.length; k++) {
+        const u = uArr[k - 1];
+        const f = (x1v, x2v, uv) => {
+          const dx1 = x2v;
+          const dx2 = -w2 * x1v - 2*zeta*wn*x2v + K*w2*uv;
+          return [dx1, dx2];
+        };
+        const dt2 = dt * 0.5;
+        const [k11, k12] = f(x1, x2, u);
+        const [k21, k22] = f(x1 + dt2*k11, x2 + dt2*k12, u);
+        const [k31, k32] = f(x1 + dt2*k21, x2 + dt2*k22, u);
+        const [k41, k42] = f(x1 + dt*k31, x2 + dt*k32, u);
+        x1 += (dt/6)*(k11 + 2*k21 + 2*k31 + k41);
+        x2 += (dt/6)*(k12 + 2*k22 + 2*k32 + k42);
+        y[k] = x1;
+      }
+      y[0] = 0;
+      return y;
+    }
+  },
+  {
+    name: 'Plant C — 2nd order overdamped',
+    type: '2nd-over',
+    tfLabel: 'G(s) = 1.5 / ((2s+1)(s+1))',
+    params: { K: 1.5, tau1: 2, tau2: 1 },
+    /* G(s) = K / ((τ₁s+1)(τ₂s+1)) = K / (τ₁τ₂ s² + (τ₁+τ₂)s + 1) */
+    simulate: function(tArr, uArr, dt) {
+      const y = new Float64Array(tArr.length);
+      let x1 = 0, x2 = 0;
+      const { K, tau1, tau2 } = this.params;
+      const den = tau1 * tau2;
+      for (let k = 1; k < tArr.length; k++) {
+        const u = uArr[k - 1];
+        const f = (x1v, x2v, uv) => {
+          const dx1 = x2v;
+          const dx2 = (-x1v - (tau1+tau2)*x2v + K*uv) / den;
+          return [dx1, dx2];
+        };
+        const dt2 = dt * 0.5;
+        const [k11, k12] = f(x1, x2, u);
+        const [k21, k22] = f(x1 + dt2*k11, x2 + dt2*k12, u);
+        const [k31, k32] = f(x1 + dt2*k21, x2 + dt2*k22, u);
+        const [k41, k42] = f(x1 + dt*k31, x2 + dt*k32, u);
+        x1 += (dt/6)*(k11 + 2*k21 + 2*k31 + k41);
+        x2 += (dt/6)*(k12 + 2*k22 + 2*k32 + k42);
+        y[k] = x1;
+      }
+      y[0] = 0;
+      return y;
+    }
+  },
+  {
+    name: 'Plant D — 1st order + delay',
+    type: '1st+delay',
+    tfLabel: 'G(s) = 3·e^(-1.5s) / (4s + 1)',
+    params: { K: 3, tau: 4, delay: 1.5 },
+    simulate: function(tArr, uArr, dt) {
+      const y = new Float64Array(tArr.length);
+      let x = 0;
+      const { K, tau, delay } = this.params;
+      const delaySteps = Math.round(delay / dt);
+      const uBuf = new Float64Array(delaySteps + 1);
+      for (let k = 1; k < tArr.length; k++) {
+        // Shift delay buffer
+        for (let i = delaySteps; i > 0; i--) uBuf[i] = uBuf[i - 1];
+        uBuf[0] = uArr[k - 1];
+        const uDelayed = delaySteps > 0 ? uBuf[delaySteps] : uBuf[0];
+        const f = (xv, uv) => (K * uv - xv) / tau;
+        const dt2 = dt * 0.5;
+        const k1 = f(x, uDelayed);
+        const k2 = f(x + dt2*k1, uDelayed);
+        const k3 = f(x + dt2*k2, uDelayed);
+        const k4 = f(x + dt*k3, uDelayed);
+        x += (dt/6)*(k1 + 2*k2 + 2*k3 + k4);
+        y[k] = x;
+      }
+      y[0] = 0;
+      return y;
+    }
+  }
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRBS GENERATION (maximal-length LFSR)
+   ═══════════════════════════════════════════════════════════════════════ */
+function generatePRBS(length, bitDur, amplitude) {
+  // Use 9-bit LFSR with taps at [9,5] → period 511
+  let reg = 0x1FF; // non-zero seed
+  const seq = new Float64Array(length);
+  let bitVal = amplitude * (reg & 1 ? 1 : -1);
+  let bitCounter = 0;
+
+  for (let i = 0; i < length; i++) {
+    seq[i] = bitVal;
+    bitCounter++;
+    if (bitCounter >= bitDur) {
+      // Advance LFSR
+      const fb = ((reg >> 8) ^ (reg >> 4)) & 1;
+      reg = ((reg << 1) | fb) & 0x1FF;
+      bitVal = amplitude * (reg & 1 ? 1 : -1);
+      bitCounter = 0;
+    }
+  }
+  return seq;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LEAST SQUARES: solve ΦᵀΦ θ = Φᵀy via Cholesky
+   ═══════════════════════════════════════════════════════════════════════ */
+function cholesky(A, n) {
+  const L = new Float64Array(n * n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = A[i * n + j];
+      for (let k = 0; k < j; k++) sum -= L[i * n + k] * L[j * n + k];
+      if (i === j) {
+        if (sum <= 1e-15) return null; // not positive definite
+        L[i * n + i] = Math.sqrt(sum);
+      } else {
+        L[i * n + j] = sum / L[j * n + j];
+      }
+    }
+  }
+  return L;
+}
+
+function solveCholesky(L, b, n) {
+  // Forward: L y = b
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = b[i];
+    for (let j = 0; j < i; j++) sum -= L[i * n + j] * y[j];
+    y[i] = sum / L[i * n + i];
+  }
+  // Backward: Lᵀ x = y
+  const x = new Float64Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    let sum = y[i];
+    for (let j = i + 1; j < n; j++) sum -= L[j * n + i] * x[j];
+    x[i] = sum / L[i * n + i];
+  }
+  return x;
+}
+
+function leastSquares(na, nb, nk, u, y, startIdx, endIdx) {
+  // y[k] = -a₁y[k-1] - ... - aₙₐy[k-na] + b₁u[k-nk] + ... + bₙb u[k-nk-nb+1]
+  const nParams = na + nb;
+  const maxLag = Math.max(na, nk + nb - 1);
+  const nRows = endIdx - startIdx - maxLag;
+  if (nRows < nParams * 2) return null; // not enough data
+
+  // Build normal equations directly to avoid storing full Φ
+  const A = new Float64Array(nParams * nParams); // ΦᵀΦ
+  const b = new Float64Array(nParams);           // Φᵀy
+
+  for (let k = maxLag + startIdx; k < endIdx; k++) {
+    const phi = new Float64Array(nParams);
+    for (let i = 0; i < na; i++) phi[i] = -y[k - 1 - i];
+    for (let i = 0; i < nb; i++) phi[na + i] = u[k - nk - i];
+
+    for (let i = 0; i < nParams; i++) {
+      b[i] += phi[i] * y[k];
+      for (let j = 0; j < nParams; j++) {
+        A[i * nParams + j] += phi[i] * phi[j];
+      }
+    }
+  }
+
+  const L = cholesky(A, nParams);
+  if (!L) {
+    // Fall back to Gaussian elimination with partial pivoting
+    return solveGauss(A, b, nParams);
+  }
+  return solveCholesky(L, b, nParams);
+}
+
+/* Gaussian elimination fallback for ill-conditioned normal equations */
+function solveGauss(A, b, n) {
+  // Make working copy
+  const M = new Float64Array(A);
+  const v = new Float64Array(b);
+
+  for (let col = 0; col < n; col++) {
+    // Partial pivot
+    let maxVal = Math.abs(M[col * n + col]);
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      const av = Math.abs(M[row * n + col]);
+      if (av > maxVal) { maxVal = av; maxRow = row; }
+    }
+    if (maxVal < 1e-15) return null;
+
+    // Swap
+    if (maxRow !== col) {
+      for (let j = 0; j < n; j++) {
+        const tmp = M[col * n + j];
+        M[col * n + j] = M[maxRow * n + j];
+        M[maxRow * n + j] = tmp;
+      }
+      const tmp = v[col]; v[col] = v[maxRow]; v[maxRow] = tmp;
+    }
+
+    // Eliminate
+    const pivot = M[col * n + col];
+    for (let row = col + 1; row < n; row++) {
+      const factor = M[row * n + col] / pivot;
+      if (Math.abs(factor) < 1e-15) continue;
+      for (let j = col; j < n; j++) M[row * n + j] -= factor * M[col * n + j];
+      v[row] -= factor * v[col];
+    }
+  }
+
+  // Back substitution
+  const x = new Float64Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    let sum = v[i];
+    for (let j = i + 1; j < n; j++) sum -= M[i * n + j] * x[j];
+    x[i] = sum / M[i * n + i];
+  }
+  return x;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SIMULATE ARX MODEL for prediction
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateARX(theta, na, nb, nk, u, tLen) {
+  const yPred = new Float64Array(tLen);
+  // Use zeros for initial conditions (no past data)
+  for (let k = 0; k < tLen; k++) {
+    let yk = 0;
+    for (let i = 0; i < na; i++) {
+      if (k - 1 - i >= 0) yk -= theta[i] * yPred[k - 1 - i];
+    }
+    for (let i = 0; i < nb; i++) {
+      if (k - nk - i >= 0) yk += theta[na + i] * u[k - nk - i];
+    }
+    yPred[k] = yk;
+  }
+  return yPred;
+}
+
+/* Compute RMSE */
+function rmse(yTrue, yPred, start, end) {
+  let sumSq = 0, count = 0;
+  for (let i = start; i < end; i++) {
+    sumSq += (yTrue[i] - yPred[i]) ** 2;
+    count++;
+  }
+  return count > 0 ? Math.sqrt(sumSq / count) : NaN;
+}
+
+/* Compute R² */
+function rSquared(yTrue, yPred, start, end) {
+  let ssRes = 0, ssTot = 0, yMean = 0, count = 0;
+  for (let i = start; i < end; i++) {
+    yMean += yTrue[i];
+    count++;
+  }
+  if (count === 0) return NaN;
+  yMean /= count;
+  for (let i = start; i < end; i++) {
+    ssRes += (yTrue[i] - yPred[i]) ** 2;
+    ssTot += (yTrue[i] - yMean) ** 2;
+  }
+  return ssTot < 1e-15 ? 0 : 1 - ssRes / ssTot;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE SIMULATION (for comparison plot)
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulatePlantStep(plant, tMax, nPts, dt) {
+  const t = new Float64Array(nPts);
+  const u = new Float64Array(nPts);
+  for (let i = 0; i < nPts; i++) { t[i] = i * dt; u[i] = 1; }
+  const y = plant.simulate(t, u, dt);
+  return { t, y };
+}
+
+function simulateARXStep(theta, na, nb, nk, tMax, nPts, dt) {
+  const t = new Float64Array(nPts);
+  const u = new Float64Array(nPts);
+  for (let i = 0; i < nPts; i++) { t[i] = i * dt; u[i] = 1; }
+  const y = simulateARX(theta, na, nb, nk, u, nPts);
+  return { t, y };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL STATE
+   ═══════════════════════════════════════════════════════════════════════ */
+let state = {
+  plant: null,
+  plantIdx: -1,
+  prbs: null,
+  u: null,
+  yTrue: null,
+  dt: 0.05,       // sampling interval
+  t: null,
+  nSamples: 200,
+  // Fit results
+  theta: null,
+  na: 0, nb: 0, nk: 0,
+  yFitTrain: null,     // predicted on all data using fitted model
+  trainRMSE: NaN,
+  valRMSE: NaN,
+  r2: NaN,
+  condNum: NaN,
+  trainEnd: 0,         // index where training ends
+  // Step response cache
+  stepHidden: null,
+  stepIdent: null,
+  stepTMax: 20,
+  // Reveal state
+  revealed: false
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SELECT NEW HIDDEN PLANT
+   ═══════════════════════════════════════════════════════════════════════ */
+function selectRandomPlant() {
+  const idx = Math.floor(Math.random() * HIDDEN_PLANTS.length);
+  state.plantIdx = idx;
+  state.plant = HIDDEN_PLANTS[idx];
+  state.revealed = false;
+  state.theta = null;
+  state.yFitTrain = null;
+  state.stepHidden = null;
+  state.stepIdent = null;
+  $('plantBadge').textContent = 'Plant ?';
+  $('hiddenTF').style.display = 'none';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GENERATE EXCITATION AND SIMULATE
+   ═══════════════════════════════════════════════════════════════════════ */
+function excitePlant() {
+  if (!state.plant) { selectRandomPlant(); }
+
+  const amp = parseFloat($('prbsAmp').value);
+  const bitDur = parseInt($('prbsBit').value);
+  state.nSamples = parseInt($('prbsLen').value);
+  state.prbs = generatePRBS(state.nSamples, bitDur, amp);
+
+  // Build time vector and input
+  state.t = new Float64Array(state.nSamples);
+  state.u = new Float64Array(state.nSamples);
+  for (let i = 0; i < state.nSamples; i++) {
+    state.t[i] = i * state.dt;
+    state.u[i] = state.prbs[i];
+  }
+
+  // Simulate hidden plant
+  state.yTrue = state.plant.simulate(state.t, state.u, state.dt);
+  state.theta = null;
+  state.yFitTrain = null;
+  state.stepIdent = null;
+
+  // Compute step response with a fixed time range that covers all plants well
+  state.stepTMax = 20; // seconds — enough for τ≈4 to settle (4τ ≈ 16s for Plant D)
+  state.stepHidden = simulatePlantStep(state.plant, state.stepTMax, 400, state.dt);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FIT MODEL
+   ═══════════════════════════════════════════════════════════════════════ */
+function fitModel() {
+  if (!state.yTrue) { excitePlant(); }
+
+  const struct = $('modelStructure').value.split(',').map(Number);
+  const na = struct[0], nb = struct[1], nk = struct[2];
+  state.na = na; state.nb = nb; state.nk = nk;
+
+  const valPct = parseInt($('valSplit').value) / 100;
+  state.trainEnd = Math.floor(state.nSamples * (1 - valPct));
+
+  const theta = leastSquares(na, nb, nk, state.u, state.yTrue, 0, state.trainEnd);
+  if (!theta) {
+    $('insightText').textContent = 'Fit failed — not enough data or ill-conditioned regression. Try more samples or a simpler model.';
+    $('insightIcon').textContent = '⚠️';
+    state.theta = null;
+    state.yFitTrain = null;
+    return;
+  }
+
+  state.theta = theta;
+
+  // Predict on all data
+  state.yFitTrain = simulateARX(theta, na, nb, nk, state.u, state.nSamples);
+
+  // Metrics
+  state.trainRMSE = rmse(state.yTrue, state.yFitTrain, 0, state.trainEnd);
+  state.valRMSE = rmse(state.yTrue, state.yFitTrain, state.trainEnd, state.nSamples);
+  state.r2 = rSquared(state.yTrue, state.yFitTrain, 0, state.trainEnd);
+
+  // Estimate condition number via power iteration on ΦᵀΦ (approximate)
+  // Build normal matrix for cond estimation
+  const nParams = na + nb;
+  const maxLag = Math.max(na, nk + nb - 1);
+  const A = new Float64Array(nParams * nParams);
+  for (let k = maxLag; k < state.trainEnd; k++) {
+    for (let i = 0; i < nParams; i++) {
+      const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
+      for (let j = 0; j <= i; j++) {
+        const phi_j = (j < na) ? -state.yTrue[k - 1 - j] : state.u[k - nk - (j - na)];
+        A[i * nParams + j] += phi_i * phi_j;
+      }
+    }
+  }
+  for (let i = 0; i < nParams; i++)
+    for (let j = i + 1; j < nParams; j++)
+      A[j * nParams + i] = A[i * nParams + j];
+
+  // Approximate condition number: ||A||_F / (smallest |eigenvalue| estimate via trace)
+  let trace = 0, frob = 0;
+  for (let i = 0; i < nParams; i++) {
+    trace += A[i * nParams + i];
+    for (let j = 0; j < nParams; j++) frob += A[i * nParams + j] ** 2;
+  }
+  frob = Math.sqrt(frob);
+  const avgEig = trace / nParams;
+  // Power iteration for largest eigenvalue
+  let v = new Float64Array(nParams);
+  for (let i = 0; i < nParams; i++) v[i] = 1;
+  for (let iter = 0; iter < 10; iter++) {
+    const w = new Float64Array(nParams);
+    for (let i = 0; i < nParams; i++)
+      for (let j = 0; j < nParams; j++)
+        w[i] += A[i * nParams + j] * v[j];
+    let norm = 0;
+    for (let i = 0; i < nParams; i++) norm += w[i] * w[i];
+    norm = Math.sqrt(norm);
+    if (norm < 1e-15) break;
+    for (let i = 0; i < nParams; i++) v[i] = w[i] / norm;
+  }
+  let lambdaMax = 0;
+  for (let i = 0; i < nParams; i++) {
+    let Av = 0;
+    for (let j = 0; j < nParams; j++) Av += A[i * nParams + j] * v[j];
+    lambdaMax += v[i] * Av;
+  }
+  // Estimate lambdaMin via trace argument (rough)
+  const lambdaMin = Math.max(1e-12, trace - (nParams - 1) * lambdaMax);
+  state.condNum = lambdaMax / Math.max(1e-15, Math.abs(lambdaMin));
+
+
+  // Step response for identified model (same time range as hidden plant)
+  state.stepIdent = simulateARXStep(theta, na, nb, nk, state.stepTMax, 400, state.dt);
+}
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  }
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   IO PLOT: input u (top half) + output y comparison (bottom half)
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawIOPlot() {
+  const container = $('plotIO');
+  const { w, h, dpr } = resizeCanvas(canvasIO, container);
+  const ctx = ctxIO;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const margin = { top: 28, right: 20, bottom: 20, mid: 16, left: 48 };
+  const halfH = (h - margin.top - margin.bottom) / 2;
+  const pw = w - margin.left - margin.right;
+
+  // Backgrounds
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  if (!state.yTrue) {
+    ctx.fillStyle = '#8888aa'; ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+    ctx.fillText('Click "New Excitation" or "Fit Model" to generate data', w/2, h/2);
+    ctx.restore();
+    return;
+  }
+
+  const N = state.nSamples;
+  const tMax = state.t[N - 1];
+  const trainEnd = state.trainEnd || Math.floor(N * 0.75);
+  const valIdx = state.theta ? trainEnd : N;
+
+  /* ── Input subplot (top) ── */
+  const uTop = margin.top;
+  const uBot = margin.top + halfH;
+  const uH = halfH;
+
+  // Y range for input
+  let uMin = -5, uMax = 5;
+  if (state.u) {
+    const umn = state.u.reduce((a,b)=>Math.min(a,b), Infinity);
+    const umx = state.u.reduce((a,b)=>Math.max(a,b), -Infinity);
+    uMin = Math.floor(umn - 1);
+    uMax = Math.ceil(umx + 1);
+  }
+
+  function tux(t) { return margin.left + (t/tMax)*pw; }
+  function tuy(u) { return uBot - ((u-uMin)/(uMax-uMin))*uH; }
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  for (let yv = Math.ceil(uMin); yv <= Math.floor(uMax); yv++) {
+    if (yv === 0) continue;
+    ctx.beginPath(); ctx.moveTo(margin.left, tuy(yv)); ctx.lineTo(margin.left+pw, tuy(yv)); ctx.stroke();
+  }
+  ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, tuy(0)); ctx.lineTo(margin.left+pw, tuy(0)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Validation split line
+  if (valIdx < N) {
+    ctx.strokeStyle = 'rgba(247,119,0,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([3,5]);
+    const vx = tux(state.t[valIdx]);
+    ctx.beginPath(); ctx.moveTo(vx, uTop); ctx.lineTo(vx, h - margin.bottom); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, uTop); ctx.lineTo(margin.left, uBot); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, uBot); ctx.lineTo(margin.left+pw, uBot); ctx.stroke();
+
+  // Input trace
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const sx = tux(state.t[i]), sy = tuy(state.u[i]);
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke();
+
+  // Input axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  ctx.fillText('u(t) — PRBS', margin.left + 4, uTop + 14);
+
+  /* ── Output subplot (bottom) ── */
+  const yTop = margin.top + halfH + margin.mid;
+  const yBot = h - margin.bottom;
+  const yH = yBot - yTop;
+
+  // Y range for output
+  let yMin = Infinity, yMax = -Infinity;
+  for (let i = 0; i < N; i++) {
+    if (state.yTrue[i] < yMin) yMin = state.yTrue[i];
+    if (state.yTrue[i] > yMax) yMax = state.yTrue[i];
+  }
+  if (state.yFitTrain) {
+    for (let i = 0; i < N; i++) {
+      if (state.yFitTrain[i] < yMin) yMin = state.yFitTrain[i];
+      if (state.yFitTrain[i] > yMax) yMax = state.yFitTrain[i];
+    }
+  }
+  const yPad = (yMax - yMin) * 0.15 || 0.5;
+  yMin -= yPad; yMax += yPad;
+
+  function tyx(t) { return margin.left + (t/tMax)*pw; }
+  function tyy(y) { return yBot - ((y-yMin)/(yMax-yMin))*yH; }
+
+  // Grid for output
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const yStep = (yMax - yMin) > 5 ? 1 : (yMax - yMin) > 2 ? 0.5 : 0.25;
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    ctx.beginPath(); ctx.moveTo(margin.left, tyy(yv)); ctx.lineTo(margin.left+pw, tyy(yv)); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, yTop); ctx.lineTo(margin.left, yBot); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, yBot); ctx.lineTo(margin.left+pw, yBot); ctx.stroke();
+
+  // True output trace (always visible)
+  ctx.strokeStyle = '#d0d0e0'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const sx = tyx(state.t[i]), sy = tyy(state.yTrue[i]);
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke();
+
+  // Fitted model trace
+  if (state.yFitTrain && state.theta) {
+    // Training portion
+    ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5; ctx.shadowColor = '#4cc9f0'; ctx.shadowBlur = 2;
+    ctx.beginPath();
+    for (let i = 0; i < trainEnd; i++) {
+      const sx = tyx(state.t[i]), sy = tyy(state.yFitTrain[i]);
+      i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Validation portion
+    if (trainEnd < N) {
+      ctx.strokeStyle = '#06d6a0'; ctx.lineWidth = 2.5; ctx.shadowColor = '#06d6a0'; ctx.shadowBlur = 2;
+      ctx.beginPath();
+      const sx0 = tyx(state.t[trainEnd]), sy0 = tyy(state.yFitTrain[trainEnd]);
+      ctx.moveTo(sx0, sy0);
+      for (let i = trainEnd + 1; i < N; i++) {
+        const sx = tyx(state.t[i]), sy = tyy(state.yFitTrain[i]);
+        ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Validation shading
+    if (trainEnd < N) {
+      ctx.fillStyle = 'rgba(247,119,0,0.06)';
+      ctx.fillRect(tyx(state.t[trainEnd]), yTop, tyx(state.t[N-1]) - tyx(state.t[trainEnd]), yH);
+    }
+  }
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep)
+    ctx.fillText(yv.toFixed(yStep<0.5?2:1), margin.left-6, tyy(yv)+4);
+  ctx.textAlign = 'left';
+  ctx.fillText('y(t)', margin.left + 4, yTop + 14);
+
+  // Legend on bottom plot
+  const lx = margin.left + 6, ly = yTop + 42;
+  ctx.fillStyle = '#d0d0e0'; ctx.fillText('— True (hidden plant)', lx, ly);
+  if (state.theta) {
+    ctx.fillStyle = '#4cc9f0'; ctx.fillText('— Fitted (train)', lx, ly + 16);
+    if (trainEnd < N) {
+      ctx.fillStyle = '#06d6a0'; ctx.fillText('— Predicted (val)', lx, ly + 32);
+      ctx.fillStyle = 'rgba(247,119,0,0.6)'; ctx.fillText('Validation region', lx + 150, ly + 32);
+    }
+  }
+
+  // Time axis
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let tv = 0; tv <= Math.ceil(tMax); tv += Math.max(1, Math.ceil(tMax/8)))
+    ctx.fillText(tv.toFixed(0), tyx(tv), yBot+12);
+  ctx.fillText('Time [s]', margin.left+pw/2, yBot+12);
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE COMPARISON PLOT
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepPlot() {
+  const container = $('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const margin = { top: 30, right: 20, bottom: 38, left: 50 };
+  const pw = w - margin.left - margin.right, ph = h - margin.top - margin.bottom;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  if (!state.stepHidden) {
+    ctx.fillStyle = '#8888aa'; ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+    ctx.fillText('Fit a model to see the step response comparison', w/2, h/2);
+    ctx.restore();
+    return;
+  }
+
+  const tMax = state.stepHidden.t[state.stepHidden.t.length - 1];
+  const t = state.stepHidden.t;
+  const yHid = state.stepHidden.y;
+  const yIdent = state.stepIdent ? state.stepIdent.y : null;
+
+  // Y range
+  let yMin = -0.2, yMax = Math.max(2, yHid.reduce((a,b)=>Math.max(a,b)) * 1.1);
+  if (yIdent) yMax = Math.max(yMax, yIdent.reduce((a,b)=>Math.max(a,b)) * 1.1);
+
+  function tx(tv) { return margin.left + (tv/tMax)*pw; }
+  function ty(yv) { return margin.top + ph - ((yv-yMin)/(yMax-yMin))*ph; }
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  for (let tv = 0; tv <= Math.ceil(tMax); tv += Math.max(1, Math.ceil(tMax/8)))
+    { ctx.beginPath(); ctx.moveTo(tx(tv), margin.top); ctx.lineTo(tx(tv), margin.top+ph); ctx.stroke(); }
+  const yStep = (yMax-yMin) > 3 ? 0.5 : 0.25;
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    if (Math.abs(yv - 1) < 0.001) continue;
+    ctx.beginPath(); ctx.moveTo(margin.left, ty(yv)); ctx.lineTo(margin.left+pw, ty(yv)); ctx.stroke();
+  }
+  ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, ty(1)); ctx.lineTo(margin.left+pw, ty(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top+ph); ctx.lineTo(margin.left+pw, margin.top+ph); ctx.stroke();
+
+  // Hidden plant trace
+  ctx.strokeStyle = '#d0d0e0'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < t.length; i++) {
+    const sx = tx(t[i]), sy = ty(Math.max(yMin, Math.min(yMax, yHid[i])));
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke();
+
+  // Identified model trace
+  if (yIdent) {
+    ctx.strokeStyle = '#06d6a0'; ctx.lineWidth = 2.5; ctx.shadowColor = '#06d6a0'; ctx.shadowBlur = 3;
+    ctx.beginPath();
+    for (let i = 0; i < t.length; i++) {
+      const sx = tx(t[i]), sy = ty(Math.max(yMin, Math.min(yMax, yIdent[i])));
+      i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let tv = 0; tv <= Math.ceil(tMax); tv += Math.max(1, Math.ceil(tMax/8)))
+    ctx.fillText(tv.toFixed(0), tx(tv), margin.top+ph+16);
+  ctx.fillText('Time [s]', margin.left+pw/2, margin.top+ph+34);
+  ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep)
+    ctx.fillText(yv.toFixed(yStep<0.5?2:1), margin.left-8, ty(yv)+4);
+  ctx.save();
+  ctx.translate(14, margin.top+ph/2); ctx.rotate(-Math.PI/2); ctx.fillText('Output', 0, 0);
+  ctx.restore();
+
+  // Legend
+  const lx = margin.left + 6, ly = margin.top + 10;
+  ctx.fillStyle = '#d0d0e0'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  ctx.fillText('— Hidden plant', lx + 8, ly + 6);
+  if (yIdent) {
+    ctx.fillStyle = '#06d6a0';
+    ctx.fillText('— Identified model', lx + 8, ly + 22);
+  }
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIGHT PANEL
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateInsight() {
+  const msgs = [];
+  if (!state.plant) {
+    msgs.push('No plant loaded. Click "New Plant" to start.');
+  } else if (!state.theta) {
+    msgs.push('Plant is hidden behind the black box. Choose a model structure and click "Fit Model" to estimate its parameters from I/O data.');
+    msgs.push('The PRBS excites all frequencies, revealing the plant dynamics.');
+  } else {
+    const trainGood = state.trainRMSE < 0.3;
+    const valGood = state.valRMSE < 0.5;
+    if (trainGood && valGood) {
+      msgs.push('Good fit! Train RMSE='+state.trainRMSE.toFixed(3)+', Val RMSE='+state.valRMSE.toFixed(3)+'. The model structure captures the plant dynamics well.');
+      msgs.push('R²='+state.r2.toFixed(4)+' — the model explains most of the output variance.');
+    } else if (trainGood && !valGood) {
+      msgs.push('Overfitting: low training error (RMSE='+state.trainRMSE.toFixed(3)+') but high validation error (RMSE='+state.valRMSE.toFixed(3)+'). Try a simpler model or more data.');
+    } else if (!trainGood && valGood) {
+      msgs.push('Unusual: validation better than training. The validation data may be easier to predict.');
+    } else {
+      msgs.push('Poor fit. Train RMSE='+state.trainRMSE.toFixed(3)+', Val RMSE='+state.valRMSE.toFixed(3)+'. The chosen model structure may not match the hidden plant. Try a different order or add delay.');
+    }
+    if (state.condNum > 1e8) {
+      msgs.push('Ill-conditioned regression (cond ≈ '+state.condNum.toExponential(1)+'). The data may not be persistently exciting — try longer PRBS or higher amplitude.');
+    }
+    const structStr = 'ARX('+state.na+','+state.nb+','+ state.nk+')';
+    msgs.push('Identified model: '+structStr+' with '+ (state.na+state.nb)+' parameters. Compare the step responses below to validate.');
+  }
+  $('insightText').textContent = msgs.join(' · ');
+  $('insightIcon').textContent = state.theta ? (state.trainRMSE < 0.3 ? '✅' : '🔍') : '💡';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UPDATE UI READOUTS
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateReadouts() {
+  if (state.theta) {
+    $('rvTrainRMSE').textContent = state.trainRMSE.toFixed(4);
+    $('rvValRMSE').textContent = state.valRMSE.toFixed(4);
+    $('rvR2').textContent = state.r2.toFixed(4);
+    $('rvCond').textContent = state.condNum > 1e6 ? state.condNum.toExponential(2) : state.condNum.toFixed(2);
+
+    // Color-code
+    $('rvTrainRMSE').style.color = state.trainRMSE < 0.1 ? 'var(--accent)' : state.trainRMSE < 0.5 ? 'var(--orange)' : 'var(--warn)';
+    $('rvValRMSE').style.color = state.valRMSE < 0.3 ? 'var(--accent)' : state.valRMSE < 1.0 ? 'var(--orange)' : 'var(--warn)';
+    $('rvR2').style.color = state.r2 > 0.9 ? 'var(--accent)' : state.r2 > 0.7 ? 'var(--orange)' : 'var(--warn)';
+    $('rvCond').style.color = state.condNum < 1e4 ? 'var(--accent)' : state.condNum < 1e8 ? 'var(--orange)' : 'var(--warn)';
+
+    // Identified TF string
+    const s = [];
+    if (state.na > 0) {
+      s.push('y[k] =');
+      for (let i = 0; i < state.na; i++) {
+        const a = -state.theta[i];
+        s.push((a>=0&&i>0?' + ':' ') + a.toFixed(3) + '·y[k-'+(i+1)+']');
+      }
+    }
+    for (let i = 0; i < state.nb; i++) {
+      const b = state.theta[state.na + i];
+      s.push((b>=0?' + ':' ') + b.toFixed(3) + '·u[k-'+(state.nk+i)+']');
+    }
+    $('identTFEq').textContent = s.join('');
+    $('identTFEq').style.color = 'var(--accent2)';
+  } else {
+    $('rvTrainRMSE').textContent = '—'; $('rvValRMSE').textContent = '—';
+    $('rvR2').textContent = '—'; $('rvCond').textContent = '—';
+    $('rvTrainRMSE').style.color = 'var(--text-dim)'; $('rvValRMSE').style.color = 'var(--text-dim)';
+    $('rvR2').style.color = 'var(--text-dim)'; $('rvCond').style.color = 'var(--text-dim)';
+    $('identTFEq').textContent = 'Not fitted yet';
+    $('identTFEq').style.color = 'var(--text-dim)';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SLIDER VALUE DISPLAY
+   ═══════════════════════════════════════════════════════════════════════ */
+function syncSliders() {
+  $('prbsAmpVal').textContent = parseFloat($('prbsAmp').value).toFixed(1);
+  $('prbsBitVal').textContent = $('prbsBit').value;
+  $('prbsLenVal').textContent = $('prbsLen').value;
+  $('valSplitVal').textContent = $('valSplit').value + '%';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN DRAW
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawAll() {
+  syncSliders();
+  updateReadouts();
+  drawIOPlot();
+  drawStepPlot();
+  updateInsight();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT BINDINGS
+   ═══════════════════════════════════════════════════════════════════════ */
+$('btnNewPlant').addEventListener('click', () => {
+  selectRandomPlant();
+  excitePlant();
+  drawAll();
+});
+
+$('btnReveal').addEventListener('click', () => {
+  if (!state.plant) return;
+  state.revealed = !state.revealed;
+  if (state.revealed) {
+    $('plantBadge').textContent = state.plant.name;
+    $('hiddenTF').style.display = 'block';
+    $('hiddenTFEq').textContent = state.plant.tfLabel;
+  } else {
+    $('plantBadge').textContent = 'Plant ?';
+    $('hiddenTF').style.display = 'none';
+  }
+});
+
+$('btnExcite').addEventListener('click', () => {
+  if (!state.plant) selectRandomPlant();
+  excitePlant();
+  state.theta = null;
+  state.yFitTrain = null;
+  state.stepIdent = null;
+  drawAll();
+});
+
+$('btnFit').addEventListener('click', () => {
+  if (!state.yTrue) excitePlant();
+  fitModel();
+  drawAll();
+});
+
+// Sliders
+$('prbsAmp').addEventListener('input', () => { syncSliders(); });
+$('prbsBit').addEventListener('input', () => { syncSliders(); });
+$('prbsLen').addEventListener('input', () => { syncSliders(); });
+$('valSplit').addEventListener('input', () => { syncSliders(); });
+
+// Re-draw on slider changes that don't need re-simulation
+$('valSplit').addEventListener('change', () => {
+  if (state.yTrue) {
+    fitModel();
+    drawAll();
+  }
+});
+
+$('modelStructure').addEventListener('change', () => {
+  if (state.yTrue) {
+    fitModel();
+    drawAll();
+  }
+});
+
+// Resize handler
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawAll, 100); });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════════════ */
+selectRandomPlant();
+excitePlant();
+drawAll();
+</script>
+</body>
+</html>

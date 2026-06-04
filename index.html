@@ -291,6 +291,24 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+  <a href="sysid_explorer.html" class="card c-pid">
+    <div class="card-icon">&#x1F50D;</div>
+    <span class="card-tag tag-pid">PRBS &middot; Least Squares &middot; Model Fitting</span>
+    <h2>System Identification Explorer</h2>
+    <p>
+      A plant hides behind a black box. Excite it with a PRBS, collect I/O data,
+      fit an ARX model via least squares, and validate on held-out data. The
+      missing first chapter: where A, B, C, D actually come from.
+    </p>
+    <div class="card-features">
+      <span>4 hidden plants</span>
+      <span>PRBS excitation</span>
+      <span>least-squares fit</span>
+      <span>train/val split</span>
+      <span>step response compare</span>
+    </div>
+  </a>
+
   <a href="lqr_explorer.html" class="card c-lqr">
     <div class="card-icon">&#x1F9EE;</div>
     <span class="card-tag tag-lqr">Optimal &middot; MIMO</span>
@@ -306,6 +324,24 @@ footer a:hover { text-decoration: underline; }
       <span>PID overlay</span>
       <span>k<sub>&theta;</sub> feedforward</span>
       <span>6 presets</span>
+    </div>
+  </a>
+
+  <a href="observer_explorer.html" class="card c-lqr">
+    <div class="card-icon">&#x1F441;&#xFE0F;</div>
+    <span class="card-tag tag-lqr">Luenberger &middot; Kalman &middot; Output Feedback</span>
+    <h2>Observer Explorer</h2>
+    <p>
+      LQR gives u = &minus;Kx, but you only measure position. Design a Luenberger
+      observer to estimate hidden states (&omega;, i), add noise, and watch the
+      separation principle in action &mdash; the missing half of every real controller.
+    </p>
+    <div class="card-features">
+      <span>Luenberger observer</span>
+      <span>pole placement</span>
+      <span>noise injection</span>
+      <span>separation principle</span>
+      <span>5 presets</span>
     </div>
   </a>
 
@@ -501,6 +537,42 @@ footer a:hover { text-decoration: underline; }
       <span>anti-windup per layer</span>
       <span>inner-loop approximation</span>
       <span>vs full-state LQR</span>
+    </div>
+  </a>
+
+  <a href="system_identification.html" class="card c-pid">
+    <div class="card-icon">&#x1F4E1;</div>
+    <span class="card-tag tag-pid">ARX &middot; PRBS &middot; Least Squares</span>
+    <h2>System Identification</h2>
+    <p>
+      Every controller needs a model. Where does A, B, C, D come from? From data.
+      ARX, ARMAX, OE structures, PRBS design, least-squares fitting, and the
+      validation tests that keep you honest.
+    </p>
+    <div class="card-features">
+      <span>ARX/ARMAX/OE</span>
+      <span>normal equations</span>
+      <span>PRBS rules of thumb</span>
+      <span>cross-validation</span>
+      <span>d2c conversion</span>
+    </div>
+  </a>
+
+  <a href="observer_design.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9EE;</div>
+    <span class="card-tag tag-lqr">Luenberger &middot; Kalman &middot; Duality</span>
+    <h2>Observer Design</h2>
+    <p>
+      You never measure the full state. The Luenberger observer runs your model
+      in parallel and corrects it with measurements. Kalman filters make it
+      optimal. The separation principle lets you design K and L independently.
+    </p>
+    <div class="card-features">
+      <span>Luenberger structure</span>
+      <span>pole placement 2&ndash;5&times;</span>
+      <span>Kalman optimality</span>
+      <span>duality theorem</span>
+      <span>separation principle</span>
     </div>
   </a>
 

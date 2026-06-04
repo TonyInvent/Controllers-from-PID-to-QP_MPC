@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observer Explorer — Luenberger State Estimation</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+<style>
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #06d6a0; --accent2: #2ecc71;
+  --warn: #f72585; --orange: #f77f00; --baseline: #666688; --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --pink: #f72585; --green: #06d6a0; --cyan: #4cc9f0;
+  --copper: #e07b50; --amber: #f0c040; --steel: #8899aa; --gold: #ffd166;
+  --violet: #bd93f9;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 14px; line-height: 1.4;
+}
+
+/* Layout: sidebar | (estimation plot | step-response plot | insight) */
+.app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  grid-template-rows: 48px 1fr 1fr auto;
+  grid-template-areas:
+    "header header"
+    "sidebar estplot"
+    "sidebar stepplot"
+    "sidebar insight";
+  height: 100vh; gap: 1px; background: var(--border);
+}
+
+/* Header */
+.header {
+  grid-area: header; background: var(--surface);
+  display: flex; align-items: center; padding: 0 20px; gap: 14px;
+}
+.header h1 { font-size: 16px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.header .subtitle { font-size: 12px; color: var(--text-dim); }
+.header .badges { margin-left: auto; display: flex; gap: 8px; }
+.badge {
+  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px;
+  display: none; letter-spacing: 0.04em;
+}
+.badge.unstable { background: rgba(247,37,133,0.2); color: var(--warn); border: 1px solid var(--warn); }
+.badge.info { background: rgba(189,147,249,0.2); color: var(--violet); border: 1px solid var(--violet); }
+
+/* Sidebar */
+.sidebar {
+  grid-area: sidebar; background: var(--surface); overflow-y: auto;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.sidebar::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 10px 12px; }
+.param-group h3 {
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); margin-bottom: 8px; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.param-group h3 .collapse-icon { font-size: 10px; transition: transform 0.2s; }
+.param-group.collapsed .param-body { display: none; }
+.param-group.collapsed .collapse-icon { transform: rotate(-90deg); }
+
+.param-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.param-row:last-child { margin-bottom: 0; }
+.param-row label {
+  font-size: 11px; color: var(--text-dim); white-space: nowrap; min-width: 64px;
+  font-family: var(--mono);
+}
+.param-row label.motor-lbl { color: var(--copper); }
+.param-row label.obs-lbl { color: var(--violet); }
+.param-row label.lqr-lbl { color: var(--accent); }
+.param-row label.noise-lbl { color: var(--cyan); }
+.param-row input[type=range] { flex: 1; height: 4px; -webkit-appearance: none; background: var(--border);
+  border-radius: 2px; outline: none; }
+.param-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; border: none;
+}
+.param-row input[type=range].motor-slider::-webkit-slider-thumb { background: var(--copper); }
+.param-row input[type=range].obs-slider::-webkit-slider-thumb { background: var(--violet); }
+.param-row .val {
+  font-size: 10px; font-family: var(--mono); color: var(--text); min-width: 44px; text-align: right;
+}
+
+/* Gains readout */
+.gains-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+.gain-item { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+.gain-item .gain-label { color: var(--text-dim); font-family: var(--mono); }
+.gain-item .gain-val { font-family: var(--mono); font-weight: 600; font-size: 12px; }
+.gain-val.l1 { color: var(--violet); }
+.gain-val.l2 { color: var(--cyan); }
+.gain-val.l3 { color: var(--amber); }
+
+/* Readout */
+.readout-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; }
+.readout-item { text-align: center; padding: 4px 2px; }
+.readout-item .rv { font-size: 14px; font-weight: 600; color: var(--violet); font-family: var(--mono); }
+.readout-item .rl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; }
+
+/* Presets */
+.preset-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.preset-btn {
+  font-size: 10px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); color: var(--text-dim); cursor: pointer;
+  white-space: nowrap; transition: all 0.15s;
+}
+.preset-btn:hover { border-color: var(--accent); color: var(--text); }
+.preset-btn.active { background: rgba(6,214,160,0.15); border-color: var(--accent); color: var(--accent); }
+
+/* Toggle row */
+.toggle-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.toggle-row label { font-size: 11px; color: var(--text-dim); cursor: pointer; }
+.toggle-row input[type=checkbox] { accent-color: var(--cyan); }
+
+/* Plots */
+.plot-est, .plot-step-resp { position: relative; min-height: 0; background: var(--surface); }
+.plot-est canvas, .plot-step-resp canvas { width: 100%; height: 100%; display: block; }
+/* Mini PZ map container sits beside the step plot */
+.pz-mini {
+  position: absolute; top: 8px; right: 12px; width: 140px; height: 140px;
+  background: rgba(26,26,46,0.9); border: 1px solid var(--border);
+  border-radius: var(--radius); pointer-events: none;
+}
+.pz-mini canvas { width: 100%; height: 100%; display: block; }
+.metrics-overlay {
+  position: absolute; top: 8px; left: 12px;
+  display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none;
+}
+.metrics-overlay .metric {
+  font-size: 10px; font-family: var(--mono); padding: 2px 6px;
+  border-radius: 3px; background: rgba(26,26,46,0.85); color: var(--accent);
+}
+
+/* Insight */
+.insight {
+  grid-area: insight; background: var(--surface2); padding: 10px 20px;
+  font-size: 13px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px;
+}
+.insight-icon { font-size: 18px; flex-shrink: 0; }
+.insight-text strong { color: var(--violet); }
+.insight-text em { color: var(--orange); font-style: normal; }
+
+/* Collapsible help */
+.help-text { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+
+/* Responsive */
+@media (max-width: 800px) {
+  html, body { height: auto; overflow: auto; }
+  .app { height: auto; grid-template-columns: 1fr; grid-template-rows: auto;
+         grid-template-areas: "header" "sidebar" "estplot" "stepplot" "insight"; overflow-y: auto; }
+  .plot-est, .plot-step-resp { height: min(65vw, 420px); min-height: 260px; }
+  .param-row input[type=range]::-webkit-slider-thumb { width: 24px; height: 24px; }
+  .param-row input[type=range]::-moz-range-thumb { width: 24px; height: 24px; }
+  .param-row input[type=range] { height: 6px; min-height: 28px; }
+  .sidebar { max-height: none; overflow-y: visible; padding: 12px 10px; gap: 8px; }
+  .param-row { gap: 8px; margin: 8px 0; }
+  .param-row label { font-size: 14px; }
+  .param-row .val { font-size: 12px; }
+  .preset-btn { font-size: 12px; padding: 6px 12px; margin: 2px; }
+  .param-group h3 { font-size: 12px; }
+  .readout-item .rv { font-size: 20px; }
+  .readout-item .rl { font-size: 11px; }
+  .insight { font-size: 14px; padding: 12px 16px; }
+  .header h1 { font-size: 14px; }
+  .toggle-row label { font-size: 14px; }
+  .toggle-row input[type=checkbox] { width: 20px; height: 20px; }
+  .badge { font-size: 10px; padding: 4px 10px; }
+  .metrics-overlay .metric { font-size: 11px; padding: 3px 8px; }
+  .pz-mini { width: 110px; height: 110px; top: 4px; right: 6px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>Observer Explorer</h1>
+    <span class="subtitle">DC Motor Servo — Luenberger State Estimation</span>
+    <div class="badges">
+      <span class="badge unstable" id="warnBadge">UNSTABLE OBSERVER</span>
+      <span class="badge info" id="noiseBadge">NOISY</span>
+    </div>
+  </div>
+
+  <div class="sidebar" id="sidebar">
+    <!-- Motor Parameters (collapsible, collapsed by default) -->
+    <div class="param-group collapsed" id="motorGroup">
+      <h3 onclick="this.parentElement.classList.toggle('collapsed')">
+        <span class="collapse-icon">▼</span> Motor Parameters
+      </h3>
+      <div class="param-body">
+        <div class="param-row">
+          <label class="motor-lbl">R</label>
+          <input type="range" id="R" min="0.1" max="20" value="4" step="0.1" class="motor-slider">
+          <span class="val" id="RVal">4 Ω</span>
+        </div>
+        <div class="param-row">
+          <label class="motor-lbl">L</label>
+          <input type="range" id="L" min="0.001" max="0.5" value="0.02" step="0.001" class="motor-slider">
+          <span class="val" id="LVal">0.02 H</span>
+        </div>
+        <div class="param-row">
+          <label class="motor-lbl">Kt</label>
+          <input type="range" id="Kt" min="0.01" max="0.5" value="0.06" step="0.01" class="motor-slider">
+          <span class="val" id="KtVal">0.06</span>
+        </div>
+        <div class="param-row">
+          <label class="motor-lbl">J</label>
+          <input type="range" id="J" min="0" max="100" value="77" step="1" class="motor-slider">
+          <span class="val" id="JVal">0.002</span>
+        </div>
+        <div class="param-row">
+          <label class="motor-lbl">B</label>
+          <input type="range" id="B" min="0" max="100" value="77" step="1" class="motor-slider">
+          <span class="val" id="BVal">2e-4</span>
+        </div>
+        <div class="param-row">
+          <label class="motor-lbl">Vmax</label>
+          <input type="range" id="Vmax" min="6" max="48" value="12" step="1" class="motor-slider">
+          <span class="val" id="VmaxVal">12 V</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Observer Pole Placement -->
+    <div class="param-group">
+      <h3>Observer Pole Placement</h3>
+      <div class="param-body">
+        <div class="param-row">
+          <label class="obs-lbl">bandwidth ×</label>
+          <input type="range" id="obsBW" min="1" max="100" value="50" step="1" class="obs-slider">
+          <span class="val" id="obsBWVal">4.0×</span>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:2px;">
+          Observer poles = OL poles × bandwidth multiplier. Higher = faster estimation but more noise-sensitive.
+        </div>
+      </div>
+    </div>
+
+    <!-- Noise -->
+    <div class="param-group">
+      <h3>Sensor Noise</h3>
+      <div class="param-body">
+        <div class="toggle-row">
+          <input type="checkbox" id="noiseToggle">
+          <label for="noiseToggle">Inject Gaussian noise</label>
+        </div>
+        <div class="param-row" id="noiseRow" style="opacity:0.5;">
+          <label class="noise-lbl">σ_noise</label>
+          <input type="range" id="noiseAmp" min="0" max="100" value="30" step="1">
+          <span class="val" id="noiseAmpVal">0.03</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LQR Weights (pre-set for simplicity) -->
+    <div class="param-group">
+      <h3>LQR Cost Weights</h3>
+      <div class="param-body">
+        <div class="param-row">
+          <label class="lqr-lbl">q_θ</label>
+          <input type="range" id="qTheta" min="0" max="100" value="69" step="1">
+          <span class="val" id="qThetaVal">100</span>
+        </div>
+        <div class="param-row">
+          <label class="lqr-lbl">q_ω</label>
+          <input type="range" id="qOmega" min="0" max="100" value="50" step="1">
+          <span class="val" id="qOmegaVal">1</span>
+        </div>
+        <div class="param-row">
+          <label class="lqr-lbl">q_i</label>
+          <input type="range" id="qCur" min="0" max="100" value="24" step="1">
+          <span class="val" id="qCurVal">0.1</span>
+        </div>
+        <div class="param-row">
+          <label class="lqr-lbl">R</label>
+          <input type="range" id="rWeight" min="0" max="100" value="40" step="1">
+          <span class="val" id="rWeightVal">0.1</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Observer Gains L -->
+    <div class="param-group">
+      <h3>Observer Gains L</h3>
+      <div class="param-body">
+        <div class="gains-grid">
+          <div class="gain-item"><span class="gain-label">ℓ_θ</span><span class="gain-val l1" id="gvLTheta">—</span></div>
+          <div class="gain-item"><span class="gain-label">ℓ_ω</span><span class="gain-val l2" id="gvLOmega">—</span></div>
+          <div class="gain-item"><span class="gain-label">ℓ_i</span><span class="gain-val l3" id="gvLCur">—</span></div>
+          <div class="gain-item"></div>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;">
+          L = [ℓ_θ ℓ_ω ℓ_i]<sup>T</sup> — correction gain for each state
+        </div>
+      </div>
+    </div>
+
+    <!-- Observer Poles (readout) -->
+    <div class="param-group">
+      <h3>Observer Poles</h3>
+      <div class="param-body">
+        <div class="readout-grid" id="obsPolesGrid">
+          <div class="readout-item"><div class="rv" id="rvObsP1">—</div><div class="rl">p₁</div></div>
+          <div class="readout-item"><div class="rv" id="rvObsP2">—</div><div class="rl">p₂</div></div>
+          <div class="readout-item"><div class="rv" id="rvObsP3">—</div><div class="rl">p₃</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Estimation Quality -->
+    <div class="param-group">
+      <h3>Estimation Quality</h3>
+      <div class="param-body">
+        <div class="readout-grid">
+          <div class="readout-item"><div class="rv" id="rvErrTheta">—</div><div class="rl">RMSE θ</div></div>
+          <div class="readout-item"><div class="rv" id="rvErrOmega">—</div><div class="rl">RMSE ω</div></div>
+        <div class="readout-item"><div class="rv" id="rvErrCur">—</div><div class="rl">RMSE i</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help -->
+    <div class="param-group collapsed" id="helpGroup">
+      <h3 onclick="this.parentElement.classList.toggle('collapsed')">
+        <span class="collapse-icon">▼</span> How Observers Work
+      </h3>
+      <div class="param-body help-text">
+        <p style="margin:0 0 6px;"><strong style="color:#bd93f9;">Observer (estimator):</strong> ẋ̂ = A x̂ + B u + L (y - ŷ), ŷ = C x̂. The correction term L(y - Cx̂) drives the estimate toward the true state.</p>
+        <p style="margin:0 0 6px;"><strong style="color:#bd93f9;">Observer error dynamics:</strong> ė = (A - LC) e, where e = x - x̂. The observer poles are eigenvalues of A - LC.</p>
+        <p style="margin:0 0 6px;"><strong style="color:#06d6a0;">Separation principle:</strong> The closed-loop poles of observer-based state feedback are the union of controller poles (A-BK) and observer poles (A-LC). Design them independently!</p>
+        <p style="margin:0;"><strong style="color:#4cc9f0;">Bandwidth tradeoff:</strong> Faster observer (larger bandwidth) → quicker convergence but amplifies sensor noise. Slower observer → smoother estimates but lag behind true state.</p>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="param-group">
+      <h3>Presets</h3>
+      <div class="param-body">
+        <div class="preset-row" id="presetRow">
+          <button class="preset-btn active" data-preset="balanced">Balanced</button>
+          <button class="preset-btn" data-preset="fast">Fast Observer</button>
+          <button class="preset-btn" data-preset="slow">Slow Observer</button>
+          <button class="preset-btn" data-preset="noisy">Noisy Sensors</button>
+          <button class="preset-btn" data-preset="aggressive">Aggressive LQR</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top: Estimated vs True States -->
+  <div class="plot-est" id="plotEst">
+    <canvas id="canvasEst"></canvas>
+    <div class="metrics-overlay" id="metricsEst"></div>
+  </div>
+
+  <!-- Bottom: Closed-loop step response -->
+  <div class="plot-step-resp" id="plotStepResp">
+    <canvas id="canvasStepResp"></canvas>
+    <div class="pz-mini" id="pzMini">
+      <canvas id="canvasPZ"></canvas>
+    </div>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span class="insight-icon" id="insightIcon">🔍</span>
+    <span class="insight-text" id="insightText">Design a Luenberger observer to estimate the hidden velocity and current from noisy position measurements.</span>
+  </div>
+</div>
+
+<script>
+(function() {
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPLEX NUMBER HELPERS (reused from lqr_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+function C(re, im) { return { re, im: im || 0 }; }
+function cAdd(a, b) { return C(a.re + b.re, a.im + b.im); }
+function cSub(a, b) { return C(a.re - b.re, a.im - b.im); }
+function cMul(a, b) { return C(a.re*b.re - a.im*b.im, a.re*b.im + a.im*b.re); }
+function cAbs(a) { return Math.sqrt(a.re*a.re + a.im*a.im); }
+function cDiv(a, b) {
+  const d = b.re*b.re + b.im*b.im;
+  return C((a.re*b.re + a.im*b.im)/d, (a.im*b.re - a.re*b.im)/d);
+}
+function cSqrt(a) {
+  if (Math.abs(a.im) < 1e-14 && a.re >= 0) return [C(Math.sqrt(a.re), 0)];
+  const r = cAbs(a);
+  return [C(Math.sqrt((r + a.re)/2), Math.sign(a.im) * Math.sqrt((r - a.re)/2))];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLYNOMIAL SOLVERS (reused from lqr_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+function solveQuadratic(a1, a0) {
+  // Solves s² + a1·s + a0 = 0 (reused from lqr_explorer.html)
+  const disc = a1*a1 - 4*a0;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    return [C((-a1 - sd)/2, 0), C((-a1 + sd)/2, 0)];
+  }
+  const re = -a1/2, im = Math.sqrt(-disc)/2;
+  return [C(re, -im), C(re, im)];
+}
+
+function solveCubic(a2, a1, a0) {
+  const p = a1 - a2*a2/3;
+  const q = a0 - a2*a1/3 + 2*a2*a2*a2/27;
+  const disc = q*q/4 + p*p*p/27;
+  const shift = -a2/3;
+  if (disc >= 0) {
+    const sd = Math.sqrt(disc);
+    const u = Math.cbrt(-q/2 + sd), v = Math.cbrt(-q/2 - sd);
+    const r1 = C(u + v + shift, 0);
+    const re = -(u+v)/2 + shift, im = (u-v)*Math.sqrt(3)/2;
+    return [r1, C(re, im), C(re, -im)];
+  }
+  const r = Math.sqrt(-p*p*p/27);
+  const phi = Math.acos(-q/(2*r));
+  const cr = 2*Math.cbrt(r);
+  return [
+    C(cr*Math.cos(phi/3) + shift, 0),
+    C(cr*Math.cos((phi+2*Math.PI)/3) + shift, 0),
+    C(cr*Math.cos((phi+4*Math.PI)/3) + shift, 0)
+  ];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTOR MODEL (reused from lqr_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+function buildMotorSystem(motor) {
+  // State: [θ, ω, i] — 3rd-order model
+  // ẋ = A x + B u,  y = C x  (C = [1, 0, 0] — only θ measured)
+  const { R: Rm_, L: Lm, Kt, J: Jm, B: Bm } = motor;
+  const A = [
+    [0, 1, 0],
+    [0, -Bm / Jm, Kt / Jm],
+    [0, -Kt / Lm, -Rm_ / Lm]
+  ];
+  const B = [[0], [0], [1 / Lm]];
+  const Cout = [[1, 0, 0]];
+  return { A, B, Cout, n: 3, m: 1, p: 1 };
+}
+
+function computeMotorPoles(motor) {
+  const { R, L, Kt, J, B } = motor;
+  const a2 = (L*B + R*J) / (L*J);
+  const a1 = (R*B + Kt*Kt) / (L*J);
+  const mechPoles = solveQuadratic(a2, a1);
+  return [C(0, 0), ...mechPoles]; // One pole at origin (mechanical integrator) + two poles
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SLIDER LOG-MAPPING (reused from lqr_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+const J_MIN = 1e-5, J_MAX = 1e-2;
+const B_MIN = 1e-6, B_MAX = 1e-3;
+const QTHETA_MIN = 0.1, QTHETA_MAX = 1000;
+const QOMEGA_MIN = 0.01, QOMEGA_MAX = 100;
+const QCUR_MIN = 0, QCUR_MAX = 10;
+const R_MIN = 0.001, R_MAX = 10;
+const NOISE_MIN = 0.001, NOISE_MAX = 0.5;
+
+function logFromSlider(sv, minVal, maxVal) {
+  if (sv <= 0) return minVal;
+  if (sv >= 100) return maxVal;
+  if (minVal <= 0) return (sv / 100) * maxVal;
+  const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
+  return Math.pow(10, minExp + (sv / 100) * (maxExp - minExp));
+}
+function logToSlider(val, minVal, maxVal) {
+  if (val <= minVal) return 0;
+  if (val >= maxVal) return 100;
+  if (minVal <= 0) return Math.round((val / maxVal) * 100);
+  const minExp = Math.log10(minVal), maxExp = Math.log10(maxVal);
+  return Math.round(((Math.log10(val) - minExp) / (maxExp - minExp)) * 100);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LQR / CARE SOLVER (reused from lqr_explorer.html, adapted for 3-state)
+   ═══════════════════════════════════════════════════════════════════════ */
+let _careDbg = false; // Suppress verbose CARE logs in observer explorer
+
+function solveLyapunovKron(A, W) {
+  const n = A.length, N = n * n;
+  const M = numeric.rep([N, N], 0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      for (let p = 0; p < n; p++) {
+        for (let q = 0; q < n; q++) {
+          const row = p * n + q, col = i * n + j;
+          if (p === i) M[row][col] += A[j][q];
+          if (q === j) M[row][col] += A[i][p];
+        }
+      }
+    }
+  }
+  // Tikhonov regularization for near-singular cases
+  let diagScale = 0;
+  for (let ri = 0; ri < N; ri++) diagScale = Math.max(diagScale, Math.abs(M[ri][ri]));
+  const reg = diagScale * 1e-10;
+  for (let ri = 0; ri < N; ri++) M[ri][ri] += reg;
+  const b = new Array(N);
+  for (let p = 0; p < n; p++)
+    for (let q = 0; q < n; q++)
+      b[p * n + q] = -W[p][q];
+  try {
+    const x = numeric.solve(M, b);
+    if (!x) return null;
+    const P = numeric.rep([n, n], 0);
+    for (let p = 0; p < n; p++)
+      for (let q = 0; q < n; q++)
+        P[p][q] = x[p * n + q];
+    return P;
+  } catch(e) { return null; }
+}
+
+function isHurwitz3(A) {
+  // 3×3 Routh-Hurwitz: char poly = s³ + a2·s² + a1·s + a0
+  // All a_i > 0 AND a2·a1 > a0
+  // Leverrier's algorithm for 3×3
+  const I = [[1,0,0],[0,1,0],[0,0,1]];
+  // S1 = A
+  const tr1 = A[0][0]+A[1][1]+A[2][2];
+  const a2 = -tr1;
+  if (a2 <= 0) return false;
+  // S2 = A*(S1 + a2*I) = A*(A + a2*I)
+  const AS1 = numeric.rep([3,3], 0);
+  for (let i=0;i<3;i++) for (let j=0;j<3;j++)
+    for (let k=0;k<3;k++) AS1[i][j] += A[i][k]*(A[k][j] + a2*I[k][j]);
+  const tr2 = AS1[0][0]+AS1[1][1]+AS1[2][2];
+  const a1 = -tr2/2;
+  if (a1 <= 0) return false;
+  // S3 = A*(S2 + a1*I)
+  const AS2 = numeric.rep([3,3], 0);
+  for (let i=0;i<3;i++) for (let j=0;j<3;j++)
+    for (let k=0;k<3;k++) AS2[i][j] += A[i][k]*(AS1[k][j] + a1*I[k][j]);
+  const tr3 = AS2[0][0]+AS2[1][1]+AS2[2][2];
+  const a0 = -tr3/3;
+  if (a0 <= 0) return false;
+  return a2*a1 > a0;
+}
+
+// Compute LQR gains for 3-state motor (no integral action for simplicity)
+function computeLQRGains(motor, qTheta, qOmega, qCur, Rweight) {
+  const sys = buildMotorSystem(motor);
+  const { A, B, n } = sys;
+  const Q = numeric.rep([n, n], 0);
+  Q[0][0] = Math.max(qTheta, 1e-6);
+  Q[1][1] = Math.max(qOmega, 1e-6);
+  Q[2][2] = Math.max(qCur, 0);
+  const Rv = Math.max(Rweight, 1e-6);
+
+  // Newton-Kleinman iteration for CARE
+  const Rinv = 1 / Rv;
+  const maxIter = 25;
+  const tol = 1e-7;
+
+  // Initial K: heuristic scaling
+  const sQ = Math.sqrt((Q[0][0] + Q[1][1] + Math.max(Q[2][2], 1e-9)) / (100 + 1 + 0.1));
+  const sR = Math.sqrt(0.1 / Math.max(Rv, 1e-6));
+  let sc = sQ * sR;
+  sc = Math.max(0.2, Math.min(sc, 50));
+  let K = [10 * sc, 1 * sc, 0.05 * sc];
+
+  function buildAcl(Kvec) {
+    const Ac = numeric.rep([n, n], 0);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        Ac[i][j] = A[i][j];
+        for (let k = 0; k < B[0].length; k++)
+          Ac[i][j] -= B[i][k] * Kvec[j];
+      }
+    return Ac;
+  }
+
+  // Damp initial K until stable
+  let damp = 1.0;
+  while (damp > 0.01) {
+    const Ktest = K.map(v => v * damp);
+    if (isHurwitz3(buildAcl(Ktest))) { K = Ktest; break; }
+    damp *= 0.5;
+  }
+  if (damp <= 0.01) return null;
+
+  let P = null;
+  for (let iter = 0; iter < maxIter; iter++) {
+    const Acl = buildAcl(K);
+    const W = numeric.rep([n, n], 0);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        W[i][j] = Q[i][j] + K[i] * Rv * K[j];
+
+    const Pnew = solveLyapunovKron(Acl, W);
+    if (!Pnew) return P ? { K, P } : null;
+
+    const Knew = new Array(n);
+    for (let j = 0; j < n; j++) {
+      let sum = 0;
+      for (let i = 0; i < n; i++)
+        for (let k = 0; k < B[0].length; k++)
+          sum += B[i][k] * Pnew[i][j];
+      Knew[j] = sum * Rinv;
+    }
+
+    // Damp the step if needed
+    let stepAlpha = 1.0;
+    let Kdamped;
+    while (stepAlpha >= 0.125) {
+      Kdamped = K.map((v, idx) => v + stepAlpha * (Knew[idx] - v));
+      if (isHurwitz3(buildAcl(Kdamped))) break;
+      stepAlpha *= 0.5;
+    }
+    if (stepAlpha < 0.125) return P ? { K, P } : null;
+
+    let maxDiff = 0;
+    for (let d = 0; d < n; d++) maxDiff = Math.max(maxDiff, Math.abs(Kdamped[d] - K[d]));
+    P = Pnew;
+    K = Kdamped;
+    if (maxDiff < tol) break;
+  }
+
+  return { K, P, A, B, Q, R: Rv };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LUENBERGER OBSERVER DESIGN
+   Observer pole placement: place poles of A - LC at λ_i = bwMul × λ_i(OL)
+   where bwMul is the bandwidth multiplier.
+   ═══════════════════════════════════════════════════════════════════════ */
+function designObserver(motor, bwMul) {
+  // Unused — kept for reference. Called via designObserverAckermann.
+  return designObserverAckermann(motor, bwMul);
+}
+
+// Ackermann's formula for observer gain (dual of controller Ackermann)
+function designObserverAckermann(motor, bwMul) {
+  const sys = buildMotorSystem(motor);
+  const { A, Cout, n } = sys;
+  const olPoles = computeMotorPoles(motor);
+
+  // Compute dominant (slowest) mechanical pole magnitude
+  const mechPoles = olPoles.filter(p => Math.abs(p.re) > 1e-8 || Math.abs(p.im) > 1e-8);
+  let wDom = 10; // default
+  if (mechPoles.length > 0) {
+    const mags = mechPoles.map(p => cAbs(p));
+    wDom = Math.max(...mags); // fastest plant pole — observer must be faster than this
+  }
+  // Observer cutoff frequency = bwMul × fastest plant pole
+  // bwMul=0.5 → observer half as fast as plant (slow, smooth)
+  // bwMul=1.0 → observer matches fastest plant pole
+  // bwMul=2.0 → observer twice as fast (aggressive)
+  const wObs = bwMul * wDom;
+
+  // 3rd-order Butterworth pole placement at cutoff ω_obs:
+  // One real pole at s = -ω_obs
+  // Complex pair at s = -ω_obs/2 ± j·ω_obs·√3/2
+  const desiredPoles = [
+    C(-wObs, 0),
+    C(-wObs / 2, wObs * Math.sqrt(3) / 2),
+    C(-wObs / 2, -wObs * Math.sqrt(3) / 2)
+  ];
+
+  // Build desired polynomial: (s-p1)(s-p2)(s-p3) = s³ + d2·s² + d1·s + d0
+  // For 3rd-order Butterworth: s³ + 2·ω_obs·s² + 2·ω_obs²·s + ω_obs³
+  const d2 = 2 * wObs;
+  const d1 = 2 * wObs * wObs;
+  const d0 = wObs * wObs * wObs;
+  // Compute A², A³ for the polynomial coefficients of A
+  function matMul(M1, M2) {
+    const R = numeric.rep([3, 3], 0);
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++)
+        for (let k = 0; k < 3; k++)
+          R[i][j] += M1[i][k] * M2[k][j];
+    return R;
+  }
+  const A2 = matMul(A, A);
+  // Characteristic polynomial of A: s³ + a2·s² + a1·s + a0
+  const aTrace = A[0][0] + A[1][1] + A[2][2];
+  const a2 = -aTrace;
+  const trA2 = A2[0][0] + A2[1][1] + A2[2][2];
+  const a1 = (a2 * a2 - trA2) / 2;
+
+  // Correct direct formula for C=[1,0,0] with general 3×3 A
+  // A = [[0, 1, 0], [0, a21, a22], [0, a31, a32]]
+  // det(sI-(A-LC)) = s³ + (a2+ℓ₁)s² + (a1+a2·ℓ₁+ℓ₂)s + (a1·ℓ₁ - a32·ℓ₂ + a22·ℓ₃)
+  const a22 = A[1][2], a32 = A[2][2];
+  const l1 = d2 - a2;
+  const l2 = d1 - a1 - a2 * l1;
+  const l3 = (d0 - a1 * l1 + a32 * l2) / a22;  // Correct scaling for current channel
+
+  return { L: [l1, l2, l3], desiredPoles, olPoles, bwMul, method: 'direct' };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Extract observer poles (eigenvalues of A - LC)
+   ═══════════════════════════════════════════════════════════════════════ */
+function getObserverPoles(motor, L) {
+  const { A, Cout, n } = buildMotorSystem(motor);
+  const ALC = numeric.rep([n, n], 0);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) {
+      ALC[i][j] = A[i][j];
+      for (let k = 0; k < Cout.length; k++)
+        ALC[i][j] -= L[i] * Cout[k][j]; // L is 3×1, Cout is 1×3: L*Cout is 3×3 outer product
+    }
+  try {
+    const eig = numeric.eig(ALC);
+    const poles = [];
+    for (let k = 0; k < eig.lambda.x.length; k++)
+      poles.push(C(eig.lambda.x[k], eig.lambda.y ? eig.lambda.y[k] : 0));
+    poles.sort((a, b) => {
+      const ac = Math.abs(a.im) > 1e-8, bc = Math.abs(b.im) > 1e-8;
+      if (ac !== bc) return bc - ac;
+      return (Math.abs(b.re) + Math.abs(b.im)) - (Math.abs(a.re) + Math.abs(a.im));
+    });
+    return poles;
+  } catch(e) { return []; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SIMULATION: True system + Observer + Open-loop comparison
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateObserver(motor, lqrInfo, obsInfo, noiseAmp, tMax, nPts, noiseEnabled) {
+  const { A, B, Cout, n } = buildMotorSystem(motor);
+  const { R: Rm_, Vmax } = motor;
+  const dt = tMax / (nPts - 1);
+  const K = lqrInfo.K;
+  const L = obsInfo.L;
+
+  // Arrays for results
+  const t = new Array(nPts);
+  const thetaTrue = new Array(nPts), omegaTrue = new Array(nPts), iTrue = new Array(nPts);
+  const thetaEst = new Array(nPts), omegaEst = new Array(nPts), iEst = new Array(nPts);
+  const thetaMeas = new Array(nPts); // noisy measurement
+  const voltage = new Array(nPts);
+  // Open-loop (no correction): state estimate without measurement feedback
+  const thetaOL = new Array(nPts), omegaOL = new Array(nPts), iOL = new Array(nPts);
+
+  const thetaRef = 1.0;
+
+  // True state: x = [θ, ω, i]
+  const xTrue = [0, 0, 0];
+  // Observer state
+  const xHat = [0, 0, 0];
+  // Open-loop state (starts at same estimate, no correction)
+  const xOL = [0, 0, 0];
+
+  // Gaussian noise generator (Box-Muller)
+  function gauss() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  for (let k = 0; k < nPts; k++) {
+    const tk = k * dt;
+    t[k] = tk;
+    thetaTrue[k] = xTrue[0]; omegaTrue[k] = xTrue[1]; iTrue[k] = xTrue[2];
+    thetaEst[k] = xHat[0]; omegaEst[k] = xHat[1]; iEst[k] = xHat[2];
+    thetaOL[k] = xOL[0]; omegaOL[k] = xOL[1]; iOL[k] = xOL[2];
+
+    // Measurement: true θ + noise
+    const noise = noiseEnabled ? noiseAmp * gauss() : 0;
+    const yMeas = xTrue[0] + noise;
+    thetaMeas[k] = yMeas;
+
+    // Control voltage based on estimated state (separation principle)
+    const Vc = K[0] * (thetaRef - xHat[0]) - K[1] * xHat[1] - K[2] * xHat[2];
+    const Va = Math.max(-Vmax, Math.min(Vmax, Vc));
+    voltage[k] = Va;
+
+    if (k === nPts - 1) break;
+
+    // True state dynamics (RK4): ẋ = A x + B u
+    function fTrue(xv) {
+      return [
+        A[0][0]*xv[0] + A[0][1]*xv[1] + A[0][2]*xv[2] + B[0][0]*Va,
+        A[1][0]*xv[0] + A[1][1]*xv[1] + A[1][2]*xv[2] + B[1][0]*Va,
+        A[2][0]*xv[0] + A[2][1]*xv[1] + A[2][2]*xv[2] + B[2][0]*Va
+      ];
+    }
+    let k1 = fTrue(xTrue);
+    let x2 = xTrue.map((xi, i) => xi + 0.5*dt*k1[i]);
+    let k2 = fTrue(x2);
+    let x3 = xTrue.map((xi, i) => xi + 0.5*dt*k2[i]);
+    let k3 = fTrue(x3);
+    let x4 = xTrue.map((xi, i) => xi + dt*k3[i]);
+    let k4 = fTrue(x4);
+    for (let i = 0; i < n; i++) xTrue[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+
+    // Observer dynamics (closed-loop, with correction): ẋ̂ = A x̂ + B u + L(y - C x̂)
+    function fObs(xv) {
+      const yHat = Cout[0][0]*xv[0] + Cout[0][1]*xv[1] + Cout[0][2]*xv[2];
+      const corr = yMeas - yHat; // innovation
+      return [
+        A[0][0]*xv[0] + A[0][1]*xv[1] + A[0][2]*xv[2] + B[0][0]*Va + L[0]*corr,
+        A[1][0]*xv[0] + A[1][1]*xv[1] + A[1][2]*xv[2] + B[1][0]*Va + L[1]*corr,
+        A[2][0]*xv[0] + A[2][1]*xv[1] + A[2][2]*xv[2] + B[2][0]*Va + L[2]*corr
+      ];
+    }
+    k1 = fObs(xHat);
+    x2 = xHat.map((xi, i) => xi + 0.5*dt*k1[i]);
+    k2 = fObs(x2);
+    x3 = xHat.map((xi, i) => xi + 0.5*dt*k2[i]);
+    k3 = fObs(x3);
+    x4 = xHat.map((xi, i) => xi + dt*k3[i]);
+    k4 = fObs(x4);
+    for (let i = 0; i < n; i++) xHat[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+
+    // Open-loop observer (no correction): ẋ̂_ol = A x̂_ol + B u
+    function fOL(xv) {
+      return [
+        A[0][0]*xv[0] + A[0][1]*xv[1] + A[0][2]*xv[2] + B[0][0]*Va,
+        A[1][0]*xv[0] + A[1][1]*xv[1] + A[1][2]*xv[2] + B[1][0]*Va,
+        A[2][0]*xv[0] + A[2][1]*xv[1] + A[2][2]*xv[2] + B[2][0]*Va
+      ];
+    }
+    k1 = fOL(xOL);
+    x2 = xOL.map((xi, i) => xi + 0.5*dt*k1[i]);
+    k2 = fOL(x2);
+    x3 = xOL.map((xi, i) => xi + 0.5*dt*k2[i]);
+    k3 = fOL(x3);
+    x4 = xOL.map((xi, i) => xi + dt*k3[i]);
+    k4 = fOL(x4);
+    for (let i = 0; i < n; i++) xOL[i] += (dt/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+  }
+
+  // Compute RMSE for each state
+  function rmse(trueVals, estVals) {
+    let sum = 0;
+    for (let i = 0; i < trueVals.length; i++) {
+      const diff = trueVals[i] - estVals[i];
+      sum += diff * diff;
+    }
+    return Math.sqrt(sum / trueVals.length);
+  }
+
+  return {
+    t, thetaTrue, omegaTrue, iTrue,
+    thetaEst, omegaEst, iEst,
+    thetaMeas, voltage, thetaRef,
+    thetaOL, omegaOL, iOL,
+    rmse: {
+      theta: rmse(thetaTrue, thetaEst),
+      omega: rmse(omegaTrue, omegaEst),
+      i: rmse(iTrue, iEst)
+    }
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Simulation: Closed-loop step response (observer-based vs full-state)
+   Separately simulate to show the separation principle
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateClosedLoop(motor, lqrInfo, obsInfo, noiseEnabled, noiseAmp, tMax, nPts) {
+  const { A, B, Cout, n } = buildMotorSystem(motor);
+  const { Vmax } = motor;
+  const dt = tMax / (nPts - 1);
+  const K = lqrInfo.K;
+  const L = obsInfo.L;
+
+  const t = new Array(nPts);
+  const thetaTrueObs = new Array(nPts); // true θ with observer-based feedback
+  const thetaFullState = new Array(nPts); // true θ with full-state feedback (ideal)
+
+  // Observer-based feedback: [x_true; x_hat], 6 states
+  const zObs = [0, 0, 0, 0, 0, 0]; // [θ, ω, i, θ̂, ω̂, î]
+  // Full-state feedback: [θ, ω, i], 3 states
+  const xFull = [0, 0, 0];
+
+  const thetaRef = 1.0;
+  let prevNoise = 0;
+
+  function gauss() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  for (let k = 0; k < nPts; k++) {
+    t[k] = k * dt;
+    thetaTrueObs[k] = zObs[0];
+    thetaFullState[k] = xFull[0];
+
+    if (k === nPts - 1) break;
+
+    // Measurement
+    prevNoise = noiseEnabled ? noiseAmp * gauss() : 0;
+    const yMeas = zObs[0] + prevNoise;
+
+    // Observer-based control: u = -K x̂ + K₀ θ_ref
+    const uObs = K[0] * (thetaRef - zObs[3]) - K[1] * zObs[4] - K[2] * zObs[5];
+    const VaObs = Math.max(-Vmax, Math.min(Vmax, uObs));
+
+    // Full-state control: u = -K x + K₀ θ_ref (ideal)
+    const uFull = K[0] * (thetaRef - xFull[0]) - K[1] * xFull[1] - K[2] * xFull[2];
+    const VaFull = Math.max(-Vmax, Math.min(Vmax, uFull));
+
+    // True state dynamics for observer-based system
+    function fObsZ(zv) {
+      const u = K[0]*(thetaRef-zv[3]) - K[1]*zv[4] - K[2]*zv[5];
+      const Va = Math.max(-Vmax, Math.min(Vmax, u));
+      return [
+        A[0][0]*zv[0] + A[0][1]*zv[1] + A[0][2]*zv[2] + B[0][0]*Va, // θ̇
+        A[1][0]*zv[0] + A[1][1]*zv[1] + A[1][2]*zv[2] + B[1][0]*Va, // ω̇
+        A[2][0]*zv[0] + A[2][1]*zv[1] + A[2][2]*zv[2] + B[2][0]*Va, // i̇
+        A[0][0]*zv[3]+A[0][1]*zv[4]+A[0][2]*zv[5] + B[0][0]*Va + L[0]*(yMeas-(Cout[0][0]*zv[3]+Cout[0][1]*zv[4]+Cout[0][2]*zv[5])), // θ̂̇
+        A[1][0]*zv[3]+A[1][1]*zv[4]+A[1][2]*zv[5] + B[1][0]*Va + L[1]*(yMeas-(Cout[0][0]*zv[3]+Cout[0][1]*zv[4]+Cout[0][2]*zv[5])), // ω̂̇
+        A[2][0]*zv[3]+A[2][1]*zv[4]+A[2][2]*zv[5] + B[2][0]*Va + L[2]*(yMeas-(Cout[0][0]*zv[3]+Cout[0][1]*zv[4]+Cout[0][2]*zv[5]))  // î̇
+      ];
+    }
+
+    // RK4 for observer-based
+    let k1z = fObsZ(zObs);
+    let z2 = zObs.map((v,i) => v + 0.5*dt*k1z[i]);
+    let k2z = fObsZ(z2);
+    let z3 = zObs.map((v,i) => v + 0.5*dt*k2z[i]);
+    let k3z = fObsZ(z3);
+    let z4 = zObs.map((v,i) => v + dt*k3z[i]);
+    let k4z = fObsZ(z4);
+    for (let i = 0; i < 6; i++) zObs[i] += (dt/6)*(k1z[i]+2*k2z[i]+2*k3z[i]+k4z[i]);
+
+    // RK4 for full-state feedback
+    function fFull(xv) {
+      const u = K[0]*(thetaRef-xv[0]) - K[1]*xv[1] - K[2]*xv[2];
+      const Va = Math.max(-Vmax, Math.min(Vmax, u));
+      return [
+        A[0][0]*xv[0] + A[0][1]*xv[1] + A[0][2]*xv[2] + B[0][0]*Va,
+        A[1][0]*xv[0] + A[1][1]*xv[1] + A[1][2]*xv[2] + B[1][0]*Va,
+        A[2][0]*xv[0] + A[2][1]*xv[1] + A[2][2]*xv[2] + B[2][0]*Va
+      ];
+    }
+    let k1f = fFull(xFull);
+    let xf2 = xFull.map((v,i) => v + 0.5*dt*k1f[i]);
+    let k2f = fFull(xf2);
+    let xf3 = xFull.map((v,i) => v + 0.5*dt*k2f[i]);
+    let k3f = fFull(xf3);
+    let xf4 = xFull.map((v,i) => v + dt*k3f[i]);
+    let k4f = fFull(xf4);
+    for (let i = 0; i < 3; i++) xFull[i] += (dt/6)*(k1f[i]+2*k2f[i]+2*k3f[i]+k4f[i]);
+  }
+
+  return { t, thetaTrueObs, thetaFullState, thetaRef: 1.0 };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS (adapted from lqr_explorer.html)
+   ═══════════════════════════════════════════════════════════════════════ */
+const canvasEst = $('canvasEst'), canvasStepResp = $('canvasStepResp'), canvasPZ = $('canvasPZ');
+const ctxEst = canvasEst.getContext('2d'), ctxStepResp = canvasStepResp.getContext('2d'), ctxPZ = canvasPZ.getContext('2d');
+const FONT = "'Segoe UI', system-ui, -apple-system, sans-serif";
+
+function resizeCanvas(canvas, container) {
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
+  if (canvas.width !== cw) canvas.width = cw;
+  if (canvas.height !== ch) canvas.height = ch;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ESTIMATION PLOT — True vs Estimated vs Measured (3 subplots)
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawEstimationPlot(simResult) {
+  const container = $('plotEst');
+  const { w, h, dpr } = resizeCanvas(canvasEst, container);
+  const ctx = ctxEst;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const { t, thetaTrue, omegaTrue, iTrue, thetaEst, omegaEst, iEst, thetaMeas } = simResult;
+  // Also draw open-loop
+  const { thetaOL, omegaOL, iOL } = simResult;
+  const tMax = t[t.length - 1];
+
+  // Three subplots stacked vertically
+  const margin = { top: 8, right: 30, bottom: 28, left: 40, between: 18 };
+  const subH = (h - margin.top - margin.bottom - 2*margin.between) / 3;
+  const pw = w - margin.left - margin.right;
+
+  function tx(tv) { return margin.left + (tv / tMax) * pw; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Helper to draw one subplot
+  function drawSubplot(yBase, label, trueVals, estVals, measVals, olVals, color, yLabel, yMin, yMax) {
+    const ph = subH;
+    // Adjust range
+    let rangeMin = yMin, rangeMax = yMax;
+    if (rangeMin === undefined || rangeMax === undefined) {
+      const allVals = [...trueVals, ...estVals];
+      if (olVals) allVals.push(...olVals);
+      if (measVals) allVals.push(...measVals);
+      rangeMin = Math.min(...allVals, 0);
+      rangeMax = Math.max(...allVals, 0.01);
+      const pad = Math.max((rangeMax - rangeMin) * 0.15, 0.1);
+      rangeMin -= pad;
+      rangeMax += pad;
+    }
+    if (rangeMax - rangeMin < 0.001) { rangeMin -= 0.1; rangeMax += 0.1; }
+
+    const topY = margin.top + yBase * (subH + margin.between);
+    function ty(yv) { return topY + ph - ((yv - rangeMin) / (rangeMax - rangeMin)) * ph; }
+
+    // Grid
+    ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+    const yStep = (rangeMax - rangeMin) > 5 ? 2 : ((rangeMax - rangeMin) > 1 ? 0.5 : 0.2);
+    for (let yv = Math.ceil(rangeMin/yStep)*yStep; yv <= rangeMax; yv += yStep) {
+      if (Math.abs(yv) < 1e-10) continue;
+      ctx.beginPath(); ctx.moveTo(margin.left, ty(yv)); ctx.lineTo(margin.left+pw, ty(yv)); ctx.stroke();
+    }
+    // Zero line
+    ctx.strokeStyle = '#333360'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(margin.left, ty(0)); ctx.lineTo(margin.left+pw, ty(0)); ctx.stroke();
+
+    // Axis
+    ctx.strokeStyle = '#333360'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(margin.left, topY); ctx.lineTo(margin.left, topY+ph); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(margin.left, topY+ph); ctx.lineTo(margin.left+pw, topY+ph); ctx.stroke();
+
+    // Y-axis labels
+    ctx.fillStyle = '#8888aa'; ctx.font = '9px ' + FONT; ctx.textAlign = 'right';
+    const nYLabels = Math.max(2, Math.floor((rangeMax - rangeMin) / yStep));
+    const yStepShow = (rangeMax - rangeMin) / Math.min(nYLabels, 5);
+    for (let yv = rangeMin; yv <= rangeMax + yStepShow*0.5; yv += yStepShow) {
+      const sy = ty(yv);
+      if (sy > topY && sy < topY+ph) {
+        ctx.fillText(yv.toFixed(Math.abs(yv) < 10 ? 2 : 1), margin.left-6, sy+3);
+      }
+    }
+    // Y label
+    ctx.save();
+    ctx.translate(10, topY + ph/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillStyle = color; ctx.textAlign = 'center';
+    ctx.font = '9px ' + FONT;
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+
+    // Subplot title
+    ctx.fillStyle = color; ctx.font = '10px ' + FONT; ctx.textAlign = 'left';
+    ctx.fillText(label, margin.left+4, topY+12);
+
+    // TRUE state (thick, solid)
+    ctx.strokeStyle = color; ctx.lineWidth = 2.0;
+    ctx.globalAlpha = 0.7;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let i = 0; i < t.length; i++) {
+      const sx = tx(t[i]), sy = ty(Math.max(rangeMin, Math.min(rangeMax, trueVals[i])));
+      i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+
+    // ESTIMATED state (dashed, thinner)
+    ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    for (let i = 0; i < t.length; i++) {
+      const sx = tx(t[i]), sy = ty(Math.max(rangeMin, Math.min(rangeMax, estVals[i])));
+      i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // OPEN-LOOP (no correction) — dotted
+    if (olVals) {
+      ctx.strokeStyle = '#f72585'; ctx.lineWidth = 1.2;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      for (let i = 0; i < t.length; i++) {
+        const sx = tx(t[i]), sy = ty(Math.max(rangeMin, Math.min(rangeMax, olVals[i])));
+        i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // MEASUREMENT (dots — for θ only)
+    if (measVals) {
+      const nDots = Math.min(measVals.length, 200);
+      const step = Math.max(1, Math.floor(t.length / nDots));
+      ctx.fillStyle = '#4cc9f0';
+      for (let i = 0; i < t.length; i += step) {
+        const sx = tx(t[i]), sy = ty(Math.max(rangeMin, Math.min(rangeMax, measVals[i])));
+        ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, 2*Math.PI); ctx.fill();
+      }
+    }
+
+    return topY + ph;
+  }
+
+  // θ subplot (shows measurement dots)
+  let yMin = Math.min(...thetaTrue, ...thetaEst, ...thetaOL, ...thetaMeas, 0);
+  let yMax = Math.max(...thetaTrue, ...thetaEst, ...thetaOL, ...thetaMeas, 0.01);
+  const pad = Math.max((yMax - yMin) * 0.15, 0.15);
+  yMin -= pad; yMax += pad;
+
+  drawSubplot(0, 'θ — Position', thetaTrue, thetaEst, thetaMeas, thetaOL, '#06d6a0', 'θ [rad]', yMin, yMax);
+
+  // ω subplot (no measurement)
+  yMin = Math.min(...omegaTrue, ...omegaEst, ...omegaOL, 0);
+  yMax = Math.max(...omegaTrue, ...omegaEst, ...omegaOL, 0.01);
+  const pad2 = Math.max((yMax - yMin) * 0.15, 0.5);
+  yMin -= pad2; yMax += pad2;
+  drawSubplot(1, 'ω — Velocity', omegaTrue, omegaEst, null, omegaOL, '#4cc9f0', 'ω [rad/s]', yMin, yMax);
+
+  // i subplot (no measurement)
+  yMin = Math.min(...iTrue, ...iEst, ...iOL, 0);
+  yMax = Math.max(...iTrue, ...iEst, ...iOL, 0.01);
+  const pad3 = Math.max((yMax - yMin) * 0.15, 0.3);
+  yMin -= pad3; yMax += pad3;
+  drawSubplot(2, 'i — Current', iTrue, iEst, null, iOL, '#f0c040', 'i [A]', yMin, yMax);
+
+  // Time axis (on bottom subplot)
+  ctx.fillStyle = '#8888aa'; ctx.textAlign = 'center'; ctx.font = '9px ' + FONT;
+  const tGrid = tMax > 8 ? 2 : (tMax > 4 ? 1 : 0.5);
+  for (let i = 0; i <= tMax; i += tGrid) {
+    ctx.fillText(i.toFixed(tGrid < 1 ? 1 : 0), tx(i), h - 8);
+  }
+  ctx.fillText('Time [s]', margin.left + pw/2, h - 2);
+
+  // Legend
+  const legY = 18;
+  ctx.font = '9px ' + FONT; ctx.textAlign = 'left';
+  // True
+  ctx.fillStyle = '#06d6a0';
+  ctx.fillRect(w - 170, legY, 10, 2);
+  ctx.fillText('True', w - 155, legY + 3);
+  // Estimated
+  ctx.setLineDash([4, 2]);
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(w - 115, legY + 1); ctx.lineTo(w - 95, legY + 1); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ffd166';
+  ctx.fillText('Est', w - 90, legY + 3);
+  // Open-loop
+  ctx.setLineDash([2, 3]);
+  ctx.strokeStyle = '#f72585'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(w - 60, legY + 1); ctx.lineTo(w - 40, legY + 1); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#f72585';
+  ctx.fillText('OL', w - 36, legY + 3);
+  // Measurement
+  ctx.fillStyle = '#4cc9f0';
+  ctx.beginPath(); ctx.arc(w - 15, legY + 1, 2.5, 0, 2*Math.PI); ctx.fill();
+  ctx.fillText('Meas', w - 10, legY + 3);
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CLOSED-LOOP STEP RESPONSE PLOT
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepResponsePlot(clResult, tMax) {
+  const container = $('plotStepResp');
+  const { w, h, dpr } = resizeCanvas(canvasStepResp, container);
+  const ctx = ctxStepResp;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const { t, thetaTrueObs, thetaFullState, thetaRef } = clResult;
+  const margin = { top: 24, right: 40, bottom: 32, left: 42 };
+  const pw = w - margin.left - margin.right;
+  const ph = h - margin.top - margin.bottom;
+
+  const yMax = Math.max(1.3, Math.max(...thetaTrueObs, ...thetaFullState) * 1.1);
+  const yMin = -0.2;
+
+  function tx(tv) { return margin.left + (tv / tMax) * pw; }
+  function ty(yv) { return margin.top + ph - ((yv - yMin) / (yMax - yMin)) * ph; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  const yStep = 0.2;
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    ctx.beginPath(); ctx.moveTo(margin.left, ty(yv)); ctx.lineTo(margin.left+pw, ty(yv)); ctx.stroke();
+  }
+  for (let tGrid = 0; tGrid <= tMax; tGrid += (tMax > 4 ? 1 : 0.5)) {
+    ctx.beginPath(); ctx.moveTo(tx(tGrid), margin.top); ctx.lineTo(tx(tGrid), margin.top+ph); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#333360'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top+ph); ctx.lineTo(margin.left+pw, margin.top+ph); ctx.stroke();
+
+  // Reference line
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, ty(thetaRef)); ctx.lineTo(margin.left+pw, ty(thetaRef)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Y-axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + FONT; ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin/yStep)*yStep; yv <= yMax; yv += yStep) {
+    if (Math.abs(yv) < 1e-10) continue;
+    ctx.fillText(yv.toFixed(1), margin.left-8, ty(yv)+4);
+  }
+  // Time axis
+  ctx.textAlign = 'center';
+  for (let tGrid = 0; tGrid <= tMax; tGrid += (tMax > 4 ? 1 : 0.5))
+    ctx.fillText(tGrid.toFixed(tGrid%1?1:0), tx(tGrid), margin.top+ph+16);
+  ctx.fillText('Time [s]', margin.left+pw/2, margin.top+ph+30);
+
+  // Full-state feedback (ideal) — teal dashed
+  ctx.strokeStyle = '#06d6a0'; ctx.lineWidth = 2.0;
+  ctx.setLineDash([6, 3]);
+  ctx.beginPath();
+  for (let i = 0; i < t.length; i++) {
+    const sx = tx(t[i]), sy = ty(Math.max(yMin, Math.min(yMax, thetaFullState[i])));
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Observer-based feedback — violet solid
+  ctx.strokeStyle = '#bd93f9'; ctx.lineWidth = 2.5; ctx.shadowColor = '#bd93f9'; ctx.shadowBlur = 2;
+  ctx.beginPath();
+  for (let i = 0; i < t.length; i++) {
+    const sx = tx(t[i]), sy = ty(Math.max(yMin, Math.min(yMax, thetaTrueObs[i])));
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Legend
+  ctx.font = '9px ' + FONT; ctx.textAlign = 'left';
+  ctx.strokeStyle = '#06d6a0'; ctx.lineWidth = 2; ctx.setLineDash([5, 2]);
+  ctx.beginPath(); ctx.moveTo(margin.left + 4, margin.top + 12); ctx.lineTo(margin.left + 28, margin.top + 12); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#06d6a0'; ctx.fillText('Full-state FB', margin.left + 32, margin.top + 15);
+
+  ctx.strokeStyle = '#bd93f9'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(margin.left + 130, margin.top + 12); ctx.lineTo(margin.left + 154, margin.top + 12); ctx.stroke();
+  ctx.fillStyle = '#bd93f9'; ctx.fillText('Observer-based FB', margin.left + 158, margin.top + 15);
+  ctx.fillText('(Separation Principle)', margin.left + 158, margin.top + 27);
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MINI POLE-ZERO MAP (observer poles only)
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawMiniPZMap(motor, obsPoles) {
+  const container = $('pzMini');
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
+  if (canvasPZ.width !== cw) canvasPZ.width = cw;
+  if (canvasPZ.height !== ch) canvasPZ.height = ch;
+  canvasPZ.style.width = w + 'px';
+  canvasPZ.style.height = h + 'px';
+
+  const ctx = ctxPZ;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const olPoles = computeMotorPoles(motor);
+
+  // Auto-scale
+  const allPts = [...obsPoles, ...olPoles];
+  let maxExtent = 5;
+  if (allPts.length > 0) {
+    const res = allPts.map(p => Math.abs(p.re)).reduce((a,b) => Math.max(a,b), 0);
+    const ims = allPts.map(p => Math.abs(p.im)).reduce((a,b) => Math.max(a,b), 0);
+    maxExtent = Math.max(res * 1.5, ims * 1.5, 6);
+  }
+  const span = maxExtent;
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 14) / span;
+
+  function px(re) { return cx + re * scale; }
+  function py(im) { return cy - im * scale; }
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(15,15,26,0.95)'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.4;
+  const gridStep = Math.max(2, Math.ceil(span / 3));
+  for (let i = Math.ceil(-span/gridStep)*gridStep; i <= span; i += gridStep) {
+    ctx.beginPath(); ctx.moveTo(px(i), 4); ctx.lineTo(px(i), h-4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(4, py(i)); ctx.lineTo(w-4, py(i)); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#444466'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(w-4, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, 4); ctx.lineTo(cx, h-4); ctx.stroke();
+
+  // Stability boundary
+  ctx.strokeStyle = 'rgba(247,37,133,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(cx, 4); ctx.lineTo(cx, h-4); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // OL poles (grey ×)
+  for (const p of olPoles) {
+    const sz = 3;
+    ctx.strokeStyle = 'rgba(85,85,119,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+    ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+    ctx.stroke();
+  }
+
+  // Observer poles (violet ×)
+  const hasUnstable = obsPoles.some(p => p.re > 0.01);
+  for (const p of obsPoles) {
+    const sz = 4;
+    ctx.strokeStyle = hasUnstable ? '#f72585' : '#bd93f9';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-sz, py(p.im)-sz); ctx.lineTo(px(p.re)+sz, py(p.im)+sz);
+    ctx.moveTo(px(p.re)+sz, py(p.im)-sz); ctx.lineTo(px(p.re)-sz, py(p.im)+sz);
+    ctx.stroke();
+  }
+
+  // Title
+  ctx.fillStyle = '#8888aa'; ctx.font = '8px ' + FONT; ctx.textAlign = 'center';
+  ctx.fillText('Observer Poles (×)', cx, h - 6);
+
+  // Labels
+  ctx.font = '7px ' + FONT;
+  ctx.textAlign = 'right';
+  for (let i = Math.ceil(-span/gridStep)*gridStep; i <= span; i += gridStep)
+    if (i !== 0) ctx.fillText(i, cx - 4, py(i) + 3);
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESETS
+   ═══════════════════════════════════════════════════════════════════════ */
+const presets = {
+  balanced: { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, bwMul:1.0, noise: false, noiseAmp: 0.03,
+              qTheta:100, qOmega:1, qCur:0.1, Rweight:0.1 },
+  fast:      { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, bwMul:3.0, noise: false, noiseAmp: 0.03,
+              qTheta:100, qOmega:1, qCur:0.1, Rweight:0.1 },
+  slow:      { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, bwMul:0.3, noise: false, noiseAmp: 0.03,
+              qTheta:100, qOmega:1, qCur:0.1, Rweight:0.1 },
+  noisy:     { R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, bwMul:0.7, noise: true, noiseAmp: 0.08,
+              qTheta:100, qOmega:1, qCur:0.1, Rweight:0.1 },
+  aggressive:{ R:4, L:0.02, Kt:0.06, J:0.002, B:2e-4, Vmax:12, bwMul:2.0, noise: false, noiseAmp: 0.03,
+              qTheta:500, qOmega:5, qCur:0.5, Rweight:0.01 }
+};
+
+function applyPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  $('R').value = p.R;
+  $('L').value = p.L;
+  $('Kt').value = p.Kt;
+  $('J').value = logToSlider(p.J, J_MIN, J_MAX);
+  $('B').value = logToSlider(p.B, B_MIN, B_MAX);
+  $('Vmax').value = p.Vmax;
+  $('obsBW').value = logToSlider(p.bwMul, 0.1, 5);
+  $('noiseToggle').checked = p.noise;
+  $('noiseAmp').value = logToSlider(p.noiseAmp, NOISE_MIN, NOISE_MAX);
+  $('noiseRow').style.opacity = p.noise ? '1' : '0.5';
+  $('noiseAmp').disabled = !p.noise;
+  $('qTheta').value = logToSlider(p.qTheta, QTHETA_MIN, QTHETA_MAX);
+  $('qOmega').value = logToSlider(p.qOmega, QOMEGA_MIN, QOMEGA_MAX);
+  $('qCur').value = logToSlider(p.qCur, QCUR_MIN, QCUR_MAX);
+  $('rWeight').value = logToSlider(p.Rweight, R_MIN, R_MAX);
+  updateAll();
+}
+
+function updatePresetHighlight() {
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    // Simple: just check if active preset matches current settings approximately
+    btn.classList.remove('active');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSIGHT
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateInsight(obsInfo, simResult, noiseEnabled, noiseAmp, clResult) {
+  let icon = '🔍', text = '';
+
+  const rmse = simResult.rmse;
+  const bwMul = obsInfo.bwMul;
+  const obsPoles = getObserverPoles(readMotorParams(), obsInfo.L);
+  const hasUnstable = obsPoles.some(p => p.re > 0.01);
+
+  if (hasUnstable) {
+    icon = '⚠️';
+    text = '<strong>Observer is unstable!</strong> Observer poles are in the RHP. Decrease the bandwidth multiplier to place poles in the LHP.';
+  } else if (noiseEnabled && noiseAmp > 0.05 && bwMul > 5) {
+    icon = '📢';
+    text = '<strong>High noise with fast observer.</strong> The observer bandwidth (' + bwMul.toFixed(1) + '×) amplifies sensor noise. RMSE θ = ' + rmse.theta.toFixed(4) + '. Try lowering the bandwidth or increasing noise to see the trade-off.';
+  } else if (!noiseEnabled && bwMul > 5) {
+    icon = '🚀';
+    text = '<strong>Fast observer.</strong> Bandwidth = ' + bwMul.toFixed(1) + '×. Estimation converges quickly (RMSE θ = ' + rmse.theta.toExponential(1) + '). In a real system with sensor noise, this would amplify noise — toggle noise injection to see.';
+  } else if (bwMul < 2) {
+    icon = '🐢';
+    text = '<strong>Slow observer.</strong> Bandwidth = ' + bwMul.toFixed(1) + '×. The estimates lag behind the true states (RMSE ω = ' + rmse.omega.toFixed(3) + '). Increase bandwidth for faster convergence.';
+  } else if (noiseEnabled && rmse.theta > 0.01) {
+    icon = '🔊';
+    text = '<strong>Noise affecting estimates.</strong> With σ=' + noiseAmp.toFixed(3) + ', the observer must balance noise rejection against convergence speed. RMSE θ = ' + rmse.theta.toFixed(4) + '. Notice the observer filters better than raw measurements.';
+  } else {
+    icon = '✅';
+    text = '<strong>Well-tuned observer.</strong> Bandwidth = ' + bwMul.toFixed(1) + '×. The Luenberger observer converges to the true state. RMSE θ = ' + rmse.theta.toExponential(1) + ', ω = ' + rmse.omega.toExponential(1) + '. The separation principle ensures closed-loop stability.';
+  }
+
+  $('insightIcon').textContent = icon;
+  $('insightText').innerHTML = text;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN UPDATE LOOP
+   ═══════════════════════════════════════════════════════════════════════ */
+function readMotorParams() {
+  const Rm_ = $('R').valueAsNumber;
+  const Lm = $('L').valueAsNumber;
+  const Kt = $('Kt').valueAsNumber;
+  const Jm = logFromSlider($('J').valueAsNumber, J_MIN, J_MAX);
+  const Bm = logFromSlider($('B').valueAsNumber, B_MIN, B_MAX);
+  const Vmax = $('Vmax').valueAsNumber;
+  return { R: Rm_, L: Lm, Kt, J: Jm, B: Bm, Vmax };
+}
+
+function updateAll() {
+  const motor = readMotorParams();
+  const bwMul = logFromSlider($('obsBW').valueAsNumber, 0.1, 5);
+  const noiseEnabled = $('noiseToggle').checked;
+  const noiseAmp = logFromSlider($('noiseAmp').valueAsNumber, NOISE_MIN, NOISE_MAX);
+  const qTheta = logFromSlider($('qTheta').valueAsNumber, QTHETA_MIN, QTHETA_MAX);
+  const qOmega = logFromSlider($('qOmega').valueAsNumber, QOMEGA_MIN, QOMEGA_MAX);
+  const qCur = logFromSlider($('qCur').valueAsNumber, QCUR_MIN, QCUR_MAX);
+  const Rweight = logFromSlider($('rWeight').valueAsNumber, R_MIN, R_MAX);
+
+  // Update labels
+  $('RVal').textContent = motor.R.toFixed(1) + ' Ω';
+  $('LVal').textContent = motor.L.toFixed(3) + ' H';
+  $('KtVal').textContent = motor.Kt.toFixed(2);
+  $('JVal').textContent = motor.J.toExponential(1);
+  $('BVal').textContent = motor.B.toExponential(1);
+  $('VmaxVal').textContent = motor.Vmax + ' V';
+  $('obsBWVal').textContent = bwMul.toFixed(1) + '×';
+  $('noiseAmpVal').textContent = noiseAmp.toFixed(noiseAmp < 0.01 ? 3 : 2);
+  $('qThetaVal').textContent = qTheta.toFixed(qTheta < 1 ? 2 : 0);
+  $('qOmegaVal').textContent = qOmega.toFixed(qOmega < 1 ? 2 : 0);
+  $('qCurVal').textContent = qCur.toFixed(qCur < 1 ? 2 : 0);
+  $('rWeightVal').textContent = Rweight.toFixed(Rweight < 0.01 ? 4 : (Rweight < 1 ? 3 : 1));
+
+  // Design observer
+  const obsInfo = designObserverAckermann(motor, bwMul);
+
+  // Display observer gains
+  $('gvLTheta').textContent = obsInfo.L[0].toFixed(2);
+  $('gvLOmega').textContent = obsInfo.L[1].toFixed(2);
+  $('gvLCur').textContent = obsInfo.L[2].toFixed(2);
+
+  // Compute actual observer poles
+  const obsPoles = getObserverPoles(motor, obsInfo.L);
+  $('rvObsP1').textContent = obsPoles.length > 0 ? (Math.abs(obsPoles[0].im) > 0.01 ? obsPoles[0].re.toFixed(0) + '±' + Math.abs(obsPoles[0].im).toFixed(0) + 'j' : obsPoles[0].re.toFixed(1)) : '—';
+  $('rvObsP2').textContent = obsPoles.length > 1 ? (Math.abs(obsPoles[1].im) > 0.01 ? obsPoles[1].re.toFixed(0) + '±' + Math.abs(obsPoles[1].im).toFixed(0) + 'j' : obsPoles[1].re.toFixed(1)) : '—';
+  $('rvObsP3').textContent = obsPoles.length > 2 ? (Math.abs(obsPoles[2].im) > 0.01 ? obsPoles[2].re.toFixed(0) + '±' + Math.abs(obsPoles[2].im).toFixed(0) + 'j' : obsPoles[2].re.toFixed(1)) : '—';
+
+  // Compute LQR gains
+  const lqrInfo = computeLQRGains(motor, qTheta, qOmega, qCur, Rweight);
+  if (!lqrInfo) {
+    // Fallback
+    $('gvLTheta').textContent = '—'; $('gvLOmega').textContent = '—'; $('gvLCur').textContent = '—';
+    $('rvObsP1').textContent = '—'; $('rvObsP2').textContent = '—'; $('rvObsP3').textContent = '—';
+    console.warn('LQR solver failed');
+    return;
+  }
+
+  // Simulation time window
+  const obsPoleMags = obsPoles.map(p => cAbs(p));
+  const slowestObs = Math.min(...obsPoleMags.filter(m => m > 0.01));
+  const tsEst = slowestObs > 0 ? 4 / slowestObs : 2;
+  const tMax = Math.max(1.5, Math.min(8, tsEst * 2.5));
+
+  // Run observer simulation (true system + observer + open-loop)
+  const simResult = simulateObserver(motor, lqrInfo, obsInfo, noiseAmp, tMax, 600, noiseEnabled);
+
+  // Run closed-loop step response comparison
+  const clTMax = Math.max(tMax, 2);
+  const clResult = simulateClosedLoop(motor, lqrInfo, obsInfo, noiseEnabled, noiseAmp, clTMax, 600);
+
+  // Display RMSE
+  $('rvErrTheta').textContent = simResult.rmse.theta.toExponential(2);
+  $('rvErrOmega').textContent = simResult.rmse.omega.toExponential(2);
+  $('rvErrCur').textContent = simResult.rmse.i.toExponential(2);
+
+  // Badges
+  const hasUnstable = obsPoles.some(p => p.re > 0.01);
+  $('warnBadge').style.display = hasUnstable ? 'inline' : 'none';
+  $('noiseBadge').style.display = noiseEnabled ? 'inline' : 'none';
+
+  // Draw
+  drawEstimationPlot(simResult);
+  drawStepResponsePlot(clResult, clTMax);
+  drawMiniPZMap(motor, obsPoles);
+  updateInsight(obsInfo, simResult, noiseEnabled, noiseAmp, clResult);
+
+  // Metrics overlay
+  let mHtml = '';
+  mHtml += '<span class="metric" style="color:#bd93f9;">RMSE θ ' + simResult.rmse.theta.toExponential(1) + '</span>';
+  mHtml += '<span class="metric" style="color:#4cc9f0;">RMSE ω ' + simResult.rmse.omega.toExponential(1) + '</span>';
+  if (noiseEnabled)
+    mHtml += '<span class="metric" style="color:#4cc9f0;">σ=' + noiseAmp.toFixed(3) + '</span>';
+  $('metricsEst').innerHTML = mHtml;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT WIRING
+   ═══════════════════════════════════════════════════════════════════════ */
+// Motor sliders
+['R','L','Kt','J','B','Vmax'].forEach(id => $(id).addEventListener('input', updateAll));
+// Observer slider
+$('obsBW').addEventListener('input', updateAll);
+// Noise
+$('noiseToggle').addEventListener('change', function() {
+  $('noiseRow').style.opacity = this.checked ? '1' : '0.5';
+  $('noiseAmp').disabled = !this.checked;
+  updateAll();
+});
+$('noiseAmp').addEventListener('input', updateAll);
+// LQR weight sliders
+['qTheta','qOmega','qCur','rWeight'].forEach(id => $(id).addEventListener('input', updateAll));
+// Presets
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyPreset(btn.dataset.preset);
+  });
+});
+// Resize handler
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(updateAll, 200); });
+
+// Initialize
+applyPreset('balanced');
+
+console.log('Observer Explorer ready — Luenberger Observer for DC Motor');
+console.log('Estimation of hidden states ω, i from position measurement θ');
+console.log('Observer pole placement via Ackermann with bandwidth multiplier');
+console.log('Separation principle: controller + observer designed independently');
+
+})();
+</script>
+</body>
+</html>
