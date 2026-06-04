@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-Lead / Lag Compensator Design Demo.
+Lead / Lag Compensator Design Demo — Unified Pole-Zero Form.
 
-A compensator reshapes the open-loop frequency response to meet closed-loop
-specs — more phase margin (lead), better steady-state accuracy (lag), or
-both (lead-lag).  This demo works through all three on the same plant and
-also discretises each compensator at 1 kHz for digital implementation.
+Every compensator is  C(s) = K · (s + z) / (s + p).  What matters is the
+relative position of zero and pole on the negative real axis:
+
+    |z| < |p|   →  lead  (zero closer to origin — phase boost)
+    |p| < |z|   →  lag   (pole closer to origin — DC gain boost)
+
+This demo works through lead, lag, and lead-lag on a type-1 plant, and
+discretises each compensator at 1 kHz via Tustin (bilinear transform).
 
            ┌──────────┐     ┌──────────┐
     r ──→  │ C(s)     │──→  │ G(s)     │──→ y
@@ -17,129 +21,135 @@ Usage:   .venv/bin/pip install control matplotlib numpy scipy
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')             # headless — saves plot without blocking
 from matplotlib import pyplot as plt
 import control as ct
 
 # ═══════════════════════════════════════════════════════════════════
-# 1. The plant — three cascaded lags (type-0, finite DC gain, lots of phase lag)
+# 1. The plant  —  G(s) = 1 / (s (s + 2))
 # ═══════════════════════════════════════════════════════════════════
 #
-# Three first-order lags in series: a fast actuator, a mechanical time
-# constant, and a slow thermal/filter pole.  Type-0 means finite DC gain
-# → steady-state error exists → lag compensation is meaningful.
-# The three poles stack phase lag → phase margin is poor → lead helps.
+# Type-1, 2nd order: one integrator at s = 0, one lag at s = −2.
+# Type-1 ⇒ zero steady-state error for step inputs, finite error
+# for ramp inputs (error = 1/Kv).
 
-tau1 = 0.02    # fast actuator / electrical time constant
-tau2 = 0.2     # mechanical time constant
-tau3 = 0.8     # slow filter / sensor lag
-K_plant = 5.0  # DC gain
-
-num_G = [K_plant]
-# (τ1 s + 1)(τ2 s + 1)(τ3 s + 1) in coefficient form
-den_G = [tau1*tau2*tau3,
-         tau1*tau2 + tau1*tau3 + tau2*tau3,
-         tau1 + tau2 + tau3,
-         1]
+num_G = [1]
+den_G = [1, 2, 0]          # s² + 2s  →  s(s+2)
 G = ct.tf(num_G, den_G)
 
-print("Plant G(s):")
+print("Plant G(s) = 1 / (s(s+2))")
 print(f"  poles  = {np.round(ct.poles(G), 3)}")
-print(f"  DCgain = {float(ct.dcgain(G)):.3f}")
+print(f"  type-1 — integrator at s = 0 → Kv = lim s·G(s) = 0.5")
 
 # ═══════════════════════════════════════════════════════════════════
 # 2. Analyse the bare plant
 # ═══════════════════════════════════════════════════════════════════
 
 gm, pm, wcg, wcp = ct.margin(G)
+Kv_bare = 0.5  # lim s→0 s·1/(s(s+2)) = 1/2
+
 print(f"\nBare plant margins:")
-print(f"  GM  = {gm:.2f} ({20*np.log10(gm):.1f} dB)  at ω = {wcg:.2f} rad/s")
-print(f"  PM  = {pm:.1f}°  at ω = {wcp:.2f} rad/s")
-print(f"  bandwidth (0 dB cross) ≈ {wcp:.2f} rad/s")
-print(f"  DC gain = {float(ct.dcgain(G)):.3f}  → steady-state error = "
-      f"{1/(1 + float(ct.dcgain(G))):.1%} for unit feedback")
+gm_str = f"{gm:.2f}" if np.isfinite(gm) else "∞"
+wcg_str = f"{wcg:.2f}" if np.isfinite(wcg) else "∞"
+gm_db = f"{20*np.log10(gm):.1f} dB" if np.isfinite(gm) and gm > 0 else "∞ dB"
+print(f"  GM  = {gm_str} ({gm_db})  at ω = {wcg_str} rad/s")
+print(f"  PM  = {pm:.1f}°  at crossover ω_cp = {wcp:.2f} rad/s")
+print(f"  ω_cp (0 dB cross) = {wcp:.2f} rad/s")
+print(f"  Kv = {Kv_bare:.3f}  →  ramp steady-state error = {1/Kv_bare:.3f}")
 
 # ═══════════════════════════════════════════════════════════════════
-# 3. Lead compensator — add phase near the crossover
+# 3. Lead compensator  —  |z| < |p|, zero closer to origin
 # ═══════════════════════════════════════════════════════════════════
 #
-# Lead:  C(s) = Kc · (τ s + 1) / (α τ s + 1),   0 < α < 1
+#  C(s) = K · (s + z) / (s + p)      with  z < p  (both positive)
 #
-# Zero at −1/τ, pole at −1/(ατ). α<1 ⇒ pole further from origin ⇒ phase lead.
-# Phase boost peaks at ω_max = 1/(τ√α), height = arcsin((1−α)/(1+α)).
-# We want ≈ 50° extra phase at ω_max ≈ 1.5× bare crossover.
+#  Phase added at frequency ω:
+#    φ(ω) = arctan(ω/z) − arctan(ω/p)  >  0  because z < p
+#
+#  Peak phase φ_max at ω_max = √(z·p):
+#    sin(φ_max) = (p − z) / (p + z)
+#
+#  Design: pick desired phase boost φ.  From φ compute the ratio
+#    r = p/z = (1 + sin φ) / (1 − sin φ)
+#  Place z at (or slightly below) the bare crossover, then p = r·z.
+#  Finally, scale K so |C(j ω_cp0)| ≈ 1 — preserves the old crossover gain.
+
+def design_lead_zpk(plant, desired_pm_boost_deg=50, z_factor=0.9):
+    """Design a lead compensator  C(s) = K·(s+z)/(s+p)  with |z| < |p|.
+
+    Returns C(s) and a diagnostics dict with keys z, p, K, r, phi_max.
+    """
+    _, _, _, wcp0 = ct.margin(plant)
+
+    phi = np.deg2rad(desired_pm_boost_deg)
+    sin_phi = np.sin(phi)
+    r = (1 + sin_phi) / (1 - sin_phi)          # p/z > 1
+
+    # Place zero near the bare crossover (or slightly below it)
+    z = z_factor * wcp0
+    p = r * z                                  # pole further out
+
+    # K so that |C(j·wcp0)| = 1  →  total loop gain unchanged at old crossover
+    mag = np.abs((1j * wcp0 + z) / (1j * wcp0 + p))
+    K = 1.0 / mag
+    C = ct.tf([K, K*z], [1, p])
+    phi_max = np.rad2deg(np.arcsin((p - z) / (p + z)))
+    w_max = np.sqrt(z * p)
+
+    return C, dict(z=z, p=p, K=K, r=r, phi_max=phi_max, w_max=w_max)
 
 
-def design_lead(plant, desired_pm_extra=50, crossover_mult=1.5):
-    """Return C_lead(s) and a diagnostics dict."""
-    _, pm0, _, wcp0 = ct.margin(plant)
-    phi = np.deg2rad(desired_pm_extra)         # phase boost we want
-    alpha = (1 - np.sin(phi)) / (1 + np.sin(phi))  # 0 < α < 1
-    w_max = crossover_mult * wcp0               # centre the bump above current BW
-    tau = 1 / (w_max * np.sqrt(alpha))
-
-    num = tau, 1                               # τs + 1
-    den = alpha * tau, 1                       # ατs + 1
-    C = ct.tf([tau, 1], [alpha * tau, 1])
-
-    # Scale so that |C(j wcp0)| ≈ 1 — keep the old crossover gain unchanged
-    mag_at_wcp0 = np.abs(ct.evalfr(C, 1j * wcp0))
-    Kc = 1 / mag_at_wcp0
-    C *= Kc
-
-    info = dict(alpha=alpha, tau=tau, w_max=w_max, Kc=Kc,
-                phi_max=np.rad2deg(phi))
-    return C, info
-
-
-C_lead, info_lead = design_lead(G)
-print(f"\nLead compensator: α={info_lead['alpha']:.2f}, "
-      f"τ={info_lead['tau']:.4f}, φ_max={info_lead['phi_max']:.1f}° "
-      f"at ω_max={info_lead['w_max']:.2f}")
+C_lead, info_lead = design_lead_zpk(G)
+print(f"\nLead compensator  C(s) = K·(s+z)/(s+p)   |z| < |p|")
+print(f"  z = {info_lead['z']:.4f}   p = {info_lead['p']:.4f}   K = {info_lead['K']:.4f}")
+print(f"  ratio p/z = {info_lead['r']:.2f}  →  φ_max = {info_lead['phi_max']:.1f}° "
+      f"at ω_max = {info_lead['w_max']:.3f} rad/s")
 print(f"  C_lead(s) = {C_lead}")
 
 # ═══════════════════════════════════════════════════════════════════
-# 4. Lag compensator — boost low-frequency gain without hurting PM
+# 4. Lag compensator  —  |p| < |z|, pole closer to origin
 # ═══════════════════════════════════════════════════════════════════
 #
-# Lag:  C(s) = Kc · (τ s + 1) / (β τ s + 1),   β > 1
+#  C(s) = K · (s + z) / (s + p)      with  p < z  (both positive)
 #
-# Pole at −1/(βτ) is closer to origin than zero at −1/τ ⇒ phase lag.
-# This is a LOW-PASS: DC gain = 1, HF gain = 1/β. Cascaded with an
-# overall loop gain K, the DC loop gain becomes K (boosted) while the
-# lag rolls off before crossover, preserving PM.
+#  Phase at frequency ω:
+#    φ(ω) = arctan(ω/z) − arctan(ω/p)  <  0  because p < z  (lag!)
+#  Therefore: place the zero well below crossover so the phase dip
+#  has faded by ω_cp — the PM stays largely intact.
+#
+#  DC gain = K·z/p,  HF gain = K.
+#  z/p = β is the DC boost factor.
+#  Design: place pole near origin, zero β× further out, K = β
+#  to compensate the HF attenuation of the passive lag network.
+
+def design_lag_zpk(plant, dc_boost=10, pole_loc=0.1):
+    """Design a lag compensator  C(s) = K·(s+z)/(s+p)  with |p| < |z|.
+
+    Returns C(s) and a diagnostics dict with keys z, p, K, beta.
+    """
+    p = pole_loc                               # pole near origin
+    z = dc_boost * p                           # zero further out
+    K = dc_boost                               # compensate HF attenuation
+
+    C = ct.tf([K, K*z], [1, p])
+    return C, dict(z=z, p=p, K=K, beta=dc_boost)
 
 
-def design_lag(plant, dc_gain_boost=10, decade_below=10):
-    """Return C_lag(s) and a diagnostics dict."""
-    _, _, _, wcp0 = ct.margin(plant)
-    beta = dc_gain_boost
-    # Place the zero a decade below crossover so the phase lag has faded
-    wz = wcp0 / decade_below
-    tau = 1 / wz
-    C = ct.tf([tau, 1], [beta * tau, 1])
-
-    # The lag network has |C(jω_cp)| ≈ 1/β at the original crossover.
-    # Boost overall gain by β so the compensated crossover stays near ω_cp.
-    C *= beta
-
-    return C, dict(beta=beta, tau=tau, wz=wz)
-
-
-C_lag, info_lag = design_lag(G)
-print(f"\nLag compensator:  β={info_lag['beta']:.2f}, "
-      f"τ={info_lag['tau']:.4f}, zero at ωz={info_lag['wz']:.3f}")
+C_lag, info_lag = design_lag_zpk(G)
+print(f"\nLag compensator  C(s) = K·(s+z)/(s+p)   |p| < |z|")
+print(f"  z = {info_lag['z']:.4f}   p = {info_lag['p']:.4f}   K = {info_lag['K']:.4f}")
+print(f"  zero/pole ratio β = z/p = {info_lag['beta']:.2f}  →  DC loop gain boost = {info_lag['beta']**2:.0f}×")
 print(f"  C_lag(s) = {C_lag}")
 
 # ═══════════════════════════════════════════════════════════════════
-# 5. Lead-lag — best of both
+# 5. Lead-lag  —  cascade lead and lag
 # ═══════════════════════════════════════════════════════════════════
 
 C_leadlag = C_lead * C_lag
 
-print(f"\nLead-lag compensator:")
-print(f"  C_leadlag(s) = C_lead(s) · C_lag(s)")
-print(f"  DC boost factor ≈ {info_lag['beta']:.0f}×")
-print(f"  phase boost ≈ {info_lead['phi_max']:.0f}° at ω ≈ {info_lead['w_max']:.2f}")
+print(f"\nLead-lag compensator  C_leadlag(s) = C_lead(s) · C_lag(s)")
+print(f"  C_leadlag(s) = {C_leadlag}")
 
 # ═══════════════════════════════════════════════════════════════════
 # 6. Digital implementations — Tustin (bilinear) at 1 kHz
@@ -151,18 +161,18 @@ Ts = 1 / fs
 def discretise_tustin(C_ct, Ts):
     """Bilinear (Tustin) discretisation of a continuous transfer function."""
     if isinstance(C_ct, (int, float)):
-        return C_ct                     # scalar gain — no dynamics to discretise
-    C_dt = ct.sample_system(C_ct, Ts, method='tustin')
-    return C_dt
+        return C_ct
+    return ct.sample_system(C_ct, Ts, method='tustin')
+
 
 C_lead_d   = discretise_tustin(C_lead, Ts)
 C_lag_d    = discretise_tustin(C_lag, Ts)
 C_leadlag_d = discretise_tustin(C_leadlag, Ts)
 
 print(f"\nDigital compensators (Tustin, fs={fs:.0f} Hz, Ts={Ts*1e3:.1f} ms):")
-print(f"  C_lead_d(z)   degree = {len(C_lead_d.num[0][0]) - 1}")
-print(f"  C_lag_d(z)    degree = {len(C_lag_d.num[0][0]) - 1}")
-print(f"  C_leadlag_d(z) degree = {len(C_leadlag_d.num[0][0]) - 1}")
+print(f"  C_lead_d(z)   = {C_lead_d}")
+print(f"  C_lag_d(z)    = {C_lag_d}")
+print(f"  C_leadlag_d(z) = {C_leadlag_d}")
 
 # ═══════════════════════════════════════════════════════════════════
 # 7. Closed-loop comparisons
@@ -175,15 +185,28 @@ systems = {
     'lead-lag':                  (C_leadlag, G),
 }
 
-# Compute margins and step response for each
 results = {}
 for name, (C, plant) in systems.items():
     L = C * plant
     gm, pm, wcg, wcp = ct.margin(L)
+
+    # Closed-loop step
     T = ct.feedback(L, 1)
     t, y = ct.step_response(T, T=np.linspace(0, 3, 3000))
-    ss_err = 1 / (1 + np.abs(ct.dcgain(L)))
-    results[name] = dict(gm=gm, pm=pm, wcp=wcp, t=t, y=y, ss_err=ss_err, L=L)
+
+    # Steady-state error for unit feedback (step)
+    if abs(float(ct.dcgain(L))) > 1e-12:
+        ss_err = 1 / (1 + float(ct.dcgain(L)))
+    else:
+        ss_err = 1.0  # type-1 plant with no integrator in C → infinite DC loop gain
+    # Ramp error: 1/Kv where Kv = lim s→0 s·L(s)
+    # Evaluate |s·L(s)| at a very small s to avoid dcgain pole-zero cancellation issues
+    eps = 1e-8
+    Kv = abs(ct.evalfr(L, 1j * eps)) * eps   # |L(jε)|·ε ≈ |s·L(s)| as s→0
+    ramp_err = 1.0 / Kv if Kv > 1e-12 else float('inf')
+
+    results[name] = dict(gm=gm, pm=pm, wcp=wcp, t=t, y=y,
+                         ss_err=ss_err, ramp_err=ramp_err, L=L)
 
 # ═══════════════════════════════════════════════════════════════════
 # 8. Plot
@@ -193,7 +216,7 @@ fig, axes = plt.subplots(2, 2, figsize=(13, 9))
 
 # ——— Bode ———
 ax_mag, ax_phase = axes[0, 0], axes[1, 0]
-omega = np.logspace(-1, 3, 2000)
+omega = np.logspace(-1, 2, 2000)
 colors = ['#8b949e', '#00bcd4', '#f0883e', '#7c4dff']
 for (name, res), c in zip(results.items(), colors):
     mag, phase, _ = ct.bode(res['L'], omega, plot=False)
@@ -239,10 +262,7 @@ for (name, (C_ct, plant)), c in zip(systems.items(), colors):
     # Digital closed-loop — discretise compensator, keep plant continuous
     C_dt = discretise_tustin(C_ct, Ts)
     G_dt = ct.sample_system(plant, Ts, method='zoh')
-    if isinstance(C_dt, (int, float)):
-        L_dt = C_dt * G_dt
-    else:
-        L_dt = C_dt * G_dt
+    L_dt = C_dt * G_dt if isinstance(C_dt, (int, float)) else C_dt * G_dt
     T_dt = ct.feedback(L_dt, 1)
     _, y_dt = ct.step_response(T_dt, T=t_dig)
     ax_dig.step(t_dig, y_dt, color=c, lw=1.5, where='post', label=f'{name} (Tustin)')
@@ -264,20 +284,24 @@ print("\nPlot saved → lead_lag_demo.png")
 # 9. Summary table
 # ═══════════════════════════════════════════════════════════════════
 
-print(f"\n{'':>22} {'PM [°]':>8} {'GM [dB]':>8} {'ω_cp [rad/s]':>14} {'ss err':>8}")
-print(f"{'':─>52}")
+print(f"\n{'':>22} {'PM [°]':>8} {'GM [dB]':>8} {'ω_cp [rad/s]':>14} "
+      f"{'step ss err':>12} {'ramp ss err':>12}")
+print(f"{'':─>78}")
 for name, res in results.items():
     gm_db = 20*np.log10(res['gm']) if res['gm'] > 0 else float('-inf')
+    ramp_str = f"{res['ramp_err']:.4f}" if np.isfinite(res['ramp_err']) else "∞"
     print(f"{name:>22} {res['pm']:8.1f} {gm_db:8.1f} {res['wcp']:14.2f} "
-          f"{res['ss_err']:7.1%}")
+          f"{res['ss_err']:11.2%} {ramp_str:>12}")
 
+print(f"\nC(s) = K·(s+z)/(s+p)  —  unified pole-zero form")
+print(f"  z = {info_lead['z']:.4f}, p = {info_lead['p']:.4f}, K = {info_lead['K']:.3f}      for lead")
+print(f"  z = {info_lag['z']:.4f}, p = {info_lag['p']:.4f}, K = {info_lag['K']:.3f}       for lag")
 print(f"\nKey takeaway:")
-print(f"  • Lead — adds {info_lead['phi_max']:.0f}° phase near "
-      f"{info_lead['w_max']:.1f} rad/s → higher PM, faster response, less overshoot")
-print(f"  • Lag — boosts DC gain {info_lag['beta']:.0f}× → "
-      f"steady-state error drops by ~{info_lag['beta']:.0f}× without hurting PM")
-print(f"  • Lead-lag — combines both: fast AND accurate")
-print(f"  • Tustin discretisation at {fs:.0f} Hz faithfully reproduces "
+print(f"  - Lead  — |z|<|p|, zero before pole → +{info_lead['phi_max']:.0f} deg phase near "
+      f"{info_lead['w_max']:.2f} rad/s → higher PM, faster response")
+print(f"  - Lag   — |p|<|z|, pole before zero → {info_lag['beta']:.0f}x DC loop gain "
+      f"boost → ramp error shrinks ~{info_lag['beta']**2:.0f}x without hurting PM")
+print(f"  - Lead-lag — cascaded: phase boost AND DC boost")
+print(f"  - Tustin discretisation at {fs:.0f} Hz faithfully reproduces "
       f"continuous behaviour (check plot)")
 
-plt.show()

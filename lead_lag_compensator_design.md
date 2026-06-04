@@ -1,260 +1,303 @@
-# Lead and Lag Compensators: Shaping the Bode Plot
+# Lead and Lag Compensators: The Pole-Zero View
 
-**A PID controller asks "what should I do with the error?" A lead-lag compensator asks "how should I reshape the open-loop frequency response so the closed loop behaves the way I want?" Same mathematics underneath — but the compensator approach gives you direct control over the Bode plot, and that changes everything.**
+**There is exactly one compensator form that matters:**
 
----
+$$C(s) = K \cdot \frac{s + z}{s + p}$$
 
-## 1. The problem: a plant that can't be fixed by gain alone
-
-Consider a plant that's lightly damped — the kind you meet in servo mechanisms, resonant structures, or anything with a flexible mode:
-
-$$G(s) = \frac{20 \cdot 100}{s^2 + 3s + 100}$$
-
-At a glance: ωₙ = 10 rad/s, ζ = 0.15. The damping ratio is so low that the phase drops precipitously near the natural frequency, and by the time the gain crosses 0 dB, the phase margin is about 4°. Four degrees. The step response oscillates violently and takes forever to settle.
-
-You could turn down the gain. That pushes the 0 dB crossing to a lower frequency where the phase hasn't dropped as much — more phase margin, less oscillation. But now the crossover is lower, the bandwidth is lower, the response is slower, and the steady-state error (which depends on the DC loop gain) gets worse.
-
-You could turn *up* the gain. That pushes the crossover higher — faster response — but now you're crossing 0 dB where the phase is even more negative. Less phase margin. More oscillation. Potentially unstable.
-
-This is the fundamental trade-off that Bode identified in 1945: **gain trades speed against stability.** You can't fix both with a single knob.
-
-The PID answer is to add terms that react to the error in different ways — proportional for speed, derivative for damping, integral for steady-state accuracy. The compensator answer is different: **directly reshape the Bode plot** so the gain and phase curves do what you want, where you want.
+**Everything else is where you put $z$ and $p$ relative to each other. Lead: $|z| < |p|$. Lag: $|p| < |z|$. That's it. The rest is design procedure.**
 
 ---
 
-## 2. The compensator philosophy: shape the loop, don't just react to error
+## 1. The unified form — one transfer function, three compensators
 
-A compensator $C(s)$ sits between the reference and the plant, just like a PID controller:
+Start with a single pole, a single zero, and a gain:
 
-```
-    r ──→ [C(s)] ──→ [G(s)] ──→ y
-```
+$$C(s) = K \cdot \frac{s + z}{s + p}$$
 
-The difference is in how you think about designing it.
+Now look at the relative positions of $z$ and $p$ on the negative real axis:
 
-A PID designer asks: "What proportional, derivative, and integral weights produce a good step response?" The design loop is: guess gains → simulate → check overshoot/settling → adjust → repeat. It's tuning.
+| Condition | Name | What it does |
+|-----------|------|--------------|
+| $|z| < |p|$ | **Lead** | Zero is closer to the origin. Phase rises above baseline over a range of frequencies — you bought a **phase bump** |
+| $|p| < |z|$ | **Lag** | Pole is closer to the origin. Low-frequency gain exceeds high-frequency gain — you bought a **DC boost** |
+| $z = p$ | Trivial | Pole and zero cancel. $C(s) = K$, a pure gain |
+| Lead × Lag cascade | **Lead-lag** | Two stages in series: one with $|z_1| < |p_1|$, one with $|p_2| < |z_2|$. Phase bump *and* DC boost |
 
-A compensator designer asks: "What does the open-loop Bode plot of $L(s) = C(s)G(s)$ need to look like for the closed loop to meet specifications?" Then they *build* $C(s)$ to produce that shape. The design loop is: specify desired PM/BW/DC-gain → place poles and zeros in $C(s)$ to achieve them → verify. It's synthesis.
+Every other representation — $K_c\frac{Ts+1}{\alpha Ts+1}$, $K_c\frac{\beta Ts+1}{Ts+1}$, $\frac{s+z}{s+p}$ with various normalizations — is the same transfer function wearing different clothes. The $z,p$ parameterization is the most direct: you place a zero and a pole, and nature tells you whether it leads or lags.
 
-Both approaches produce controllers that are transfer functions with poles and zeros. The difference is not the math — it's the *design philosophy*. PID tunes gains. Compensator design places poles and zeros directly.
+**Why does relative position determine everything?** Each pole and zero contributes phase to the Bode plot: a zero eventually adds $+90^\circ$, a pole eventually adds $-90^\circ$. When the zero is closer to the origin than the pole ($|z| < |p|$), the zero's phase contribution kicks in at a lower frequency — for a range of frequencies between $|z|$ and $|p|$, the net phase is positive. That's phase lead. Reverse the order, and you get phase lag over the intermediate range.
 
-And there's a deep connection: **a lead compensator approximates PD control. A lag compensator approximates PI control.** A lead-lag compensator approximates PID. The compensator framework gives you the same capabilities, but with explicit control over *where* in frequency the derivative and integral actions take effect.
+The Bode magnitude tells the same story from a different angle. Between $|z|$ and $|p|$, the magnitude slope changes: if $|z| < |p|$, the zero kicks in first, raising the magnitude slope by $+20$ dB/decade before the pole brings it back down — a "bump" in both magnitude and phase. If $|p| < |z|$, the pole kicks in first, dropping the slope before the zero restores it — magnitude takes a step down between the two breakpoints.
 
 ---
 
-## 3. Lead compensation: adding phase where you need it
+## 2. The plant — a type-1 system with visible dynamics
 
-### 3.1 The transfer function
+We'll work with a plant you can reason about by hand:
 
-A lead compensator has the form:
+$$G(s) = \frac{1}{s(s+2)}$$
 
-$$C_{\text{lead}}(s) = K_c \cdot \frac{T s + 1}{\alpha T s + 1}, \qquad 0 < \alpha < 1$$
+This is a **type-1, second-order** system:
+- Pole at $s = 0$ — the integrator. Gives $-90^\circ$ phase and $-20$ dB/decade slope from DC upward.
+- Pole at $s = -2$ — the lag. Adds another $-90^\circ$ of phase lag as frequency increases.
+- Phase starts at $-90^\circ$ (DC) and approaches $-180^\circ$ at high frequencies.
 
-Look at the pole and zero:
-- Zero at $s = -1/T$
-- Pole at $s = -1/(\alpha T)$
+The frequency response is:
 
-Since $\alpha < 1$, the zero is *closer to the origin* than the pole. On the Bode plot, this creates a "phase bump" — the phase angle rises above its baseline over a range of frequencies, then falls back. That bump is what you're buying.
+$$|G(j\omega)| = \frac{1}{\omega\sqrt{\omega^2 + 4}}, \qquad \angle G(j\omega) = -90^\circ - \arctan\!\left(\frac{\omega}{2}\right)$$
+
+**Bare plant analysis:**
+
+The $0$ dB crossover solves $|G(j\omega_{cp})| = 1$:
+
+$$\omega_{cp}^4 + 4\omega_{cp}^2 - 1 = 0 \;\Longrightarrow\; \omega_{cp} = \sqrt{\sqrt{5} - 2} \approx 0.486 \text{ rad/s}$$
+
+Phase at crossover: $\angle G(j\omega_{cp}) = -90^\circ - \arctan(0.486/2) \approx -103.7^\circ$
+
+**Phase margin:** $180^\circ - 103.7^\circ = 76.3^\circ$ — generous. **Gain margin:** infinite (phase never reaches $-180^\circ$ at any finite frequency).
+
+So the bare plant is already stable with comfortable margins. What's there to fix? Two things:
+
+1. **Speed.** The crossover is at 0.49 rad/s — a sluggish system. Push the crossover higher for faster response.
+2. **Tracking accuracy.** As a type-1 system, steady-state error to a step is zero, but error to a ramp is $1/K_v = 2 = 200\%$ — terrible. Boosting the low-frequency gain reduces ramp error dramatically.
+
+This is where compensators shine: lead for speed, lag for accuracy. No trade-off — do both.
+
+---
+
+## 3. Lead compensation — buying phase where you need it
+
+### 3.1 The mechanism
+
+In the unified form, lead means $|z| < |p|$ — the zero is closer to the origin:
+
+$$C_{\text{lead}}(s) = K \cdot \frac{s + z}{s + p}, \qquad |z| < |p|$$
+
+The zero pulls phase up starting near $\omega = |z|$; the pole pulls it back down near $\omega = |p|$. Between them, the net phase is positive — the "phase bump."
+
+**Why you want it:** every real pole in the plant adds phase lag. When you push the crossover frequency higher (for speed), the plant's phase is more negative at the new crossover. You need extra phase to maintain stability. A lead network provides that phase exactly where you place the bump.
 
 ### 3.2 The phase bump: how much, and where?
 
-The phase contribution of a lead network peaks at the geometric mean of the zero and pole frequencies:
+The phase contribution of $C_{\text{lead}}(j\omega)$ peaks at the geometric mean of the zero and pole:
 
-$$\omega_{\max} = \frac{1}{T\sqrt{\alpha}}$$
+$$\omega_{\max} = \sqrt{z \cdot p}$$
 
-At that frequency, the phase boost is:
+At that frequency, the maximum phase boost is:
 
-$$\phi_{\max} = \arcsin\!\left(\frac{1 - \alpha}{1 + \alpha}\right)$$
+$$\phi_{\max} = \arcsin\!\left(\frac{p - z}{p + z}\right) = \arcsin\!\left(\frac{r - 1}{r + 1}\right), \qquad r = \frac{p}{z} > 1$$
 
-This equation tells you everything you need to know:
+The ratio $r = p/z$ controls everything:
 
-| α | φ_max | What it means |
-|---|-------|--------------|
-| 0.5 | 19.5° | Mild lead — gentle phase boost |
-| 0.2 | 41.8° | Moderate lead — substantial damping |
-| 0.1 | 54.9° | Strong lead — aggressive phase advance |
-| 0.05 | 64.8° | Very strong lead — pushing the limit |
-| → 0 | → 90° | Theoretical limit — pure differentiator (unrealizable) |
+| $r = p/z$ | $\phi_{\max}$ | Character |
+|-----------|---------------|-----------|
+| 2 | 19.5° | Mild lead — gentle boost |
+| 5 | 41.8° | Moderate lead — substantial damping |
+| 10 | 54.9° | Strong lead — aggressive phase advance |
+| 20 | 64.8° | Very strong lead — pushing the limit |
+| $\to \infty$ | $\to 90^\circ$ | Pure differentiator (unrealizable, noise amplifier) |
 
-Why does smaller α give more phase? Because the zero and pole spread further apart. The zero pulls phase up starting at low frequency; the pole pulls it back down at high frequency. The wider the gap, the more net phase lift in between.
+### 3.3 Design procedure
 
-### 3.3 The design procedure
+The plant $G(s) = 1/(s(s+2))$ has $\text{PM} \approx 76.3^\circ$ at $\omega_{cp} \approx 0.486$ rad/s. Suppose we want to push the crossover higher — say to 1 rad/s — and we need $50^\circ$ of phase boost there to maintain healthy margins.
 
-You don't guess α and T. You compute them from what you need:
+**Step 1 — Determine the required phase boost $\phi_{\max}$.** Add $5^\circ$–$10^\circ$ safety margin because placing the lead will shift the crossover upward slightly. Let's design for $\phi_{\max} = 50^\circ$.
 
-**Step 1 — Determine how much phase you're missing.** Run the plant open-loop, find the crossover frequency, measure the phase margin. Say it's 4°. You want 50°. You need about 46° of extra phase — plus a safety margin of 5–10° because adding the lead will shift the crossover slightly higher.
+**Step 2 — Compute the pole-zero ratio $r$:**
 
-**Step 2 — Choose α.** The required phase boost φ_max determines α:
+$$r = \frac{p}{z} = \frac{1 + \sin\phi_{\max}}{1 - \sin\phi_{\max}}$$
 
-$$\alpha = \frac{1 - \sin\phi_{\max}}{1 + \sin\phi_{\max}}$$
+For $\phi_{\max} = 50^\circ$: $\sin(50^\circ) \approx 0.766$, so
 
-For φ_max = 50°: α = (1 − 0.766)/(1 + 0.766) ≈ 0.13.
+$$r = \frac{1 + 0.766}{1 - 0.766} \approx 7.55$$
 
-**Step 3 — Choose where to place the bump.** You want the phase peak at the *new* crossover frequency. A reasonable heuristic: place ω_max at about 1.5× the bare plant's crossover, because the lead network adds some gain that pushes the crossover higher.
+**Step 3 — Place the bump at the desired crossover frequency.** Set $\omega_{\max} = \sqrt{zp}$ to the target $\omega_{cp} \approx 0.486$ rad/s (or slightly higher — say $0.5$ rad/s for the demo; the Python code uses the bare crossover directly):
 
-**Step 4 — Compute T.** From ω_max and α:
+$$z = \frac{\omega_{\max}}{\sqrt{r}} \approx \frac{0.486}{\sqrt{7.55}} \approx 0.177, \qquad p = r \cdot z \approx 1.34$$
 
-$$T = \frac{1}{\omega_{\max}\sqrt{\alpha}}$$
+**Step 4 — Compute $K$ for unity gain at the crossover.** The lead network adds gain at $\omega_{\max}$. Compensate:
 
-**Step 5 — Scale the gain.** The lead network has non-unity gain at ω_max. Compensate so $|C(j\omega_{\max})| = 1$ — you want the phase boost without shifting the magnitude at the crossover:
+$$K = \left|\frac{j\omega_{\max} + p}{j\omega_{\max} + z}\right| = \frac{\sqrt{\omega_{\max}^2 + p^2}}{\sqrt{\omega_{\max}^2 + z^2}} \approx \frac{\sqrt{0.236 + 1.80}}{\sqrt{0.236 + 0.0313}} \approx 2.75$$
 
-$$K_c = \frac{1}{|C_{\text{lead}}(j\omega_{\max})|}$$
+**Result:** $C_{\text{lead}}(s) = 2.75 \cdot \dfrac{s + 0.177}{s + 1.34}$, with $|z| = 0.177 < |p| = 1.34$ — lead, as expected.
 
-That's it. Four equations, one compensator. No guesswork.
+**Step 5 — Verify.** The loop transfer function $L(s) = C_{\text{lead}}(s) \cdot G(s)$ now has improved phase margin at the shifted crossover. The step response shows faster rise time and less overshoot (or the same overshoot at a much higher crossover).
 
 ### 3.4 What lead does to the closed loop
 
-Lead compensation adds phase margin near the crossover. That means:
-- **Less overshoot** — the dominant poles move left, damping increases
-- **Faster response** — the crossover frequency typically increases (the zero adds gain above ω_max)
-- **Same steady-state error** — DC gain is unchanged (the lead network has unity DC gain after Kc scaling)
+- **Faster response** — the crossover frequency increases because the zero adds gain above $\omega_{\max}$.
+- **Preserved or improved damping** — phase margin at the new crossover is maintained by the phase bump.
+- **Unchanged steady-state error** — DC gain of the lead network is $K \cdot z/p = 2.75 \cdot 0.177/1.34 \approx 0.36$; the overall loop DC gain remains infinite (type-1 plant). Step error stays zero; ramp error is essentially unchanged because the lead operates near crossover, not at DC.
 
-Lead is the compensator equivalent of **derivative action** — it adds phase lead (hence the name) to counteract the phase lag of the plant. The difference: with PD you turn a gain knob; with lead you explicitly choose where in frequency the derivative-like action kicks in.
-
-The interactive explorer (`lead_lag_explorer.html`) makes this visible: decrease α and watch the phase margin rise on the Bode plot while the step response oscillation diminishes.
+Lead is the compensator equivalent of **derivative action**: it adds phase lead to counteract the phase lag of the plant. The difference: PD control has a zero and a flat high-frequency response (noise amplifier); lead has a zero *and a pole* that rolls off high-frequency gain, limiting noise amplification.
 
 ---
 
-## 4. Lag compensation: boosting accuracy without hurting stability
+## 4. Lag compensation — boosting low-frequency gain
 
-### 4.1 The transfer function
+### 4.1 The mechanism
 
-A lag compensator has the form:
+In the unified form, lag means $|p| < |z|$ — the pole is closer to the origin:
 
-$$C_{\text{lag}}(s) = \frac{T s + 1}{\beta T s + 1}, \qquad \beta > 1$$
+$$C_{\text{lag}}(s) = K \cdot \frac{s + z}{s + p}, \qquad |p| < |z|$$
 
-Now the pole and zero are swapped compared to lead:
-- Zero at $s = -1/T$
-- Pole at $s = -1/(\beta T)$
+The pole pulls gain down first (at $\omega = |p|$), then the zero restores it (at $\omega = |z|$). The DC gain (at $s = 0$) is $K \cdot z/p > K$, while the high-frequency gain approaches $K$. You get a **low-frequency boost** without affecting high-frequency behavior — **provided** the pole and zero are both well below the crossover frequency.
 
-Since $\beta > 1$, the **pole** is closer to the origin than the zero. This is a **low-pass** filter: DC gain = 1, high-frequency gain = $1/\beta$. The lag network itself has unity DC gain — the DC boost comes from the **overall loop gain** $K$, which the lag makes feasible by rolling off before the crossover.
+### 4.2 The trick: stay out of the crossover's way
 
-### 4.2 The trick: place the lag well below the crossover
+The lag network introduces *negative* phase (phase lag) between the pole and the zero — that's the price of the DC boost. If that phase dip lands near your crossover, it eats into your phase margin.
 
-The lag network introduces *negative* phase (phase lag — hence the name) between the zero and the pole. If that phase dip lands near your crossover frequency, it reduces phase margin and potentially destabilizes the loop.
+The fix: **place the zero at least a decade below the crossover.** By the time the frequency reaches $\omega_{cp}$, the phase lag has faded to near zero, and the lag network acts like a constant attenuator at the crossover (and an amplifier at DC).
 
-The solution is simple: **place the zero at least a decade below the crossover frequency.** By the time the frequency reaches the crossover, the phase lag has faded to near zero. The lag acts like a constant gain at low frequencies (DC through roughly $\omega_z$), and like an attenuator at the crossover and above.
+### 4.3 Design procedure
 
-### 4.3 The design procedure
+For $G(s) = 1/(s(s+2))$, the ramp-tracking error is $200\%$ — the plant needs about $10\times$ more low-frequency loop gain.
 
-**Step 1 — Determine how much DC gain boost you need.** If the bare plant has 5% steady-state error and you want 0.5%, you need roughly 10× more DC loop gain. Set $\beta = 10$ and increase the overall gain $K$ by the same factor.
+**Step 1 — Choose the DC boost ratio.** Let $\beta = z/p = 10$. The lag network's DC gain is $K \cdot \beta$.
 
-**Step 2 — Place the zero a decade below crossover.** $\omega_z = \omega_{cp} / 10$, where $\omega_{cp}$ is the bare plant's 0 dB crossover. Then $T = 1/\omega_z$.
+**Step 2 — Place the pole a decade (or more) below crossover:**
 
-**Step 3 — Adjust gain.** The lag attenuates at the crossover by roughly $1/\beta$. Compensate by multiplying by $\beta$ so $|C_{\text{lag}}(j\omega_{cp})| \approx 1$.
+$$p = \frac{\omega_{cp}}{10} \approx 0.0486, \qquad z = \beta \cdot p \approx 0.486$$
+
+**Step 3 — Compute $K$ for unity gain at the crossover.** This keeps the crossover and phase margin essentially unchanged:
+
+$$K = \left|\frac{j\omega_{cp} + p}{j\omega_{cp} + z}\right| = \frac{\sqrt{\omega_{cp}^2 + p^2}}{\sqrt{\omega_{cp}^2 + z^2}} \approx \frac{\sqrt{0.236 + 0.00236}}{\sqrt{0.236 + 0.236}} \approx 0.71$$
+
+**Result:** $C_{\text{lag}}(s) = 0.71 \cdot \dfrac{s + 0.486}{s + 0.0486}$, with $|p| = 0.0486 < |z| = 0.486$ — lag, as expected.
+
+**DC loop gain boost:** The compensator's DC gain is $0.71 \cdot 0.486/0.0486 \approx 7.1$. The overall loop gets $7.1\times$ more low-frequency gain, reducing ramp error from $200\%$ to approximately $200\% / 7.1 \approx 28\%$. Further improvement needs a larger $\beta$ (push the pole even closer to zero).
 
 ### 4.4 What lag does to the closed loop
 
-- **Dramatically better steady-state accuracy** — DC loop gain multiplies by the overall gain $K$, which the lag makes feasible without destabilising the loop
-- **Virtually unchanged phase margin** — the phase dip is far below the crossover
-- **Slightly slower response** — the crossover may shift slightly lower (lag adds a tiny bit of high-frequency attenuation)
-- **Potentially worse transient for large signals** — the lag pole is slow; it can cause "windup-like" behavior
+- **Dramatically better tracking accuracy** — low-frequency loop gain multiplies by $\beta$, reducing steady-state error proportionally.
+- **Virtually unchanged phase margin** — the phase dip decays well before the crossover.
+- **Slightly slower response** — the crossover may shift slightly lower (the lag network's high-frequency roll-off is $K$, slightly less than $1$, creating a tiny attenuation at the old crossover).
+- **Slow transient mode** — the lag pole is near the origin; large-signal transients recover slowly (potential "windup-like" behavior; anti-windup may be needed).
 
-Lag is the compensator equivalent of **integral action** — it enables high low-frequency gain without destroying phase margin. The difference: integral action adds a pole at $s = 0$ (infinite DC gain, zero steady-state error guaranteed); lag adds a pole near $s = 0$ (finite but large DC gain, small but non-zero steady-state error). Lag is a practical approximation of integral action that avoids the 90° of phase lag an integrator brings.
+Lag is the compensator equivalent of **integral action**: it provides high low-frequency gain. The difference: an integrator (pole at $s = 0$) gives infinite DC gain and guaranteed zero steady-state error but adds a constant $-90^\circ$ of phase lag at *all* frequencies. A lag network places the pole *near* zero — finite but large DC gain, and the phase lag is localized to low frequencies, disappearing before the crossover.
+
 ---
 
-## 5. Lead-lag: the best of both
+## 5. Lead-lag — cascade for speed and accuracy
 
-Cascade a lead network and a lag network:
+Cascade a lead stage and a lag stage:
 
-$$C_{\text{lead-lag}}(s) = C_{\text{lead}}(s) \cdot C_{\text{lag}}(s)$$
+$$C_{\text{lead-lag}}(s) = C_{\text{lead}}(s) \cdot C_{\text{lag}}(s) = K_1 \cdot \frac{s + z_1}{s + p_1} \cdot K_2 \cdot \frac{s + z_2}{s + p_2}$$
 
-The lead part adds phase margin near the crossover (speed + damping). The lag part boosts DC gain (accuracy). They operate in different frequency ranges and barely interact, because the lag's phase effects are a decade below the lead's operating region.
+with $|z_1| < |p_1|$ (lead) and $|p_2| < |z_2|$ (lag). Combine the gains: $K = K_1 \cdot K_2$.
+
+The lead part adds phase margin near the crossover (speed + damping). The lag part boosts DC gain (accuracy). They operate in different frequency ranges and barely interact, because the lag's pole and zero are a decade or more below $\omega_{\max}$.
+
+**Design order matters:** design lead first (fix the phase margin at the desired crossover), then design lag (fix the steady-state error). Why this order? Because the lead network shifts the crossover upward — if you design lag first relative to the bare crossover, the lead will move the crossover closer to the lag dynamics, potentially eating into the very phase margin you just bought.
+
+**Worked example:** cascade the lead compensator from §3.3 and the lag compensator from §4.3:
+
+$$C_{\text{lead-lag}}(s) = 2.75 \cdot \frac{s + 0.177}{s + 1.34} \cdot 0.71 \cdot \frac{s + 0.486}{s + 0.0486}$$
+
+$$= 1.95 \cdot \frac{(s + 0.177)(s + 0.486)}{(s + 1.34)(s + 0.0486)}$$
+
+The loop $L(s) = C_{\text{lead-lag}}(s) \cdot G(s)$ has:
+- Phase margin improved by the lead stage (~$50^\circ$ boost near crossover).
+- Low-frequency gain boosted by the lag stage (~$7\times$ DC boost).
+- Crossover frequency increased by the lead's gain contribution.
 
 This is the compensator equivalent of **PID control**:
-- Lead ≈ derivative (phase advance, damping)
-- Lag ≈ integral (low-frequency boost, steady-state accuracy)
-- The overall gain K ≈ proportional (sets the crossover frequency)
-
-The design procedures compose linearly: design lead first (fix the phase margin), then design lag (fix the steady-state error), then tweak K (fine-tune the crossover).
+- Lead $\approx$ derivative (phase advance, damping)
+- Lag $\approx$ integral (low-frequency boost, steady-state accuracy)
+- Overall gain $K \approx$ proportional (sets the crossover frequency)
 
 ---
 
 ## 6. The design workflow, end to end
-
-Here is the complete compensator design procedure, as implemented in `lead_lag_compensator_demo.py`:
 
 ```
 1. ANALYSE the bare plant
    → Compute PM, GM, crossover, DC gain, steady-state error
    → The gap between what you have and what you want is the specification
 
-2. LEAD design (if PM is insufficient)
-   → φ_max = desired PM − current PM + 10° margin
-   → α = (1 − sin φ_max) / (1 + sin φ_max)
-   → ω_max = 1.5 × current crossover
-   → T = 1 / (ω_max · √α)
-   → Kc = 1 / |C_lead(j ω_max)|
+2. LEAD design (if faster response with adequate damping is needed)
+   → φ_max = required phase boost + 5°–10° margin
+   → r = p/z = (1 + sin φ_max) / (1 − sin φ_max)
+   → ω_max = target crossover frequency
+   → z = ω_max / √r,  p = r · z
+   → K = √(ω_max² + p²) / √(ω_max² + z²)
 
 3. LAG design (if steady-state error is too large)
-   → β = old_error / desired_error
-   → ω_z = crossover / 10
-   → T = 1 / ω_z
-   → Kc = compensate for unity gain at crossover
+   → β = z/p = desired DC boost factor
+   → p = ω_cp / 10  (place well below crossover)
+   → z = β · p
+   → K = √(ω_cp² + p²) / √(ω_cp² + z²)  (unity gain at crossover)
 
-4. CASCADE: C(s) = C_lead(s) · C_lag(s) · K
+4. CASCADE: C(s) = C_lead(s) · C_lag(s) = K_tot · (s+z₁)(s+z₂) / ((s+p₁)(s+p₂))
 
 5. VERIFY
-   → Recompute PM, GM, crossover, step response
-   → Iterate if needed (usually one pass is enough)
+   → Recompute PM, GM, crossover, step/ramp response
+   → Iterate if needed (one or two passes usually suffice)
 ```
 
-The Python demo runs this exact workflow on a 3-pole plant and produces a comparison table:
+A comparison of all configurations for $G(s) = 1/(s(s+2))$:
 
-| Configuration | PM | GM | ω_cp | SS Error |
-|--------------|----|----|------|----------|
-| Bare plant | ~15° | marginal | low | ~17% |
-| Lead only | ~65° | good | higher | ~17% (unchanged) |
-| Lag only | ~15° | marginal | low | ~1.7% (10× better) |
-| Lead-lag | ~65° | good | higher | ~1.7% |
+| Configuration | PM | ω_cp [rad/s] | Ramp error |
+|--------------|----|-------------|------------|
+| Bare plant | 76.3° | 0.49 | 200% |
+| Lead only | ~126° | ~0.49 | ~200% (unchanged) |
+| Lag only | ~76.3° | ~0.49 | ~28% (7× better) |
+| Lead-lag | ~126° | ~0.49 | ~28% |
 
 Lead fixes the dynamics. Lag fixes the accuracy. Together they fix both.
 
 ---
 
-## 7. Why this was the dominant design method for decades
+## 7. The PID connection — different language, same mathematics
 
-Before computers were fast enough to solve Riccati equations or run online QPs, compensator design was the primary way to build controllers for anything more complex than a PID loop. The reasons:
+The unified form makes the compensator-to-PID mapping transparent:
 
-1. **Graphical.** You draw the Bode plot, sketch where you want the gain and phase curves to go, and place poles and zeros to achieve that shape. No matrix algebra. No optimization. Graph paper and a straightedge.
+| Compensator | Form | PID analog | Key difference |
+|------------|------|-----------|----------------|
+| Lead: $K\frac{s+z}{s+p}$, $|z|<|p|$ | $K_p + K_d s$ (PD) | Lead has a pole that rolls off high-frequency gain — PD amplifies noise indefinitely |
+| Lag: $K\frac{s+z}{s+p}$, $|p|<|z|$ | $K_p + K_i/s$ (PI) | Lag has finite DC gain — PI has infinite DC gain (pole exactly at $s=0$) |
+| Lead-lag cascade | $K_p + K_i/s + K_d s$ (PID) | Lead-lag uses two first-order stages; PID is a single second-order with one pole at zero |
 
-2. **Intuitive.** Each pole and zero has a predictable effect on the Bode plot. A zero adds +20 dB/decade of gain and +90° of phase (eventually). A pole does the opposite. Placing them is like sculpting the frequency response.
+The mapping is exact in the limit: let the lead pole $p \to \infty$ and you recover PD; let the lag pole $p \to 0$ and you recover PI. In practice, the lead pole is finite (noise filtering) and the lag pole is near-zero (finite DC gain, less phase penalty).
 
-3. **Robust.** Because you're shaping the open-loop frequency response directly, you can see — literally see on the Bode plot — how close you are to instability. Phase margin and gain margin are visible on the graph.
-
-4. **Implementable.** Lead-lag compensators are low-order transfer functions. They discretize cleanly (Tustin/bilinear transform, as shown in the Python demo) to simple difference equations that run on any microcontroller.
-
-The method fell out of favor in academia as state-space and optimal control took over, but it remains the standard approach in power electronics, motor drives, and anywhere engineers design compensation networks for switching converters. If you've ever placed a Type II or Type III compensator in a buck converter feedback loop, you've done lead-lag design — probably without knowing that's what it's called.
-
----
-
-## 8. Connection to this project
-
-| Doc | Connection |
-|-----|-----------|
-| `pid_explorer.html` | PD ≈ lead (adds phase, damping). PI ≈ lag (boosts DC, kills steady-state error). PID ≈ lead-lag. The PID explorer shows what happens when you adjust the gains; the compensator approach gives you the systematic design method for choosing them |
-| `lqr_explorer.html` | LQR optimizes a quadratic cost over state space. Compensator design optimizes phase margin and bandwidth in the frequency domain. Both produce stabilizing controllers; the compensator approach is more direct when frequency-domain specs (PM, BW) are given |
-| `servo_qp_mpc.html` | MPC handles constraints explicitly. Compensator design doesn't. If your plant saturates, compensator design alone isn't enough — you need anti-windup or MPC |
-| `core_problems_controller_design.md` | Problem #2 (inertia/delay) and #4 (model uncertainty) are exactly what compensator design addresses: phase lag from plant dynamics, and robustness to plant variations, handled through frequency-domain margins |
-| `ip_controller.md` | The IP controller uses a set-point filter to reshape the reference. Compensator design reshapes the *loop*. Both are frequency-domain thinking applied to different parts of the control architecture |
+**Why choose one over the other?** PID is simpler — three gains, one transfer function, universally understood. Compensators give you explicit control over *where in frequency* each action takes effect. If you know you want derivative-like action above 1 rad/s and integral-like action below 0.1 rad/s, the pole-zero form encodes that directly. In PID, these frequency ranges are implicit in the gains.
 
 ---
 
-## 9. Digital implementation
+## 8. Digital implementation
 
 The continuous-time compensator must be converted to discrete time for implementation on a microcontroller. The standard method is the **Tustin (bilinear) transform**:
 
 $$s \approx \frac{2}{T_s} \cdot \frac{z - 1}{z + 1}$$
 
-where $T_s$ is the sample period. Substitute this into $C(s)$ and simplify to get $C(z)$, a difference equation you can code directly:
+where $T_s$ is the sample period. Substitute this into $C(s) = K \cdot \frac{s+z}{s+p}$ and simplify:
+
+$$C(z) = K \cdot \frac{(2 + z T_s) + (z T_s - 2)z^{-1}}{(2 + p T_s) + (p T_s - 2)z^{-1}} = \frac{b_0 + b_1 z^{-1}}{1 + a_1 z^{-1}}$$
+
+which is a difference equation requiring two multiplications, two additions, and two storage registers per stage:
 
 ```c
-// Lead compensator discretised at 1 kHz (Ts = 1 ms)
-// C(z) = (b0 + b1·z⁻¹) / (1 + a1·z⁻¹)
-// u[k] = b0·e[k] + b1·e[k-1] - a1·u[k-1]
+// Lead-lag compensator, Tustin discretised at 1 kHz (Ts = 1 ms)
+// For each stage: u[k] = b0·e[k] + b1·e[k-1] - a1·u[k-1]
 ```
 
-The Python demo shows this: it discretises all three compensators (lead, lag, lead-lag) using Tustin and compares the continuous and digital step responses. At typical control loop rates, they're virtually identical — the digital implementation introduces negligible distortion within the loop bandwidth.
+At typical control loop rates (100 Hz–10 kHz), the digital implementation is virtually identical to the continuous design within the loop bandwidth.
+
+**Implementation note:** a lead-lag compensator is two first-order stages in series. Implement them as two cascaded difference equations, not as a single second-order section. This avoids coefficient quantization issues and makes it trivial to bypass one stage during testing.
+
+---
+
+## 9. Connection to this project
+
+| Doc | Connection |
+|-----|-----------|
+| `pid_explorer.html` | PD ≈ lead (adds phase, damping). PI ≈ lag (boosts low-frequency gain). PID ≈ lead-lag. The PID explorer shows what happens when you adjust gains directly; the compensator approach gives the systematic design method for choosing them from frequency-domain specifications |
+| `lqr_explorer.html` | LQR optimizes a quadratic cost over state space — time-domain design. Compensator design optimizes phase margin and bandwidth — frequency-domain design. Both produce stabilizing controllers; compensator design is more direct when specifications are given in frequency-domain terms (PM, bandwidth, disturbance rejection vs. frequency) |
+| `servo_qp_mpc.html` | MPC handles constraints (saturation, rate limits) explicitly. Compensator design handles them not at all. If your plant saturates, you need anti-windup, reference governors, or MPC on top of the compensator |
+| `core_problems_controller_design.md` | Problem #2 (inertia/delay) and #4 (model uncertainty) are exactly what compensator design addresses: phase lag from plant dynamics (lead compensates), and robustness to plant variations (handled through frequency-domain gain/phase margins) |
+| `ip_controller.md` | The IP controller reshapes the set-point path to trade off overshoot against rise time. Compensator design reshapes the *loop transfer function*. Both are frequency-domain thinking: IP modifies the closed-loop zero locations; compensator design modifies the open-loop shape |
+| `lead_lag_explorer.html` | Interactive Bode plot + step response; slide $z$, $p$, and $K$ and watch the compensator reshape the loop in real time. Lead ($|z|<|p|$) and lag ($|p|<|z|$) are distinguished solely by relative slider positions |
+| `lead_lag_compensator_demo.py` | Python implementation of the complete design workflow: plant analysis → lead design ($|z|<|p|$) → lag design ($|p|<|z|$) → lead-lag cascade → Tustin discretisation → side-by-side comparison |
 
 ---
 
@@ -264,14 +307,20 @@ The Python demo shows this: it discretises all three compensators (lead, lag, le
 - Franklin, G.F., Powell, J.D., & Emami-Naeini, A. (2019). *Feedback Control of Dynamic Systems*, 8th ed. Pearson. — Chapters 5–6 on root-locus and frequency-response design; the standard undergraduate treatment of lead-lag compensators.
 
 **The Bode plot bible:**
-- Bode, H.W. (1945). *Network Analysis and Feedback Amplifier Design.* Van Nostrand. — The original. Dense, but every compensator designer should know where their craft came from.
+- Bode, H.W. (1945). *Network Analysis and Feedback Amplifier Design.* Van Nostrand. — The original monograph. Dense, but every compensator designer should trace their craft to its source.
 
 **Power electronics — where compensators are still king:**
-- Erickson, R.W. & Maksimovic, D. (2020). *Fundamentals of Power Electronics*, 3rd ed. Springer. — Chapters 8–9 on converter transfer functions and compensator design. If you've designed a Type II compensator for a buck converter, this is your textbook.
+- Erickson, R.W. & Maksimovic, D. (2020). *Fundamentals of Power Electronics*, 3rd ed. Springer. — Chapters 8–9 on converter transfer functions and compensator design. Type II and Type III compensators in switching converters are lead and lead-lag networks by another name.
+
+**Understanding poles and zeros intuitively:**
+- Åström, K.J. & Murray, R.M. (2021). *Feedback Systems: An Introduction for Scientists and Engineers*, 2nd ed. Princeton University Press. — Chapter 9 on frequency-domain design; excellent pole-zero intuition with modern examples. Freely available online.
+
+**Robustness through loop shaping:**
+- Skogestad, S. & Postlethwaite, I. (2005). *Multivariable Feedback Control: Analysis and Design*, 2nd ed. Wiley. — Chapters 1–2 on classical loop shaping; the generalization of lead-lag thinking to MIMO systems. The $H_\infty$ loop-shaping design procedure is essentially automated compensator design.
 
 **Digital implementation:**
-- Franklin, G.F., Powell, J.D., & Workman, M. (1997). *Digital Control of Dynamic Systems*, 3rd ed. Addison-Wesley. — Chapter 6 on discrete equivalents; covers Tustin, ZOH, and matched pole-zero methods.
+- Franklin, G.F., Powell, J.D., & Workman, M. (1997). *Digital Control of Dynamic Systems*, 3rd ed. Addison-Wesley. — Chapter 6 on discrete equivalents; covers Tustin, ZOH, and matched pole-zero methods in depth.
 
 **This project's reference implementations:**
-- `lead_lag_explorer.html` — interactive Bode plot + step response; slide α/β/ω and see the compensator reshape the loop in real time
-- `lead_lag_compensator_demo.py` — Python implementation of the complete design workflow with Tustin discretisation and side-by-side comparison
+- `lead_lag_explorer.html` — interactive Bode plot + step response; move $z$, $p$, $K$ sliders and observe lead vs. lag behavior directly
+- `lead_lag_compensator_demo.py` — Python implementation of the complete design workflow with Tustin discretisation and side-by-side comparison of all configurations

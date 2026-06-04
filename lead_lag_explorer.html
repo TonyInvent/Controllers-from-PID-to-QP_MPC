@@ -34,6 +34,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
 .readout .item { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 7px 8px; text-align: center; }
 .readout .item .val { font-size: 1.05rem; font-weight: 700; font-family: var(--mono); }
 .readout .item .lbl { font-size: 0.6rem; color: var(--text2); margin-top: 1px; }
+
+.comp-type { font-size: 0.85rem; font-weight: 700; text-align: center; padding: 6px; border-radius: 5px;
+             margin-bottom: 8px; font-family: var(--mono); letter-spacing: 0.03em; }
+.comp-type.lead { background: rgba(0,188,212,0.12); color: var(--cyan); border: 1px solid rgba(0,188,212,0.3); }
+.comp-type.lag { background: rgba(240,136,62,0.12); color: var(--orange); border: 1px solid rgba(240,136,62,0.3); }
+.comp-type.unity { background: rgba(139,148,158,0.08); color: var(--text2); border: 1px solid var(--border); }
+
 .insight { font-size: 0.68rem; color: var(--text2); line-height: 1.5; padding: 7px 9px; background: var(--bg); border-radius: 5px; border-left: 2px solid var(--accent); }
 .comp-info { font-family: var(--mono); font-size: 0.66rem; background: var(--bg); border-radius: 5px; padding: 7px 9px; line-height: 1.5; color: var(--text2); }
 
@@ -53,6 +60,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
   .param-section h2 { font-size: 0.8rem; }
   .readout .item .val { font-size: 1.1rem; }
   .insight, .comp-info { font-size: 0.72rem; }
+  .comp-type { font-size: 0.92rem; }
 }
 </style>
 </head>
@@ -61,54 +69,53 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
 <div class="header">
   <h1>Lead / Lag <span>Compensator Explorer</span></h1>
   <div class="sub">
-    Plant G(s) = 20 · 100 / (s² + 3s + 100) — 2nd-order, ω<sub>n</sub>=10 rad/s, ζ=0.15, DC gain=20
+    Plant G(s) = 1 / s(s+2) — type-1, 2nd-order.  C(s) = K·(s+z)/(s+p) — unified pole-zero form.
   </div>
 </div>
 
 <div class="layout">
   <div class="sidebar">
+    <div class="comp-type" id="compType">LEAD</div>
+
     <div class="param-section">
-      <h2>&#x25B3; Lead compensator  C<sub>lead</sub>(s) = K<sub>c</sub>·(Ts+1)/(&alpha;Ts+1), 0&lt;&alpha;&lt;1</h2>
+      <h2>▼ Zero location — z</h2>
       <div class="param-row">
-        <label>&alpha; — 0&lt;&alpha;&lt;1, smaller = more lead <span id="alphaVal">0.15</span></label>
-        <input type="range" id="alpha" min="0.02" max="0.99" step="0.01" value="0.15">
-      </div>
-      <div class="param-row">
-        <label>&omega;<sub>max</sub> — centre frequency [rad/s] <span id="wmaxVal">65</span></label>
-        <input type="range" id="wmax" min="5" max="200" step="1" value="65">
+        <label>z <span id="zVal">2.0</span></label>
+        <input type="range" id="z" min="-1" max="1.699" step="0.005" value="0.301">
       </div>
     </div>
 
     <div class="param-section">
-      <h2>&#x25BD; Lag compensator  C<sub>lag</sub>(s) = K<sub>c</sub>·(Ts+1)/(&beta;Ts+1), &beta;&gt;1</h2>
+      <h2>▲ Pole location — p</h2>
       <div class="param-row">
-        <label>&beta; — DC gain boost <span id="betaVal">1</span></label>
-        <input type="range" id="beta" min="1" max="50" step="0.5" value="1">
-      </div>
-      <div class="param-row">
-        <label>&omega;<sub>z</sub> — zero location [rad/s] <span id="wzVal">4.5</span></label>
-        <input type="range" id="wz" min="0.2" max="15" step="0.05" value="4.5">
+        <label>p <span id="pVal">10.0</span></label>
+        <input type="range" id="p" min="-1" max="1.699" step="0.005" value="1.0">
       </div>
     </div>
 
     <div class="param-section">
-      <h2>&#x2699; Overall gain K</h2>
+      <h2>⚙ Overall gain — K</h2>
       <div class="param-row">
-        <label>K <span id="gainVal">1.00</span></label>
-        <input type="range" id="gainK" min="0.1" max="10" step="0.05" value="1">
+        <label>K <span id="kVal">1.00</span></label>
+        <input type="range" id="gainK" min="0.1" max="20" step="0.05" value="1">
       </div>
     </div>
 
     <div class="readout">
-      <div class="item"><div class="val" id="pmVal" style="color:var(--cyan)">4°</div><div class="lbl">Phase Margin</div></div>
-      <div class="item"><div class="val" id="gmVal" style="color:var(--orange)">0.0 dB</div><div class="lbl">Gain Margin</div></div>
-      <div class="item"><div class="val" id="bwVal">45</div><div class="lbl">Crossover [rad/s]</div></div>
-      <div class="item"><div class="val" id="ssVal">4.8%</div><div class="lbl">SS Error</div></div>
+      <div class="item"><div class="val" id="pmVal" style="color:var(--cyan)">--°</div><div class="lbl">Phase Margin</div></div>
+      <div class="item"><div class="val" id="gmVal" style="color:var(--orange)">-- dB</div><div class="lbl">Gain Margin</div></div>
+      <div class="item"><div class="val" id="wcVal">--</div><div class="lbl">Crossover [rad/s]</div></div>
+      <div class="item"><div class="val" id="ssVal">0% (type-1)</div><div class="lbl">Step SS Error</div></div>
     </div>
 
-    <div class="comp-info" id="compText">C(s) = 1</div>
+    <div class="readout" style="grid-template-columns: 1fr 1fr;">
+      <div class="item"><div class="val" id="kvVal" style="color:var(--purple)">--</div><div class="lbl">Velocity Const K<sub>v</sub></div></div>
+      <div class="item"><div class="val" id="rampVal" style="color:var(--text2)">--</div><div class="lbl">Ramp SS Error</div></div>
+    </div>
+
+    <div class="comp-info" id="compText">C(s) = 1 · (s + 2.0) / (s + 10.0)</div>
     <div class="insight" id="insight" style="margin-top: 6px;">
-      Bare plant PM ≈ 4° — very underdamped. Decrease α (toward 0) for stronger lead.
+      |z|=2.0 &lt; |p|=10.0 → LEAD compensator. Pull p toward z for weaker lead; push them apart for stronger effect.
     </div>
   </div>
 
@@ -121,15 +128,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
 <script>
 // ===================== DOM =====================
 const $ = id => document.getElementById(id);
-const sl = { alpha: $('alpha'), wmax: $('wmax'), beta: $('beta'), wz: $('wz'), gainK: $('gainK') };
+const sl = { z: $('z'), p: $('p'), gainK: $('gainK') };
 
-// ===================== Plant — 2nd-order, very light damping =====================
-// G(s) = K * ωn² / (s² + 2ζ ωn s + ωn²) = 2000 / (s² + 3s + 100)
-// ζ=0.15, ωn=10 → PM very poor (~4°) when gain pushes crossover near ωn
-const wn = 10, zeta = 0.15, Kp = 20;
+// ===================== Plant — G(s) = 1 / s(s+2) = 1 / (s² + 2s) =====================
+// Type-1 (integrator), 2nd order.  Phase: −90° at LF → −180° at HF.
+// Bare closed-loop (C=1): T = G/(1+G) = 1/(s²+2s+1) = 1/(s+1)² — critically damped.
 const P = {
-  num: [Kp * wn * wn],                          // 2000
-  den: [1, 2 * zeta * wn, wn * wn]              // s² + 3s + 100
+  num: [1],                // numerator = 1
+  den: [1, 2, 0]           // s² + 2s + 0  (integrator term is the trailing zero)
 };
 
 // ===================== Complex arithmetic =====================
@@ -139,78 +145,76 @@ function cabs(z) { return Math.sqrt(z.re*z.re + z.im*z.im); }
 function carg(z) { return Math.atan2(z.im, z.re); }
 
 function tfEval(num, den, w) {
-  function polyVal(c, jw) { let r = { re: c[0], im: 0 }; for (let i = 1; i < c.length; i++) { r = cmul(r, jw); r.re += c[i]; } return r; }
+  // Evaluate polynomial at s = jω.  Coefficients are in descending powers of s.
+  function polyVal(c, jw) {
+    let r = { re: c[0], im: 0 };
+    for (let i = 1; i < c.length; i++) { r = cmul(r, jw); r.re += c[i]; }
+    return r;
+  }
   return cdiv(polyVal(num, { re: 0, im: w }), polyVal(den, { re: 0, im: w }));
 }
 
 // ===================== Frequency grid =====================
 const omega = [];
-for (let i = -2; i <= 3.01; i += 0.02) omega.push(Math.pow(10, i));
+for (let i = -2; i <= 2.71; i += 0.02) omega.push(Math.pow(10, i));
+// 0.01 .. ~512 rad/s  — covers well below and above z/p range
 
-// ===================== Build compensator =====================
+// ===================== Build compensator C(s) = K·(s+z)/(s+p) =====================
 function buildComp() {
-  const alpha = sl.alpha.valueAsNumber;   // 0 < α < 1, smaller = stronger lead
-  const wmax = sl.wmax.valueAsNumber;
-  const beta  = sl.beta.valueAsNumber;    // β > 1, lag strength
-  const wz    = sl.wz.valueAsNumber;
-  const K     = sl.gainK.valueAsNumber;
+  // z and p sliders store log10 of the actual value
+  const zLog = sl.z.valueAsNumber;
+  const pLog = sl.p.valueAsNumber;
+  const z = Math.pow(10, zLog);
+  const p = Math.pow(10, pLog);
+  const K = sl.gainK.valueAsNumber;
 
-  // Lead: C_lead(s) = Kc · (T·s + 1) / (α·T·s + 1),  0 < α < 1
-  // Zero at −1/T, pole at −1/(αT).  α<1 ⇒ zero closer ⇒ phase lead.
-  // T = 1/(ω_max·√α),  φ_max = arcsin((1−α)/(1+α))
-  const T_lead = 1 / (wmax * Math.sqrt(alpha));
-  const leadNum = [T_lead, 1];           // T·s + 1
-  const leadDen = [alpha * T_lead, 1];   // αT·s + 1
-  const lMagAtWmax = cabs(tfEval(leadNum, leadDen, wmax));
-  const Kc = 1 / lMagAtWmax;             // unity gain at ω_max
-  leadNum[0] *= Kc; leadNum[1] *= Kc;
+  // C(s) = K·(s+z)/(s+p) = K·(s + z) / (s + p)
+  // Expand: numerator = K·s + K·z, denominator = s + p
+  const compNum = [K, K * z];     // K·s + K·z
+  const compDen = [1, p];         // s + p
 
-  // Lag: C_lag(s) = K_c · (Tz·s + 1) / (β·Tz·s + 1),  β > 1,  K_c = β
-  // Pole at −1/(β·Tz) closer to origin than zero at −1/Tz ⇒ phase lag.
-  // DC gain = K_c = β (boosted), HF gain = K_c/β = 1 (transparent).
-  const Tz = 1 / wz;
-  const lagNum = [Tz * beta, 1 * beta];  // K_c·(Tz·s + 1), K_c = β
-  const lagDen = [beta * Tz, 1];          // β·Tz·s + 1
-  // Cascade, then apply overall gain K
-  function conv(a, b) {
-    const r = new Array(a.length + b.length - 1).fill(0);
-    for (let i = 0; i < a.length; i++)
-      for (let j = 0; j < b.length; j++) r[i+j] += a[i] * b[j];
-    return r;
-  }
-  const compNumRaw = conv(leadNum, lagNum);
-  const compNum = compNumRaw.map(v => v * K);
-  return {
-    leadNum, leadDen, lagNum, lagDen,
-    compNum, compDen: conv(leadDen, lagDen),
-    alpha, beta, wmax, wz, K,
-    phiMax: Math.asin((1 - alpha) / (1 + alpha)) * 180 / Math.PI
-  };
+  const isLead = z < p;   // |z| < |p| ⇒ zero closer to origin ⇒ phase lead
+  const isLag  = z > p;   // |p| < |z| ⇒ pole closer to origin ⇒ phase lag
+
+  return { z, p, K, compNum, compDen, isLead, isLag };
+}
+
+// ===================== Polynomial convolution =====================
+function conv(a, b) {
+  const r = new Array(a.length + b.length - 1).fill(0);
+  for (let i = 0; i < a.length; i++)
+    for (let j = 0; j < b.length; j++)
+      r[i + j] += a[i] * b[j];
+  return r;
 }
 
 // ===================== Step response — RK4, observable canonical form =====================
+// Closed loop: T = C·P / (1 + C·P) = L / (1 + L)
+// The equivalent open-loop is L = C·G.  Returns time vector and step response y.
 function simulateStep(compNum, compDen, tEnd, nPts) {
-  // Closed loop: T = C*P / (1 + C*P)
-  function conv(a, b) {
-    const r = new Array(a.length + b.length - 1).fill(0);
-    for (let i = 0; i < a.length; i++)
-      for (let j = 0; j < b.length; j++) r[i+j] += a[i] * b[j];
-    return r;
-  }
-  const Ln = compNum.map(v => v * P.num[0]);   // compNum * K*ωn²
+  // Build closed-loop transfer function T = L / (1 + L)
+  // L_num = compNum ⊗ P.num,  L_den = compDen ⊗ P.den
+  const Ln = conv(compNum, P.num);
   const Ld = conv(compDen, P.den);
 
+  // 1 + L → denominator of T: L_den + L_num (padded to same length)
   const maxLen = Math.max(Ln.length, Ld.length);
-  function pad(a, len) { const off = len - a.length; const r = new Array(len).fill(0); for (let i = 0; i < a.length; i++) r[off+i] = a[i]; return r; }
+  function pad(a, len) {
+    const off = len - a.length;
+    const r = new Array(len).fill(0);
+    for (let i = 0; i < a.length; i++) r[off + i] = a[i];
+    return r;
+  }
   const Lnp = pad(Ln, maxLen), Ldp = pad(Ld, maxLen);
-  const Tden = Lnp.map((v,i) => v + Ldp[i]);
+  const Tden = Ldp.map((v, i) => v + Lnp[i]);
   const Tnum = Lnp.slice();
 
+  // Monic denominator
   const a0 = Tden[0];
   const a = Tden.map(v => v / a0);
   const b = Tnum.map(v => v / a0);
-  const n = a.length - 1;
-  const D = (b[0] !== undefined && Math.abs(b[0]) > 1e-12) ? b[0] : 0;
+  const n = a.length - 1;  // order of T(s)
+  const D = (b[0] !== undefined && Math.abs(b[0]) > 1e-12) ? b[0] : 0;  // feedthrough
 
   const dt = tEnd / (nPts - 1);
   const t = new Array(nPts); for (let i = 0; i < nPts; i++) t[i] = i * dt;
@@ -218,28 +222,31 @@ function simulateStep(compNum, compDen, tEnd, nPts) {
 
   if (n <= 0) { for (let i = 0; i < nPts; i++) y[i] = D; return { t, y }; }
 
-  // Observable canonical form
+  // Observable canonical form:  ẋ = A x + b̃ u,  y = C x + D u
+  // where C = [1 0 … 0], A has −a_{i+1} in first column and identity sub-diagonal.
   const bShift = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
-    const bi1 = (i+1 < b.length) ? b[i+1] : 0;
-    bShift[i] = bi1 - D * a[i+1];
+    const bi1 = (i + 1 < b.length) ? b[i + 1] : 0;
+    bShift[i] = bi1 - D * a[i + 1];
   }
 
+  // Build A matrix (row-major, n×n)
   const A = new Array(n * n).fill(0);
   for (let i = 0; i < n; i++) {
-    A[i*n + 0] = -a[i+1];
-    if (i < n-1) A[i*n + i+1] = 1;
+    A[i * n + 0] = -a[i + 1];       // first column = −a_{i+1}
+    if (i < n - 1) A[i * n + i + 1] = 1;  // super-diagonal identity
   }
 
   function f(x, u) {
     const out = new Array(n).fill(0);
     for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) out[i] += A[i*n + j] * x[j];
+      for (let j = 0; j < n; j++) out[i] += A[i * n + j] * x[j];
       out[i] += bShift[i] * u;
     }
     return out;
   }
 
+  // RK4 with sub-stepping for accuracy
   const sub = 10, dtF = dt / sub;
   const x = new Array(n).fill(0);
   for (let k = 0; k < nPts; k++) {
@@ -247,13 +254,13 @@ function simulateStep(compNum, compDen, tEnd, nPts) {
     if (k < nPts - 1) {
       for (let s = 0; s < sub; s++) {
         const k1 = f(x, 1);
-        const x2 = x.map((xi,i) => xi + 0.5*dtF*k1[i]);
+        const x2 = x.map((xi, i) => xi + 0.5 * dtF * k1[i]);
         const k2 = f(x2, 1);
-        const x3 = x.map((xi,i) => xi + 0.5*dtF*k2[i]);
+        const x3 = x.map((xi, i) => xi + 0.5 * dtF * k2[i]);
         const k3 = f(x3, 1);
-        const x4 = x.map((xi,i) => xi + dtF*k3[i]);
+        const x4 = x.map((xi, i) => xi + dtF * k3[i]);
         const k4 = f(x4, 1);
-        for (let i = 0; i < n; i++) x[i] += (dtF/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+        for (let i = 0; i < n; i++) x[i] += (dtF / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
       }
     }
   }
@@ -264,73 +271,74 @@ function simulateStep(compNum, compDen, tEnd, nPts) {
 function update() {
   const c = buildComp();
 
-  // Evaluate loop L = C * P at all frequencies
+  // ---- Evaluate loop L = C·G at all frequencies ----
   const bareMag = [], barePhase = [], Lmag = [], Lphase = [];
   for (const w of omega) {
     const Pv = tfEval(P.num, P.den, w);
-    const bare = { mag: cabs(Pv), phase: carg(Pv)*180/Math.PI };
-    bareMag.push(20*Math.log10(bare.mag));
-    barePhase.push(bare.phase);
+    bareMag.push(20 * Math.log10(cabs(Pv)));
+    barePhase.push(carg(Pv) * 180 / Math.PI);
 
     const Cv = tfEval(c.compNum, c.compDen, w);
     const Lv = cmul(Cv, Pv);
-    Lmag.push(20*Math.log10(cabs(Lv)));
-    Lphase.push(carg(Lv)*180/Math.PI);
+    Lmag.push(20 * Math.log10(cabs(Lv)));
+    Lphase.push(carg(Lv) * 180 / Math.PI);
   }
 
-  // Find 0 dB crossover and phase margin
+  // ---- Find 0 dB crossover and phase margin ----
   let wcp = null, pm = null;
   for (let i = 1; i < omega.length; i++) {
-    if (Lmag[i-1] >= 0 && Lmag[i] < 0) {
-      const t = Lmag[i-1] / (Lmag[i-1] - Lmag[i]);
-      wcp = omega[i-1] + t*(omega[i] - omega[i-1]);
-      pm = Lphase[i-1] + t*(Lphase[i] - Lphase[i-1]) + 180;
+    if (Lmag[i - 1] >= 0 && Lmag[i] < 0) {
+      const t = Lmag[i - 1] / (Lmag[i - 1] - Lmag[i]);
+      wcp = omega[i - 1] + t * (omega[i] - omega[i - 1]);
+      pm = Lphase[i - 1] + t * (Lphase[i] - Lphase[i - 1]) + 180;
       break;
     }
   }
-  // Find -180° crossing and gain margin
-  // Find -180° crossing for gain margin. If phase never crosses -180°
-  // (2nd-order plant asymptotes to -180° from above), find where it's closest.
-  let gm = Infinity;
+
+  // ---- Find −180° crossing and gain margin ----
+  // For type-1 plant, phase may cross −180° once or not at all (if lead is strong enough).
+  let gm = Infinity, wcg = null;
   for (let i = 1; i < omega.length; i++) {
-    if (Lphase[i-1] > -180 && Lphase[i] <= -180) { gm = -Lmag[i]; break; }
+    if (Lphase[i - 1] >= -180 && Lphase[i] < -180) {
+      const t = (Lphase[i - 1] + 180) / (Lphase[i - 1] - Lphase[i]);
+      wcg = omega[i - 1] + t * (omega[i] - omega[i - 1]);
+      gm = -(Lmag[i - 1] + t * (Lmag[i] - Lmag[i - 1]));
+      break;
+    }
   }
+  // If no crossing found, estimate GM from closest approach
   if (gm === Infinity) {
-    // Find frequency where phase is closest to -180°
     let minDist = Infinity, bestM = 0;
     for (let i = 0; i < omega.length; i++) {
       const d = Math.abs(Lphase[i] + 180);
       if (d < minDist) { minDist = d; bestM = -Lmag[i]; }
     }
-    if (bestM < 0) gm = bestM; // gain margin if we pushed to exactly -180°
+    if (bestM > 0) gm = bestM;  // gain margin: how many dB we can increase gain before instability
   }
-  // DC gain of loop → steady-state error
-  const Ldc = cabs(tfEval(c.compNum, c.compDen, 1e-6)) * cabs(tfEval(P.num, P.den, 1e-6));
-  const ssErr = 1/(1+Ldc)*100;
 
-  // Step responses
+  // ---- Velocity error constant K_v = lim_{s→0} s·L(s) ----
+  // L(s) = K·(s+z)/(s+p) · 1/(s(s+2))
+  // s·L(s) = K·(s+z)/(s+p) · 1/(s+2)
+  // K_v = lim_{s→0} s·L(s) = K·z/(p·2) = K·z/(2p)
+  const Kv = c.K * c.z / (2 * c.p);
+  const rampSSErr = 1 / Kv;  // ramp steady-state error = 1/K_v
+
+  // ---- Step responses ----
   const stepComp = simulateStep(c.compNum, c.compDen, 1.5, 600);
-  const oneN=[1], oneD=[1];
-  const stepBare = simulateStep(oneN, oneD, 1.5, 600);
+  // Bare: C(s) = 1  →  compNum = [1], compDen = [1]
+  const stepBare = simulateStep([1], [1], 1.5, 600);
 
-  // ====== Combined Bode plot (dual y-axis) ======
+  // ====== Bode plot (dual y-axis) ======
   const shapes = [];
   const annotations = [];
 
-  // Vertical dashed line at 0 dB crossover — shows where PM is read
+  // Vertical dashed line at 0 dB crossover → where PM is read
   if (wcp !== null && pm !== null) {
     shapes.push({
       type: 'line', x0: wcp, y0: -100, x1: wcp, y1: 100,
       line: { color: 'rgba(255,255,255,0.4)', width: 1.5, dash: 'dash' }
     });
-    // Horizontal line from crossover point to right edge — visually defines PM
-    shapes.push({
-      type: 'line',
-      x0: wcp, y0: pm - 180,
-      x1: omega[omega.length-1], y1: pm - 180,
-      xref: 'x', yref: 'y2',
-      line: { color: '#00bcd4', width: 1, dash: 'dot' }
-    });
+    // PM annotation
     annotations.push({
       x: wcp, y: pm - 180, xref: 'x', yref: 'y2',
       text: `PM = ${pm.toFixed(1)}°`,
@@ -341,9 +349,25 @@ function update() {
     });
   }
 
-  // Horizontal line at -180° on phase axis
+  // GM vertical line at −180° crossing
+  if (gm !== Infinity && wcg !== null) {
+    shapes.push({
+      type: 'line', x0: wcg, y0: -100, x1: wcg, y1: 100,
+      line: { color: 'rgba(240,136,62,0.5)', width: 1.2, dash: 'dash' }
+    });
+    annotations.push({
+      x: wcg, y: 3, xref: 'x', yref: 'y',
+      text: `GM = ${gm.toFixed(1)} dB`,
+      showarrow: false,
+      font: { color: '#f0883e', size: 10 },
+      bgcolor: 'rgba(0,0,0,0.7)', borderpad: 4,
+      xanchor: 'left', xshift: 6
+    });
+  }
+
+  // Horizontal line at −180° on phase axis
   shapes.push({
-    type: 'line', x0: omega[0], y0: -180, x1: omega[omega.length-1], y1: -180,
+    type: 'line', x0: omega[0], y0: -180, x1: omega[omega.length - 1], y1: -180,
     yref: 'y2', line: { color: '#f85149', width: 0.6, dash: 'dot' }
   });
 
@@ -352,7 +376,7 @@ function update() {
       line: { color: '#8b949e', width: 1 }, name: 'bare |G|' },
     { x: omega, y: Lmag, type: 'scatter', mode: 'lines',
       line: { color: '#f0883e', width: 2.2 }, name: '|C·G|' },
-    { x: [omega[0], omega[omega.length-1]], y: [0, 0], type: 'scatter', mode: 'lines',
+    { x: [omega[0], omega[omega.length - 1]], y: [0, 0], type: 'scatter', mode: 'lines',
       line: { color: '#f85149', width: 0.6, dash: 'dot' }, showlegend: false, hoverinfo: 'none' }
   ];
   const phaseData = [
@@ -360,7 +384,6 @@ function update() {
       line: { color: '#8b949e', width: 1 }, showlegend: false },
     { x: omega, y: Lphase, type: 'scatter', mode: 'lines', yaxis: 'y2',
       line: { color: '#00bcd4', width: 2.2 }, name: '∠C·G' },
-    // PM marker
     { x: wcp !== null ? [wcp] : [], y: pm !== null ? [pm - 180] : [],
       type: 'scatter', mode: 'markers', yaxis: 'y2',
       marker: { color: '#00bcd4', size: 8, symbol: 'circle-open', line: { width: 2 } },
@@ -371,14 +394,15 @@ function update() {
     paper_bgcolor: '#0d1117', plot_bgcolor: '#0d1117',
     font: { color: '#8b949e', size: 10 },
     xaxis: { title: 'frequency [rad/s]', type: 'log', gridcolor: 'rgba(255,255,255,0.05)',
-             dtick: 1, range: [Math.log10(omega[0]), Math.log10(omega[omega.length-1])] },
+             dtick: 1, range: [Math.log10(omega[0]), Math.log10(omega[omega.length - 1])] },
     yaxis: { title: 'magnitude [dB]', gridcolor: 'rgba(255,255,255,0.05)',
-             range: [-100, 100] },
+             range: [-120, 120] },
     yaxis2: { title: 'phase [°]', overlaying: 'y', side: 'right',
-              gridcolor: 'rgba(255,255,255,0)', range: [-360, 90] },
+              gridcolor: 'rgba(255,255,255,0)', range: [-360, 45] },
     margin: { l: 50, r: 50, t: 35, b: 45 },
     legend: { x: 0.01, y: 0.01, font: { size: 9, color: '#8b949e' }, bgcolor: 'rgba(0,0,0,0.3)' },
-    title: { text: 'Open-loop Bode — <span style="color:#8b949e">bare</span> vs <span style="color:#f0883e">|C·G|</span> | <span style="color:#00bcd4">∠C·G</span>  |  dotted line = 0 dB / −180°', font: { size: 11, color: '#e6edf3' } },
+    title: { text: 'Open-loop Bode — <span style="color:#8b949e">bare</span> vs <span style="color:#f0883e">|C·G|</span> | <span style="color:#00bcd4">∠C·G</span>  |  dotted line = 0 dB / −180°',
+             font: { size: 11, color: '#e6edf3' } },
     shapes: shapes,
     annotations: annotations
   });
@@ -395,67 +419,96 @@ function update() {
     paper_bgcolor: '#0d1117', plot_bgcolor: '#0d1117',
     font: { color: '#8b949e', size: 10 },
     xaxis: { title: 'time [s]', gridcolor: 'rgba(255,255,255,0.05)' },
-    yaxis: { title: 'y(t)', gridcolor: 'rgba(255,255,255,0.05)', range: [-0.05, 1.5] },
+    yaxis: { title: 'y(t)', gridcolor: 'rgba(255,255,255,0.05)', range: [-0.05, 1.6] },
     margin: { l: 45, r: 15, t: 30, b: 40 },
     legend: { x: 0.01, y: 0.99, font: { size: 9, color: '#8b949e' }, bgcolor: 'rgba(0,0,0,0.3)' },
     title: { text: 'Closed-loop step response', font: { size: 11, color: '#e6edf3' } }
   });
 
   // ====== Readouts ======
-  $('pmVal').textContent = pm !== null ? pm.toFixed(1)+'°' : 'N/A';
-  $('gmVal').textContent = gm !== Infinity ? gm.toFixed(1)+' dB' : '∞';
-  $('bwVal').textContent = wcp !== null ? wcp.toFixed(1) : 'N/A';
-  $('ssVal').textContent = ssErr.toFixed(2)+'%';
+  $('pmVal').textContent = pm !== null ? pm.toFixed(1) + '°' : 'N/A';
+  $('pmVal').style.color = pm !== null ? (pm < 30 ? '#f85149' : pm < 50 ? '#f0883e' : 'var(--cyan)') : 'var(--text2)';
 
-  $('alphaVal').textContent = c.alpha.toFixed(1);
-  $('wmaxVal').textContent = c.wmax.toFixed(0);
-  $('betaVal').textContent = c.beta.toFixed(1);
-  $('wzVal').textContent = c.wz.toFixed(2);
-  $('gainVal').textContent = c.K.toFixed(2);
+  $('gmVal').textContent = gm !== Infinity ? gm.toFixed(1) + ' dB' : '∞';
+  $('gmVal').style.color = gm !== Infinity ? (gm < 6 ? '#f85149' : 'var(--orange)') : 'var(--cyan)';
+
+  $('wcVal').textContent = wcp !== null ? wcp.toFixed(2) : 'N/A';
+  $('ssVal').textContent = '0% (type-1)';
+
+  $('kvVal').textContent = Kv.toFixed(3);
+  $('rampVal').textContent = (rampSSErr * 100).toFixed(1) + '%';
+
+  // ====== Slider value labels ======
+  $('zVal').textContent = c.z.toFixed(2);
+  $('pVal').textContent = c.p.toFixed(2);
+  $('kVal').textContent = c.K.toFixed(2);
 
   // ====== Controller TF display ======
-  function fmtPoly(coeffs) {
-    const parts = [];
-    for (let i = 0; i < coeffs.length; i++) {
-      const v = coeffs[i];
-      const pow = coeffs.length-1 - i;
-      if (Math.abs(v) < 1e-8) continue;
-      let term = '';
-      if (i > 0 && v > 0) term += '+';
-      term += v.toFixed(4);
-      if (pow === 1) term += ' s';
-      else if (pow > 1) term += ' s<sup>'+pow+'</sup>';
-      parts.push(term);
-    }
-    return parts.join(' ') || '0';
+  function fmtVal(v) {
+    if (Math.abs(v) < 1e-8) return '0';
+    return v.toFixed(3);
   }
-  function tfStr(num, den) {
-    return `<span style="font-size:0.75em;color:var(--accent)">${fmtPoly(num)}</span><br><span style="border-top:1px solid var(--text2);padding-top:1px">${fmtPoly(den)}</span>`;
-  }
+  // C(s) = K·(s+z)/(s+p) = (K·s + K·z)/(s + p)
+  const numStr = `${fmtVal(c.K)} s + ${fmtVal(c.K * c.z)}`;
+  const denStr = `s + ${fmtVal(c.p)}`;
   $('compText').innerHTML =
-    `<b>C<sub>lead</sub>(s) =</b><br>${tfStr(c.leadNum, c.leadDen)}` +
-    `<br><b>C<sub>lag</sub>(s) =</b><br>${tfStr(c.lagNum, c.lagDen)}` +
-    `<br><span style="color:var(--cyan)">α=${c.alpha.toFixed(2)}, φ<sub>max</sub>≈${c.phiMax.toFixed(0)}°</span> | <span style="color:var(--orange)">β=${c.beta.toFixed(1)}</span>`;
+    `<b>C(s) =</b><br>` +
+    `<span style="font-size:0.75em;color:var(--accent)">${numStr}</span><br>` +
+    `<span style="border-top:1px solid var(--text2);padding-top:1px">${denStr}</span><br>` +
+    `<span style="font-size:0.7em;color:var(--text2)">= ${fmtVal(c.K)} · (s + ${fmtVal(c.z)}) / (s + ${fmtVal(c.p)})</span>`;
+
+  // ====== Compensator type badge ======
+  const typeEl = $('compType');
+  typeEl.classList.remove('lead', 'lag', 'unity');
+  if (c.isLead) {
+    typeEl.textContent = 'LEAD  |z| < |p|';
+    typeEl.classList.add('lead');
+  } else if (c.isLag) {
+    typeEl.textContent = 'LAG  |p| < |z|';
+    typeEl.classList.add('lag');
+  } else {
+    typeEl.textContent = 'UNITY  z = p';
+    typeEl.classList.add('unity');
+  }
 
   // ====== Insight ======
   let insight = '';
-  if (c.alpha < 0.1) insight += `Strong lead: α=${c.alpha.toFixed(2)} adds ≈${c.phiMax.toFixed(0)}° near ${c.wmax.toFixed(0)} rad/s. `;
-  else if (c.alpha < 0.4) insight += `Moderate lead: α=${c.alpha.toFixed(2)} adds ≈${c.phiMax.toFixed(0)}°. Decrease α for more PM. `;
-  else insight += `α≈${c.alpha.toFixed(2)} → weak lead. Push α toward 0 for stronger phase boost. `;
 
-  if (c.beta > 2) insight += `Lag β=${c.beta.toFixed(0)} boosts DC gain ${c.beta.toFixed(0)}× → ss error ≈ ${ssErr.toFixed(1)}%.`;
-  else insight += `β=1 → no lag (pass-through). Increase β to improve steady-state accuracy.`;
-
-  if (c.K > 1.5) insight += `K=${c.K.toFixed(1)} pushes crossover up → less PM but faster. `;
-  else if (c.K < 0.7) insight += `K=${c.K.toFixed(2)} pulls crossover down → more PM but slower. `;
-
-  if (pm !== null) {
-    if (pm < 30) insight += '⚠ PM < 30° — oscillatory.';
-    else if (pm < 50) insight += 'PM acceptable, could be higher.';
-    else if (pm < 75) insight += 'PM solid — clean step response.';
-    else insight += 'PM > 75° — very conservative.';
+  // Lead/lag core explanation
+  if (c.isLead) {
+    const ratio = c.p / c.z;
+    insight += `|z|=${c.z.toFixed(1)} < |p|=${c.p.toFixed(1)} → <b>LEAD</b>. `;
+    insight += `Zero closer to origin adds phase boost. `;
+    if (ratio > 10) insight += `Ratio p/z=${ratio.toFixed(0)}× — strong lead, large phase margin boost. `;
+    else if (ratio > 3) insight += `Ratio p/z=${ratio.toFixed(1)}× — moderate lead. `;
+    else insight += `Ratio p/z=${ratio.toFixed(1)}× — mild lead, near unity. `;
+  } else if (c.isLag) {
+    const ratio = c.z / c.p;
+    insight += `|p|=${c.p.toFixed(1)} < |z|=${c.z.toFixed(1)} → <b>LAG</b>. `;
+    insight += `Pole closer to origin attenuates high-frequency gain. `;
+    if (ratio > 10) insight += `Ratio z/p=${ratio.toFixed(0)}× — strong lag, DC gain boosted ${ratio.toFixed(0)}×. `;
+    else if (ratio > 3) insight += `Ratio z/p=${ratio.toFixed(1)}× — moderate lag. `;
+    else insight += `Ratio z/p=${ratio.toFixed(1)}× — mild lag, near unity. `;
+  } else {
+    insight += `z = p → <b>unity gain</b> (pole-zero cancellation). C(s) = K. `;
   }
-  $('insight').textContent = insight;
+
+  // K commentary
+  if (c.K > 5) insight += `K=${c.K.toFixed(1)} — high gain pushes crossover up → faster but less stable. `;
+  else if (c.K < 0.5) insight += `K=${c.K.toFixed(2)} — low gain pulls crossover down → slower but more stable. `;
+
+  // PM quality
+  if (pm !== null) {
+    if (pm < 30) insight += '⚠ PM < 30° — heavily oscillatory.';
+    else if (pm < 50) insight += 'PM 30–50° — acceptable, some overshoot.';
+    else if (pm < 75) insight += 'PM 50–75° — well-damped, clean step.';
+    else insight += 'PM > 75° — very conservative, sluggish response.';
+  }
+
+  // Kv / ramp error
+  insight += ` K<sub>v</sub>=${Kv.toFixed(2)} → ramp error ${(rampSSErr*100).toFixed(1)}%.`;
+
+  $('insight').innerHTML = insight;
 }
 
 Object.values(sl).forEach(s => s.addEventListener('input', update));
