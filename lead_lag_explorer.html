@@ -80,7 +80,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
     </div>
 
     <div class="param-section">
-      <h2>&#x25BD; Lag compensator  C<sub>lag</sub>(s) = (&beta;Ts+1)/(Ts+1), &beta;&gt;1</h2>
+      <h2>&#x25BD; Lag compensator  C<sub>lag</sub>(s) = &beta;·(Ts+1)/(&beta;Ts+1), &beta;&gt;1</h2>
       <div class="param-row">
         <label>&beta; — DC gain boost <span id="betaVal">1</span></label>
         <input type="range" id="beta" min="1" max="50" step="0.5" value="1">
@@ -165,13 +165,12 @@ function buildComp() {
   const Kc = 1 / lMagAtWmax;             // unity gain at ω_max
   leadNum[0] *= Kc; leadNum[1] *= Kc;
 
-  // Lag: C_lag(s) = (β·Tz·s + 1) / (Tz·s + 1),  β > 1
-  // Zero at −1/(β·Tz), pole at −1/Tz.  β>1 ⇒ pole closer ⇒ phase lag.
-  // DC gain = 1.  Use overall K to boost if needed.
+  // Lag: C_lag(s) = β · (Tz·s + 1) / (β·Tz·s + 1),  β > 1
+  // Pole at −1/(β·Tz) is closer to origin than zero at −1/Tz.
+  // DC gain = β (boosted), HF gain = 1 (transparent at crossover).
   const Tz = 1 / wz;
-  const lagNum = [beta * Tz, 1];         // β·Tz·s + 1
-  const lagDen = [Tz, 1];                // Tz·s + 1
-
+  const lagNum = [Tz * beta, 1 * beta];  // β·(Tz·s + 1)
+  const lagDen = [beta * Tz, 1];          // β·Tz·s + 1
   // Cascade, then apply overall gain K
   function conv(a, b) {
     const r = new Array(a.length + b.length - 1).fill(0);
