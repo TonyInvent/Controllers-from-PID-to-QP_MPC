@@ -373,7 +373,7 @@ The model only needs to be good enough to control. A 5% error in $J$ (inertia) m
 - **Steady-state error:** wrong DC gain means the feedforward term is wrong
 - **Instability:** worst case — the controller pushes at a frequency where the true plant has 180° phase lag that the model doesn't capture
 
-Every controller in this project — PID in `servo_motor_pid.html`, LQR in `lqr_explorer.html`, MPC in `servo_qp_mpc.html` — is designed for a plant with parameters $R = 2.0\ \Omega$, $L = 0.005$ H, $K_t = 0.12$ N·m/A, $J = 0.0001$ kg·m$^2$, $B = 0.0005$ N·m·s/rad.
+Every controller in this project — PID in `servo_motor_pid.html`, LQR in `lqr_explorer.html`, MPC in `servo_qp_mpc.html` — is designed for a plant with parameters $R = 2.0\ \Omega$, $L = 0.005$ H, $K_t = 0.12$ N·m/A, $J = 0.0001$ kg·m², $B = 0.0005$ N·m·s/rad.
 
 If the real motor has $J = 0.0002$ (twice the inertia), the LQR gains are too aggressive by roughly a factor of $\sqrt{2}$. The response overshoots. If $R = 4.0\ \Omega$ (twice the resistance), the current loop has half the bandwidth — high-frequency performance degrades. These are real effects that system identification catches before you waste time tuning a controller for a motor that doesn't exist.
 
