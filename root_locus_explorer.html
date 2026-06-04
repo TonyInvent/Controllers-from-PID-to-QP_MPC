@@ -355,7 +355,7 @@ function durandKerner(coeffs, initGuesses, maxIters, tol) {
    N(s) = Π(s - z_j)    (degree m = number of OL zeros)
    ═══════════════════════════════════════════════════════════════════════ */
 function computeRootLocus(poles, zeros, Kmax, nPts) {
-  nPts = nPts || 100;
+  nPts = nPts || 200;
   const n = poles.length;
   const m = zeros.length;
 
@@ -910,18 +910,48 @@ function drawStepResponse() {
 /* ═══════════════════════════════════════════════════════════════════════
    FULL UPDATE
    ═══════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Interpolate CL poles from precomputed root locus branches at given K.
+   Much faster than running Durand-Kerner from scratch — just binary search
+   in the K-value array and linear interpolation of pole positions.
+   ═══════════════════════════════════════════════════════════════════════ */
+function interpolateCLPoles(K) {
+  if (rlKvals.length < 2 || rlBranches.length === 0) return [];
+  // Binary search for K in rlKvals
+  let lo = 0, hi = rlKvals.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (rlKvals[mid] <= K) lo = mid;
+    else hi = mid;
+  }
+  // Linear interpolation between idx lo and hi
+  const t = (K - rlKvals[lo]) / (rlKvals[hi] - rlKvals[lo]);
+  const n = rlBranches.length;
+  const result = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const pLo = rlBranches[i][lo];
+    const pHi = rlBranches[i][hi];
+    result[i] = C(
+      pLo.re + t * (pHi.re - pLo.re),
+      pLo.im + t * (pHi.im - pLo.im)
+    );
+  }
+  return result;
+}
 function updateAll(fullRecompute) {
   if (fullRecompute !== false) {
     // Recompute branches — expensive, only when poles/zeros/Kmax change
-    const rl = computeRootLocus(olPoles, olZeros, kMax, 100);
+    const rl = computeRootLocus(olPoles, olZeros, kMax, 200);
     rlBranches = rl.branches;
     rlKvals = rl.kvals;
     rlBranches._centroid = rl.centroid;
     rlBranches._asymptoteAngles = rl.asymptoteAngles;
   }
 
-  // Compute closed-loop poles at current K — fast
-  currentCLPoles = computeCLPolesAtK(olPoles, olZeros, kGain);
+  // Compute closed-loop poles at current K
+  // Fast path: interpolate from precomputed branches (O(n)) vs Durand-Kerner (O(n·iters))
+  currentCLPoles = interpolateCLPoles(kGain);
   drawRootLocus();
   const metrics = drawStepResponse();
 
