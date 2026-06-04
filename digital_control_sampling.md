@@ -1,0 +1,366 @@
+# Digital Control and Sampling: What Changes When You Go from s to z
+
+**You've designed a beautiful continuous-time controller — lead-lag, LQR, H∞, whatever. Now you need it to run on a microcontroller that reads sensors every millisecond and updates actuators every millisecond. The controller that worked perfectly in continuous time might oscillate, overshoot, or even go unstable when you discretise it. Why? Because sampling changes the rules. This document explains exactly what changes, why, and how to get it right.**
+
+---
+
+## 1. The moment you sample: information loss
+
+Picture a continuous signal — a sine wave, say. You measure it every $T_s$ seconds (the sample period). Between samples, you know nothing. The signal could spike, oscillate, go anywhere — and your controller is blind to it.
+
+This is the central fact of digital control: **sampling discards information.** A continuous signal $y(t)$ contains values at every instant. Its sampled version $y[k] = y(k T_s)$ contains only a discrete set of snapshots. Everything between $k T_s$ and $(k+1) T_s$ is lost.
+
+The question is: under what conditions can we still reconstruct the original signal? And what happens when we can't?
+
+### 1.1 Aliasing: when a fast signal impersonates a slow one
+
+Here is the most important phenomenon in sampled-data systems. Take a sine wave at 9 Hz, and sample it at 10 Hz. The samples you get are identical to the samples of a 1 Hz sine wave:
+
+```
+True signal:   9 Hz sine    →  samples at 10 Hz  →  exactly matches 1 Hz sine samples
+```
+
+The 9 Hz signal has *aliased* to 1 Hz. Your controller sees a 1 Hz oscillation and responds to it — but the actual system is oscillating at 9 Hz. The controller acts on a fiction.
+
+The rule, due to Nyquist (1928) and Shannon (1949), is:
+
+> **You must sample at least twice as fast as the highest frequency present in the signal.**
+
+$$f_s > 2 f_{\max}$$
+
+The frequency $f_s/2$ is the **Nyquist frequency**. Any frequency component above $f_s/2$ folds back — aliases — into the range $[0, f_s/2]$. The folding is symmetric: a signal at $f_s/2 + \Delta f$ aliases to $f_s/2 - \Delta f$.
+
+### 1.2 The anti-aliasing filter: a low-pass before the ADC
+
+The fix is an analog low-pass filter placed *before* the sampler. Its cutoff is set below $f_s/2$. Any frequency above the Nyquist limit is attenuated into irrelevance before it reaches the ADC. After that, the sampled signal faithfully represents the continuous one.
+
+In practice, this means:
+
+- **Choose your sample rate** based on the closed-loop bandwidth you need. Rule of thumb: $f_s \geq 20 \times$ the desired bandwidth. (If you want 50 Hz bandwidth, sample at $\ge 1$ kHz.)
+- **Place an anti-aliasing filter** with cutoff at roughly $f_s/4$ to $f_s/3$ — well below Nyquist, with enough roll-off to suppress everything above $f_s/2$.
+
+---
+
+## 2. The zero-order hold: what happens between samples
+
+Your controller computes a control signal $u[k]$ based on the sampled output $y[k]$. But the plant is continuous — it needs $u(t)$, not $u[k]$. The simplest approach: **hold $u[k]$ constant until the next sample.** This is the zero-order hold (ZOH).
+
+$$u(t) = u[k] \quad \text{for} \quad k T_s \leq t < (k+1) T_s$$
+
+The ZOH is a staircase approximation of the desired continuous signal. It introduces two effects:
+
+### 2.1 Phase lag: half a sample period of delay
+
+A ZOH produces a signal that is, on average, delayed by $T_s/2$ relative to the underlying continuous signal. In the frequency domain, this is a phase lag:
+
+$$\angle \text{ZOH}(j\omega) = -\frac{\omega T_s}{2}$$
+
+At the Nyquist frequency ($\omega = \pi / T_s$), the phase lag is $-90^\circ$. In real control loops, this is often the dominant source of phase loss. If your continuous-time design had 60° of phase margin, a ZOH at 10× bandwidth eats about 18° of it. At 5× bandwidth, it eats 36°. This is why you can't just sample at twice the bandwidth and call it done — the ZOH destroys your phase margin.
+
+### 2.2 Magnitude roll-off
+
+The ZOH transfer function is:
+
+$$G_{\text{ZOH}}(s) = \frac{1 - e^{-s T_s}}{s}$$
+
+Its magnitude is:
+
+$$|G_{\text{ZOH}}(j\omega)| = T_s \cdot \frac{\sin(\omega T_s/2)}{\omega T_s/2} = T_s \cdot \text{sinc}\left(\frac{\omega T_s}{2}\right)$$
+
+At the Nyquist frequency, this is $2/\pi \approx 0.637$ — a 3.9 dB drop. At lower frequencies the roll-off is modest, but it's not zero. At one-tenth the Nyquist frequency, the attenuation is about 0.4 dB.
+
+---
+
+## 3. The z-transform: the right tool for discrete-time
+
+### 3.1 What it is
+
+The Laplace transform maps continuous-time signals to the s-plane: differentiation becomes multiplication by $s$, integration becomes $1/s$. The **z-transform** does the same for discrete-time sequences: a one-step delay becomes multiplication by $z^{-1}$.
+
+$$\mathcal{Z}\{x[k-1]\} = z^{-1} X(z)$$
+$$\mathcal{Z}\{x[k+1]\} = z X(z) - z x[0]$$
+
+A discrete-time difference equation:
+
+$$y[k] + a_1 y[k-1] + a_2 y[k-2] = b_0 u[k] + b_1 u[k-1]$$
+
+becomes a transfer function by taking the z-transform (assuming zero initial conditions):
+
+$$\frac{Y(z)}{U(z)} = \frac{b_0 + b_1 z^{-1}}{1 + a_1 z^{-1} + a_2 z^{-2}} = \frac{b_0 z^2 + b_1 z}{z^2 + a_1 z + a_2}$$
+
+### 3.2 The mapping: $z = e^{s T_s}$
+
+The crucial relationship:
+
+$$z = e^{s T_s}$$
+
+Let $s = \sigma + j\omega$. Then $z = e^{\sigma T_s} e^{j\omega T_s} = e^{\sigma T_s} \angle \, \omega T_s$. The s-plane maps to the z-plane as follows:
+
+| s-plane region | Maps to z-plane | Meaning |
+|---------------|-----------------|---------|
+| Left half-plane ($\sigma < 0$) | Inside the unit circle ($|z| < 1$) | Stable |
+| Imaginary axis ($\sigma = 0$) | Unit circle ($|z| = 1$) | Marginally stable (oscillatory) |
+| Right half-plane ($\sigma > 0$) | Outside the unit circle ($|z| > 1$) | Unstable |
+
+**The stability boundary shifts from $\text{Re}(s) = 0$ to $|z| = 1$.** In continuous time, poles must have negative real parts. In discrete time, poles must have magnitude less than 1.
+
+### 3.3 The frequency warping
+
+The mapping $z = e^{j\omega T_s}$ wraps the entire $j\omega$ axis ($-\infty$ to $+\infty$) around the unit circle infinitely many times. The interval $-\pi/T_s \leq \omega \leq \pi/T_s$ (the primary strip) maps to one full revolution $-\pi \leq \angle z \leq \pi$. Every other strip of width $2\pi/T_s$ maps to the same circle.
+
+This is aliasing in the z-plane: infinitely many continuous frequencies map to the same discrete frequency. The unit circle encodes frequencies only up to the Nyquist limit. Everything beyond it is folded.
+
+---
+
+## 4. Discretisation methods: from $C(s)$ to $C(z)$
+
+You have a continuous-time controller $C(s)$. You need a difference equation that approximates it. Here are the four standard methods, each with different trade-offs.
+
+### 4.1 Forward Euler: simple but dangerous
+
+The forward Euler approximation replaces derivatives with forward differences:
+
+$$\dot{x}(t) \approx \frac{x[k+1] - x[k]}{T_s}$$
+
+In the frequency domain, this is equivalent to:
+
+$$s \approx \frac{z - 1}{T_s} \qquad \text{or} \qquad z \approx 1 + s T_s$$
+
+**Stability map:** The left half-plane ($\text{Re}(s) < 0$) maps to $\text{Re}(z) < 1$ — a half-plane, not the unit circle. A continuous-time stable pole can map to an unstable discrete pole if it lies to the left of $s = -2/T_s$.
+
+```
+                    Im[s]
+                      ↑
+      stable in s     │  stable in z (|z|<1)
+   but unstable in z  │
+    ←───────────────  │
+          │           │         unit circle in z
+    ──────┼───────────┼──────→ Re[s]
+     -2/Ts│           │0
+          │           │
+    ←─────┼───────────│
+   both stable        │  stable in s
+                      │  unstable in z
+```
+
+Forward Euler can turn a stable continuous pole into an unstable discrete one if $T_s$ is too large. **Do not use forward Euler for control applications.** It has no place in any production controller.
+
+### 4.2 Backward Euler: stable but distorting
+
+The backward Euler approximation uses backward differences:
+
+$$\dot{x}(t) \approx \frac{x[k] - x[k-1]}{T_s}$$
+
+In the frequency domain:
+
+$$s \approx \frac{z - 1}{z T_s} \qquad \text{or} \qquad z \approx \frac{1}{1 - s T_s}$$
+
+**Stability map:** The *entire* left half-plane maps to the interior of a circle of radius $1/2$ centered at $z = 1/2$. This means **backward Euler is unconditionally stable** — every stable continuous pole maps to a stable discrete pole, regardless of $T_s$. This is its main virtue.
+
+The downside: the mapping is heavily distorted. Fast continuous poles (far left in the s-plane) map to $z \approx 0$ instead of decaying to near-zero. The frequency response is warped: the imaginary axis maps to a small circle, not the unit circle, so the discrete system's frequency response doesn't match the continuous one. Backward Euler is safe but inaccurate.
+
+### 4.3 Tustin (bilinear transform): the workhorse
+
+The Tustin (or trapezoidal, or bilinear) approximation uses the average of forward and backward differences:
+
+$$s \approx \frac{2}{T_s} \cdot \frac{z - 1}{z + 1} \qquad \text{or} \qquad z \approx \frac{1 + s T_s/2}{1 - s T_s/2}$$
+
+**Stability map:** The left half-plane maps *exactly* to the interior of the unit circle. Every stable continuous pole maps to a stable discrete pole, and every unstable continuous pole maps to an unstable discrete pole. Stability is preserved perfectly.
+
+Tustin is derived from the trapezoidal rule for integration:
+
+$$\int_0^{T_s} f(t)\, dt \approx \frac{T_s}{2} \big(f(0) + f(T_s)\big)$$
+
+This is a second-order method, unlike forward/backward Euler (first-order). It's more accurate for the same $T_s$.
+
+**The catch: frequency warping.** Tustin maps the entire $j\omega$ axis (from $0$ to $\infty$) onto the upper half of the unit circle (from $z=1$ to $z=-1$). The mapping is:
+
+$$\omega_{\text{discrete}} = \frac{2}{T_s} \tan\left(\frac{\omega_{\text{continuous}} T_s}{2}\right)$$
+
+At low frequencies ($\omega T_s \ll 1$), $\tan(x) \approx x$, so $\omega_d \approx \omega_c$ — no warping, they match. But as frequency increases, the discrete frequency runs ahead of the continuous one. At the Nyquist frequency ($\omega_c = \pi/T_s$), the tangent blows up — the mapping compresses the infinite continuous frequency axis onto the finite unit circle.
+
+**Prewarping:** If you care about exact behavior at a specific frequency $\omega_0$, you can prewarp: design the continuous controller so its critical feature (e.g., notch, crossover) is at a *modified* frequency $\omega_0' = (2/T_s) \tan(\omega_0 T_s/2)$. After Tustin discretisation, the feature lands exactly at $\omega_0$. This matters for notch filters and resonant systems.
+
+### 4.4 ZOH-equivalent (step-invariant): the exact method
+
+The ZOH-equivalent discretisation asks: "If I hold the input constant over each sample period, what is the exact discrete-time model of the continuous plant?" The answer:
+
+$$G_d(z) = (1 - z^{-1}) \, \mathcal{Z}\!\left\{ \mathcal{L}^{-1}\!\left\{ \frac{G(s)}{s} \right\}_{t = k T_s} \right\}$$
+
+In practice, you compute it using `c2d(G, Ts, 'zoh')` in MATLAB/Python. For state-space systems $(A, B, C, D)$, the ZOH-equivalent is:
+
+$$A_d = e^{A T_s}, \qquad B_d = \int_0^{T_s} e^{A \tau} B \, d\tau$$
+
+The ZOH-equivalent is **exact at the sampling instants** for a system driven by a ZOH. If the continuous input is truly piecewise constant, the discrete model predicts $y[k]$ exactly. This is the standard method for discretising a *plant model* — as opposed to a controller, where Tustin is usually preferred.
+
+### 4.5 Summary: which method when?
+
+| Method | Stability preserved? | Accuracy | Use for |
+|--------|---------------------|----------|---------|
+| **Forward Euler** | No | Low | Never |
+| **Backward Euler** | Yes (overdamps) | Low | Quick-and-dirty embedded; never for serious work |
+| **Tustin** | Yes (exact boundary) | Good (2nd order) | **Discretising controllers** — the standard choice |
+| **ZOH-equivalent** | Yes (exact) | Exact at samples | **Discretising plant models** — the standard choice |
+| **Matched pole-zero** | Yes | Moderate | When you need better high-frequency matching than Tustin |
+| **Impulse-invariant** | Yes | Good for some filters | Specialised; preserves impulse response shape |
+
+---
+
+## 5. When Tustin is good enough — and when it isn't
+
+### 5.1 When Tustin is good enough (most cases)
+
+For the vast majority of control applications, Tustin discretisation at $f_s \geq 20 \times$ the closed-loop bandwidth is perfectly adequate:
+
+- **PID controllers**: The frequency warping below $f_s/10$ is negligible. A PID discretised via Tustin at 1 kHz behaves identically to its continuous counterpart for dynamics up to ~50 Hz.
+- **Lead-lag compensators**: Same reasoning. The zero and pole frequencies are well below Nyquist; Tustin maps them accurately.
+- **LQR gains**: LQR produces a static gain matrix $K$. You don't need to discretise $K$ at all — it's just numbers. You do need to discretise the plant model (ZOH-equivalent) and any observer dynamics (Tustin).
+- **State observers (Kalman filters)**: Tustin preserves stability and gives good results when the observer bandwidth is $\leq f_s/10$.
+
+### 5.2 When Tustin isn't good enough
+
+**Very fast sampling relative to dynamics.** If $f_s$ is only 5–10× the bandwidth, the frequency warping is significant. A compensator designed in continuous time to have its phase peak at 100 Hz will, after Tustin at 500 Hz, have that peak shifted noticeably.
+
+**Resonant systems.** If your plant has a sharp resonance near the Nyquist frequency, Tustin maps it to a completely wrong location. The warping is severe at high frequencies. Use ZOH-equivalent for the plant, and either prewarped Tustin or a direct digital design for the controller.
+
+**High-frequency notch filters.** A notch at 400 Hz sampled at 1 kHz is at 0.8× Nyquist — Tustin will warp it badly. Prewarp, or design the notch directly in discrete time.
+
+**Systems with significant delay.** If the plant has a transport delay of $3 T_s$, the ZOH plus the delay together produce substantial phase lag that the continuous design didn't account for. Discretise the plant (ZOH + delay), then design the controller directly in discrete time.
+
+### 5.3 The practical rule
+
+Ask yourself: is the highest frequency I care about (typically the closed-loop bandwidth) below $f_s/10$? If yes, Tustin works. If no, or if there's a sharp feature (resonance, notch) above $f_s/20$, either prewarp or design directly in discrete time.
+
+---
+
+## 6. The $w'$-transform: use your continuous-time intuition for discrete design
+
+### 6.1 The problem
+
+You know how to design controllers in the s-plane. You understand bandwidth, phase margin, pole placement — all in continuous time. But your controller must run in discrete time. The z-plane feels alien: the stability region is a circle, not a half-plane; frequency runs along the unit circle, not up the imaginary axis; Bode plots in z feel wrong.
+
+What if you could map the discrete-time problem *back* to an approximate continuous-time problem, design using all your familiar tools, and then map back?
+
+### 6.2 The $w'$-transform
+
+The $w'$-transform is the trick:
+
+$$w' = \frac{2}{T_s} \cdot \frac{z - 1}{z + 1}$$
+
+Wait — this is exactly the Tustin substitution in reverse! It maps the z-plane back to an s-like plane. The unit circle in $z$ maps to the imaginary axis in $w'$. The interior maps to the left half-plane. For frequencies well below Nyquist, $w' \approx s$.
+
+The procedure:
+
+1. **Discretise the plant** using ZOH-equivalent: $G_d(z)$.
+2. **Apply the $w'$-transform** to get $G(w')$ — a transfer function in a continuous-like variable.
+3. **Design the controller** $C(w')$ using Bode plots, root locus, or any s-domain technique. Interpret $w'$ as $s$ — at low frequencies, the two are nearly identical.
+4. **Transform back** using the inverse Tustin substitution: $w' \to \frac{2}{T_s}\frac{z-1}{z+1}$, yielding $C(z)$.
+5. **Implement** $C(z)$ as a difference equation.
+
+### 6.3 Why this works
+
+The $w'$-transform preserves the *algebraic structure* of the frequency domain. The imaginary axis stays the imaginary axis. The left half-plane stays the left half-plane. Bode plots in $w'$ look like Bode plots in $s$ — at least for frequencies up to about $f_s/5$.
+
+The only distortion is the same frequency warping as Tustin: $\omega_{w'} = (2/T_s) \tan(\omega T_s/2)$. As long as your design frequencies are well below Nyquist, $\omega_{w'} \approx \omega$, and the design transfers cleanly.
+
+### 6.4 A concrete example
+
+Plant: $G(s) = \frac{1}{s(s+1)}$, sample at $T_s = 0.1$ s.
+
+ZOH-equivalent discrete plant (computed via `c2d`):
+
+$$G_d(z) = \frac{0.004837 z + 0.004679}{z^2 - 1.905z + 0.9048}$$
+
+$w'$-transform (substitute $z = \frac{1 + w' T_s/2}{1 - w' T_s/2}$):
+
+$$G(w') = \frac{-0.0004167 w'^2 - 0.01667 w' + 0.9996}{w'(w' + 1.001)}$$
+
+Compare to the original: $G(s) = \frac{1}{s(s+1)}$. The $w'$ model is nearly identical — the numerator has tiny extra terms ($-0.0004167 w'^2$), but the dominant dynamics (the integrator and the pole at $-1$) match exactly.
+
+Now design a lead compensator in $w'$ as if it were $s$, transform back via Tustin, and implement. The resulting discrete controller performs nearly identically to a continuous-time design — but it's a realizable difference equation that runs on a microcontroller.
+
+The $w'$-transform was widely used in the 1970s–1990s, before direct digital design tools matured. It's less common today (most engineers design directly in discrete time using `pidtune` or `systune`), but the technique is worth knowing because it reveals the deep connection between continuous and discrete design: **they're the same problem, just mapped through a bilinear transformation.**
+
+---
+
+## 7. Implementation: from $C(z)$ to running code
+
+A discrete transfer function:
+
+$$C(z) = \frac{b_0 + b_1 z^{-1} + \cdots + b_m z^{-m}}{1 + a_1 z^{-1} + \cdots + a_n z^{-n}}$$
+
+becomes a difference equation you can code directly:
+
+$$u[k] = b_0 e[k] + b_1 e[k-1] + \cdots + b_m e[k-m] - a_1 u[k-1] - \cdots - a_n u[k-n]$$
+
+This is a few multiply-accumulate operations per sample. It runs in microseconds on any microcontroller.
+
+### 7.1 Numerical considerations: the $\delta$-operator
+
+When $T_s$ is very small, the coefficients $a_i$ cluster near 1 and the $b_i$ near 0. Floating-point arithmetic loses precision. The $\delta$-operator avoids this by working with $\delta = (z-1)/T_s$ instead of $z^{-1}$. This is essentially forward Euler in state-space form, and it's numerically better conditioned for very fast sampling. For most applications ($f_s$ up to a few kHz with double-precision floats), the standard $z^{-1}$ form works fine. The $\delta$-operator matters at very high rates (tens of kHz or more) or with fixed-point arithmetic.
+
+### 7.2 The full digital control loop
+
+```
+                  ┌──────────┐     ┌──────────┐     ┌───────────┐
+    r[k] ──→(+)──→│  C(z)    │──→  │  ZOH/DAC  │──→  │  Plant    │──→ y(t)
+            ↑-    │diff eqn  │     │           │     │  G(s)     │    │
+            │     └──────────┘     └──────────┘     └───────────┘    │
+            │                                                       │
+            │              ┌──────────┐     ┌──────────┐            │
+            └──────────────│   ADC    │←────│  Filter  │←───────────┘
+                           │  sample  │     │  anti-   │
+                           └──────────┘     │  alias   │
+                                            └──────────┘
+```
+
+Every element in this chain introduces effects that the continuous-time design didn't account for:
+
+1. **Anti-aliasing filter**: phase lag at high frequencies
+2. **ADC**: quantisation noise, finite resolution
+3. **Computation delay**: the time between ADC read and DAC write (typically one sample period unless you optimise)
+4. **ZOH**: half-sample phase lag, sinc roll-off
+5. **Discretisation error**: Tustin warping, or approximation errors from the chosen method
+
+A good digital control design accounts for all of these. The simplest approach: sample fast enough that 1–4 are negligible (20× bandwidth rule), and use Tustin (item 5 is also negligible). When that's not possible, model the additional dynamics explicitly in the discrete design.
+
+---
+
+## 8. Connection to this project
+
+| Doc | The digital control connection |
+|-----|-------------------------------|
+| `care_vs_dare.md` | CARE is the continuous Riccati equation; DARE is its discrete counterpart. DARE is what you actually solve for digital implementation because the controller runs on sampled data. The difference equation form of DARE ($x_{k+1} = A_d x_k + B_d u_k$) comes from ZOH-discretising the continuous plant — exactly the method described in Section 4.4 |
+| `lead_lag_compensator_design.md` | Section 9 of that doc covers Tustin discretisation of compensators. This doc explains *why* Tustin works (bilinear mapping preserves stability, warps frequencies predictably) and when it doesn't (resonant systems, fast sampling). Together they form a complete guide to designing and implementing compensators digitally |
+| `lqr_explorer.html` | The explorer simulates in continuous time using RK4 integration for pedagogical clarity. A real implementation would ZOH-discretise the plant, solve the DARE, and run the discrete LQR gain at a fixed sample rate — the method described in Section 7.2 |
+| `servo_qp_mpc.html` | The MPC in this project uses ZOH-discretised dynamics at 1 ms sample period. The discrete QP at every step depends on the discrete state matrices $(A_d, B_d)$, which are computed from the continuous motor model via the ZOH-equivalent discretisation of Section 4.4. The DARE terminal cost further relies on the discrete Riccati solution |
+| `core_problems_controller_design.md` | Problem #3 (discrete nature) is exactly the topic of this document. The gap between "I designed a beautiful continuous-time controller" and "it works on a microcontroller" is what sampling theory bridges |
+| `pid_explorer.html` | PID parameters designed in continuous time must be converted to discrete difference equations. The explorer's simulation does this implicitly at each step; a real controller uses the Tustin (or backward Euler for the integrator) discretisation explicitly |
+
+---
+
+## 9. Further reading
+
+**The definitive digital control text:**
+- Franklin, G.F., Powell, J.D., & Workman, M. (1997). *Digital Control of Dynamic Systems*, 3rd ed. Addison-Wesley. — Covers everything: sampling, z-transform, discretisation methods, $w'$-transform, quantisation effects, and implementation. The standard reference.
+
+**z-transform theory:**
+- Ogata, K. (1995). *Discrete-Time Control Systems*, 2nd ed. Prentice-Hall. — Methodical treatment of the z-transform, stability analysis, and digital controller design. Good on the $w'$-transform and direct digital design methods.
+
+**More modern treatment with MATLAB:**
+- Åström, K.J. & Wittenmark, B. (2011). *Computer-Controlled Systems: Theory and Design*, 3rd ed. Dover. — Written by the pioneers of digital PID and adaptive control. Rigorous but readable. Excellent coverage of aliasing, anti-aliasing filters, and the interplay between sampling and control design.
+
+**The Nyquist-Shannon theorem:**
+- Shannon, C.E. (1949). "Communication in the Presence of Noise." *Proceedings of the IRE*, 37(1), 10–21. — The original paper. Dense, but the clarity of thought is remarkable. The theorem appears in Section IV.
+- Nyquist, H. (1928). "Certain Topics in Telegraph Transmission Theory." *Transactions of the AIEE*, 47(2), 617–644. — Earlier formulation of the sampling criterion.
+
+**Frequency warping and Tustin:**
+- Tustin, A. (1947). "A method of analysing the behaviour of linear systems in terms of time series." *Journal of the IEE*, 94(1), 130–142. — The original bilinear transform paper. Tustin was working on gun control servos during WWII and needed to analyse sampled-data systems.
+
+**On the $\delta$-operator and numerical conditioning:**
+- Middleton, R.H. & Goodwin, G.C. (1990). *Digital Control and Estimation: A Unified Approach.* Prentice-Hall. — Introduces the $\delta$-operator as a numerically superior alternative to the shift operator for high-rate sampling. Important if you're doing control at 10+ kHz on fixed-point hardware.
+
+**This project's related docs:**
+- `care_vs_dare.md` — the discrete vs. continuous Riccati equation and why DARE is what you implement
+- `lead_lag_compensator_design.md` — Section 9 covers Tustin discretisation of compensators with Python examples
+- `bellman_to_lqr.md` — the dynamic programming derivation that leads to both CARE and DARE

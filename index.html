@@ -273,6 +273,24 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+  <a href="root_locus_explorer.html" class="card c-pid">
+    <div class="card-icon">&#x1F300;</div>
+    <span class="card-tag tag-pid">Root Locus &middot; Pole Placement &middot; Gain Design</span>
+    <h2>Root Locus Explorer</h2>
+    <p>
+      Click to place poles and zeros, then drag K to see the closed-loop poles trace
+      the root locus. Watch branches emerge, break away, and cross the imaginary axis.
+      The missing link between &ldquo;turn the gain&rdquo; and &ldquo;the poles move like this.&rdquo;
+    </p>
+    <div class="card-features">
+      <span>click-to-place p/z</span>
+      <span>K slider 0&rarr;&infin;</span>
+      <span>branch tracing</span>
+      <span>step response</span>
+      <span>5 presets</span>
+    </div>
+  </a>
+
   <a href="lqr_explorer.html" class="card c-lqr">
     <div class="card-icon">&#x1F9EE;</div>
     <span class="card-tag tag-lqr">Optimal &middot; MIMO</span>
@@ -429,6 +447,114 @@ footer a:hover { text-decoration: underline; }
       <span>design procedure</span>
       <span>Tustin discretisation</span>
       <span>PID connection</span>
+    </div>
+  </a>
+
+  <a href="bode_integral_waterbed.html" class="card c-pid">
+    <div class="card-icon">&#x1F4A7;</div>
+    <span class="card-tag tag-pid">Bode &middot; Limits &middot; Trade-offs</span>
+    <h2>The Waterbed Effect</h2>
+    <p>
+      Bode's sensitivity integral says you can't cheat physics: reduce error at
+      one frequency and it must increase elsewhere. The single most important
+      theoretical result for understanding why every controller is a compromise.
+    </p>
+    <div class="card-features">
+      <span>Bode integral proof</span>
+      <span>waterbed metaphor</span>
+      <span>RHP poles/zeros</span>
+      <span>design implications</span>
+      <span>PID/LQR/MPC</span>
+    </div>
+  </a>
+
+  <a href="digital_control_sampling.html" class="card c-lqr">
+    <div class="card-icon">&#x23F1;&#xFE0F;</div>
+    <span class="card-tag tag-lqr">s &rarr; z &middot; Tustin &middot; Aliasing</span>
+    <h2>Digital Control &amp; Sampling</h2>
+    <p>
+      All real controllers run in discrete time. What changes when you go from
+      s to z: aliasing, the ZOH, Tustin discretisation, and why a pole at s=&minus;100
+      becomes z&asymp;0.9, not z=0.
+    </p>
+    <div class="card-features">
+      <span>ZOH &amp; aliasing</span>
+      <span>z-transform mapping</span>
+      <span>Euler / Tustin / ZOH</span>
+      <span>w'-transform</span>
+      <span>implementation guide</span>
+    </div>
+  </a>
+
+  <a href="cascaded_control.html" class="card c-pid">
+    <div class="card-icon">&#x1F9F6;</div>
+    <span class="card-tag tag-pid">Nested Loops &middot; Motor Drives &middot; Bandwidth</span>
+    <h2>Cascaded Control Loops</h2>
+    <p>
+      Real motor drives don't use one PID &mdash; they use three nested loops:
+      current (fastest), velocity, and position (slowest). Why cascade works,
+      how to tune each layer, and why this is the standard industrial architecture.
+    </p>
+    <div class="card-features">
+      <span>current/vel/pos cascade</span>
+      <span>bandwidth separation</span>
+      <span>anti-windup per layer</span>
+      <span>inner-loop approximation</span>
+      <span>vs full-state LQR</span>
+    </div>
+  </a>
+
+  <a href="anti_windup.html" class="card c-pid">
+    <div class="card-icon">&#x1F6E1;&#xFE0F;</div>
+    <span class="card-tag tag-pid">Saturation &middot; Clamping &middot; Back-Calculation</span>
+    <h2>Anti-Windup</h2>
+    <p>
+      Every actuator saturates. When your integrator keeps accumulating while
+      the output is clipped, it winds up &mdash; and dumps it all when saturation
+      ends. Clamping, back-calculation, and why MPC doesn't need any of this.
+    </p>
+    <div class="card-features">
+      <span>windup mechanics</span>
+      <span>clamping &amp; conditional</span>
+      <span>back-calculation</span>
+      <span>observer-based AW</span>
+      <span>MPC vs AW</span>
+    </div>
+  </a>
+
+  <a href="gain_scheduling.html" class="card c-lqr">
+    <div class="card-icon">&#x1F4C5;</div>
+    <span class="card-tag tag-lqr">Nonlinear &middot; Interpolation &middot; LPV</span>
+    <h2>Gain Scheduling</h2>
+    <p>
+      Your plant is nonlinear but you only know how to design linear controllers.
+      Design at multiple operating points, interpolate the gains &mdash; and hope.
+      The practical method that ships in every aircraft flight control system.
+    </p>
+    <div class="card-features">
+      <span>scheduling variables</span>
+      <span>grid-point design</span>
+      <span>hidden coupling trap</span>
+      <span>bumpless transfer</span>
+      <span>LPV upgrade path</span>
+    </div>
+  </a>
+
+  <a href="h_infinity_robust_control.html" class="card c-lqr">
+    <div class="card-icon">&#x221E;</div>
+    <span class="card-tag tag-lqr">H&infin; &middot; Uncertainty &middot; Mixed Sensitivity</span>
+    <h2>H-Infinity Robust Control</h2>
+    <p>
+      Your model is wrong. LQR optimises for the nominal plant; H&infin; designs
+      for the worst-case plant in an uncertainty set. Shape S, T, and KS with
+      frequency weights &mdash; and get guaranteed robustness margins.
+    </p>
+    <div class="card-features">
+      <span>uncertainty sets</span>
+      <span>S/T/KS shaping</span>
+      <span>weighting functions</span>
+      <span>DGKF solution</span>
+      <span>order reduction</span>
     </div>
   </a>
   <a href="bellman_to_lqr.html" class="card c-lqr">

@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Root Locus Explorer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #21262d; --border: #30363d;
+  --text: #c9d1d9; --text-dim: #8b949e; --accent: #58a6ff; --accent2: #3fb950;
+  --warn: #f85149; --orange: #d2991d; --pink: #f72585; --green: #3fb950; --cyan: #58a6ff;
+  --radius: 10px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar plot1" "sidebar plot2" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 12px; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.header .warning-badge { display: none; font-size: 11px; background: rgba(248,81,73,0.2); color: var(--warn);
+    padding: 4px 10px; border-radius: 14px; border: 1px solid rgba(248,81,73,0.3); margin-left: 8px; }
+.header .warning-badge.show { display: inline-block; }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 16px;
+           display: flex; flex-direction: column; gap: 12px; }
+.plot-rl, .plot-step { position: relative; min-height: 0; background: var(--surface); }
+.plot-rl { grid-area: plot1; } .plot-step { grid-area: plot2; }
+.plot-rl canvas, .plot-step canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; z-index: 2; pointer-events: none; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 2px; }
+.param-group { background: var(--surface2); border-radius: var(--radius); padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.param-row label { font-size: 13px; width: 28px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid var(--surface); background: var(--accent); }
+.param-row .val { width: 52px; text-align: right; font-size: 13px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+
+.mode-row { display: flex; gap: 8px; }
+.mode-btn { flex: 1; font-size: 11px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); text-align: center; }
+.mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mode-btn.active { border-color: var(--accent); color: #fff; background: rgba(88,166,255,0.15); }
+
+.action-row { display: flex; gap: 8px; }
+.action-btn { flex: 1; font-size: 11px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.action-btn:hover { border-color: var(--warn); color: var(--warn); }
+.action-btn.danger { border-color: rgba(248,81,73,0.3); color: var(--warn); }
+.action-btn.danger:hover { background: rgba(248,81,73,0.1); }
+
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-btn { font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; font-family: var(--font); }
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.08); }
+.preset-btn.active { border-color: var(--accent); color: #fff; background: rgba(88,166,255,0.18); }
+
+.readout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.readout-item { background: var(--surface2); border-radius: 6px; padding: 8px 10px; text-align: center; }
+.readout-item .rv { font-family: var(--mono); font-size: 15px; color: var(--accent); }
+.readout-item .rl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.help-toggle { font-size: 11px; color: var(--accent); cursor: pointer; user-select: none; letter-spacing: 0.5px; }
+.help-toggle:hover { text-decoration: underline; }
+.help-body { font-size: 11px; color: var(--text-dim); line-height: 1.55; margin-top: 6px; display: none; }
+.help-body.show { display: block; }
+.help-body p { margin: 0 0 6px; }
+.help-body strong { color: var(--text); }
+.help-body code { font-family: var(--mono); font-size: 10px; background: rgba(88,166,255,0.1); padding: 1px 4px; border-radius: 3px; color: var(--accent); }
+
+.metrics { position: absolute; top: 8px; right: 14px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; pointer-events: none; max-width: 60%; justify-content: flex-end; }
+.metric { font-size: 11px; font-family: var(--mono); background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; color: var(--text-dim); }
+
+.cursor-hint { font-size: 10px; color: var(--text-dim); text-align: center; margin-top: -2px; }
+
+@media (max-width: 800px) {
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto;
+         grid-template-areas: "header" "sidebar" "plot1" "plot2" "insight";
+         height: auto; gap: 2px; }
+  .plot-rl, .plot-step { height: min(60vw, 380px); min-height: 260px; }
+  .sidebar { padding: 10px 10px; gap: 8px; max-height: none; overflow-y: visible; }
+  .param-group { padding: 10px 12px; }
+  .param-row { gap: 8px; margin: 8px 0; }
+  .param-row label { font-size: 14px; width: 28px; }
+  .param-row input[type="range"] { height: 6px; min-height: 28px; }
+  .param-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; }
+  .param-row .val { font-size: 14px; width: 52px; }
+  .preset-btn { font-size: 12px; padding: 6px 12px; margin: 2px; }
+  .section-title { font-size: 12px; }
+  .mode-btn { font-size: 12px; padding: 8px; }
+  .help-toggle { font-size: 12px; }
+  .help-body { font-size: 12px; }
+  .insight { font-size: 14px; padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <div class="dot"></div>Root Locus Explorer
+    <span class="warning-badge" id="warnBadge">UNSTABLE</span>
+  </div>
+
+  <div class="sidebar">
+    <!-- Placement Mode -->
+    <div class="param-group">
+      <div class="section-title">Placement Mode — Click on s‑plane</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="modePole" data-mode="pole">Place Poles &#10005;</button>
+        <button class="mode-btn" id="modeZero" data-mode="zero">Place Zeros &#9675;</button>
+      </div>
+      <div class="action-row" style="margin-top:8px;">
+        <button class="action-btn danger" id="btnClear">Clear All</button>
+        <button class="action-btn" id="btnUndo">Undo Last</button>
+      </div>
+      <div class="cursor-hint" id="cursorHint">Click on the s‑plane to place an open‑loop pole</div>
+    </div>
+
+    <!-- Gain K -->
+    <div class="param-group">
+      <div class="section-title">Gain <span style="font-family:var(--mono);color:var(--accent);">K</span></div>
+      <div class="param-row">
+        <label>K</label>
+        <input type="range" id="kGain" min="0" max="1000" step="1" value="0">
+        <span class="val" id="kGainVal">0.00</span>
+      </div>
+      <div class="param-row" style="margin-top:2px;">
+        <label>K<sub>max</sub></label>
+        <input type="range" id="kMax" min="1" max="500" step="1" value="50">
+        <span class="val" id="kMaxVal">50</span>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="param-group">
+      <div class="section-title">Presets</div>
+      <div class="preset-row" id="presetRow">
+        <button class="preset-btn" data-preset="twoPole">2 Poles</button>
+        <button class="preset-btn" data-preset="threePole">3 Poles</button>
+        <button class="preset-btn" data-preset="poleZero">Pole + Zero</button>
+        <button class="preset-btn" data-preset="rhpPole">RHP Pole</button>
+        <button class="preset-btn" data-preset="complexPair">Complex Pair</button>
+      </div>
+    </div>
+
+    <!-- Closed-Loop Pole Readout -->
+    <div class="param-group">
+      <div class="section-title">Closed-Loop Poles at Current K</div>
+      <div class="readout-grid" id="clPoleReadout">
+        <div class="readout-item"><div class="rv">—</div><div class="rl">Pole 1</div></div>
+        <div class="readout-item"><div class="rv">—</div><div class="rl">Pole 2</div></div>
+        <div class="readout-item"><div class="rv">—</div><div class="rl">Pole 3</div></div>
+        <div class="readout-item"><div class="rv">—</div><div class="rl">Pole 4</div></div>
+      </div>
+    </div>
+
+    <!-- Help -->
+    <div class="param-group">
+      <div class="help-toggle" id="helpToggle">&#9654; What is a Root Locus?</div>
+      <div class="help-body" id="helpBody">
+        <p>The <strong style="color:var(--accent);">root locus</strong> shows how the closed-loop poles of a feedback system move in the s‑plane as a single gain <code>K</code> varies from 0 to &#8734;.</p>
+        <p><strong>Why it matters:</strong> Closed-loop pole locations determine stability (must be in LHP), speed (further left = faster), and oscillatory behavior (further from real axis = more oscillation).</p>
+        <p><strong>How to read the plot:</strong></p>
+        <p>&#8226; Branches start at open-loop <strong>poles</strong> (<strong style="color:var(--warn);">&#10005;</strong>) when K=0<br>
+        &#8226; Branches end at open-loop <strong>zeros</strong> (<strong style="color:var(--accent);">&#9675;</strong>) when K&#8594;&#8734;<br>
+        &#8226; Extra branches (n&#8209;m of them) go to infinity along asymptotes<br>
+        &#8226; The <strong style="color:var(--pink);">dashed magenta line</strong> is the stability boundary (Im axis)</p>
+        <p><strong>Key rules (Evans, 1948):</strong><br>
+        &#8226; n branches, where n = number of open-loop poles<br>
+        &#8226; Branches lie on the real axis to the <em>left</em> of an odd number of real poles+zeros<br>
+        &#8226; Branches are symmetric about the real axis<br>
+        &#8226; Asymptote angles: &#952;<sub>k</sub> = (2k+1)&#960;/(n&#8209;m), centroid: &#963;<sub>a</sub> = (&#931;p<sub>i</sub> &#8209; &#931;z<sub>j</sub>)/(n&#8209;m)</p>
+        <p><strong>Try this:</strong> Place two poles at &#8209;1&#177;j2, then slide K. Watch the branches stay in the LHP — the system is always stable. Now place a third pole at &#8209;5 and watch branches cross into the RHP at some K.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="plot-rl" id="plotRL">
+    <div class="plot-label">Root Locus — s‑Plane</div>
+    <div class="metrics" id="metricsRL"></div>
+    <canvas id="canvasRL"></canvas>
+  </div>
+
+  <div class="plot-step" id="plotStep">
+    <div class="plot-label">Step Response at Current K</div>
+    <div class="metrics" id="metricsStep"></div>
+    <canvas id="canvasStep"></canvas>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span id="insightIcon">&#128161;</span> <span id="insightText">Click on the s‑plane to place open‑loop poles and zeros, then slide K to trace the root locus.</span>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   DOM REFERENCES
+   ═══════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const canvasRL = $('canvasRL'), canvasStep = $('canvasStep');
+const ctxRL = canvasRL.getContext('2d'), ctxStep = canvasStep.getContext('2d');
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════════════════ */
+let olPoles = [];   // {re, im} — open-loop poles
+let olZeros = [];   // {re, im} — open-loop zeros
+let placeMode = 'pole'; // 'pole' | 'zero'
+let kGain = 0;      // current gain K (linear mapped from slider)
+let kMax = 50;      // maximum K (slider ceiling)
+let rlBranches = []; // precomputed root locus branches: array of arrays of {re,im}
+let rlKvals = [];    // K values corresponding to each branch point
+let currentCLPoles = []; // closed-loop poles at current K
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPLEX NUMBER HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function C(re, im) { return { re, im }; }
+function cNeg(a) { return C(-a.re, -a.im); }
+function cAdd(a, b) { return C(a.re + b.re, a.im + b.im); }
+function cSub(a, b) { return C(a.re - b.re, a.im - b.im); }
+function cMul(a, b) { return C(a.re*b.re - a.im*b.im, a.re*b.im + a.im*b.re); }
+function cDiv(a, b) { const d = b.re*b.re + b.im*b.im; return C((a.re*b.re + a.im*b.im)/d, (a.im*b.re - a.re*b.im)/d); }
+function cAbs(a) { return Math.sqrt(a.re*a.re + a.im*a.im); }
+function cDist(a, b) { const dr = a.re - b.re, di = a.im - b.im; return Math.sqrt(dr*dr + di*di); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POLYNOMIAL HELPERS
+   Coefficients stored as arrays of {re,im}, coeff[i] is for s^i.
+   poly[n] is the leading coefficient (highest power).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** Multiply polynomial `a` by (s - root). a is array of {re,im}, root is {re,im}. */
+function polyMulByMonomial(a, root) {
+  // (s - root) means coeffs: [-root, 1]
+  // Result degree: a.length
+  const n = a.length;
+  const b = new Array(n + 1);
+  b[0] = cNeg(cMul(a[0], root)); // a[0] * (-root)
+  for (let i = 1; i < n; i++) {
+    b[i] = cSub(a[i - 1], cMul(a[i], root));
+  }
+  b[n] = a[n - 1]; // leading coeff (was a[n-1], now multiplied by 1)
+  return b;
+}
+
+/** Build polynomial Π(s - roots[i]). roots may be empty. Returns at least [C(1,0)] (poly "1"). */
+function polyFromRoots(roots) {
+  if (roots.length === 0) return [C(1, 0)];
+  let p = [cNeg(roots[0]), C(1, 0)]; // -r0 + s
+  for (let i = 1; i < roots.length; i++) {
+    p = polyMulByMonomial(p, roots[i]);
+  }
+  return p;
+}
+
+/** Evaluate polynomial at complex s using Horner's method. */
+function polyEval(coeffs, s) {
+  let result = coeffs[coeffs.length - 1];
+  for (let i = coeffs.length - 2; i >= 0; i--) {
+    result = cAdd(cMul(result, s), coeffs[i]);
+  }
+  return result;
+}
+
+/** Add two polynomials (pad shorter with zeros). */
+function polyAdd(a, b) {
+  const n = Math.max(a.length, b.length);
+  const r = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const ai = i < a.length ? a[i] : C(0, 0);
+    const bi = i < b.length ? b[i] : C(0, 0);
+    r[i] = cAdd(ai, bi);
+  }
+  // Trim leading zeros
+  while (r.length > 1 && cAbs(r[r.length - 1]) < 1e-14) r.pop();
+  return r;
+}
+
+/** Scale polynomial by complex scalar. */
+function polyScale(coeffs, scalar) {
+  return coeffs.map(c => cMul(c, scalar));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DURAND-KERNER ROOT FINDER
+   Finds all roots of polynomial coeffs (leading coeff is highest power).
+   coeffs[i] is {re,im} for s^i.
+   initGuesses: optional array of initial root estimates.
+   ═══════════════════════════════════════════════════════════════════════ */
+function durandKerner(coeffs, initGuesses, maxIters, tol) {
+  maxIters = maxIters || 200;
+  tol = tol || 1e-10;
+
+  // Normalize: divide by leading coefficient
+  const n = coeffs.length - 1; // degree
+  const lead = coeffs[n];
+  const a = coeffs.map(c => cDiv(c, lead));
+
+  let roots;
+  if (initGuesses && initGuesses.length === n) {
+    roots = initGuesses.map(r => C(r.re, r.im));
+  } else {
+    // Start with points on a circle
+    // Estimate radius using Cauchy's bound
+    let maxMag = 0;
+    for (let i = 0; i < n; i++) {
+      maxMag = Math.max(maxMag, cAbs(a[i]));
+    }
+    const radius = 1 + maxMag;
+    roots = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const angle = (2 * Math.PI * i) / n + 0.4; // offset to avoid real-axis symmetry issues
+      roots[i] = C(radius * Math.cos(angle), radius * Math.sin(angle));
+    }
+  }
+
+  for (let iter = 0; iter < maxIters; iter++) {
+    let maxDelta = 0;
+    for (let k = 0; k < n; k++) {
+      const pVal = polyEval(a, roots[k]);
+      // Product of (roots[k] - roots[j]) for j != k
+      let prod = C(1, 0);
+      for (let j = 0; j < n; j++) {
+        if (j !== k) {
+          prod = cMul(prod, cSub(roots[k], roots[j]));
+        }
+      }
+      if (cAbs(prod) < 1e-16) continue; // degenerate
+      const delta = cDiv(pVal, prod);
+      roots[k] = cSub(roots[k], delta);
+      maxDelta = Math.max(maxDelta, cAbs(delta));
+    }
+    if (maxDelta < tol) break;
+  }
+
+  // Clean up: force real roots with tiny imaginary parts to be pure real
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(roots[i].im) < 1e-8) roots[i] = C(roots[i].re, 0);
+  }
+
+  return roots;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ROOT LOCUS COMPUTATION
+   Computes branches by solving D(s) + K·N(s) = 0 for log-spaced K values.
+   D(s) = Π(s - p_i)    (degree n = number of OL poles)
+   N(s) = Π(s - z_j)    (degree m = number of OL zeros)
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeRootLocus(poles, zeros, Kmax, nPts) {
+  nPts = nPts || 250;
+  const n = poles.length;
+  const m = zeros.length;
+
+  if (n === 0) {
+    return { branches: [], kvals: [], centroid: null, asymptoteAngles: [] };
+  }
+
+  // Build D(s) and N(s) polynomials
+  const D = polyFromRoots(poles);
+  const N = polyFromRoots(zeros);
+
+  // Pad N to match D's degree
+  const Npadded = N.slice();
+  while (Npadded.length < D.length) Npadded.push(C(0, 0));
+
+  // Precompute asymptote info
+  let centroid = null, asymptoteAngles = [];
+  if (n > m) {
+    const sumPoles = poles.reduce((a, p) => cAdd(a, p), C(0, 0));
+    const sumZeros = zeros.reduce((a, z) => cAdd(a, z), C(0, 0));
+    const cent = cDiv(cSub(sumPoles, sumZeros), C(n - m, 0));
+    centroid = cent;
+    for (let k = 0; k < n - m; k++) {
+      asymptoteAngles.push((2 * k + 1) * Math.PI / (n - m));
+    }
+  }
+
+  // K values: log-spaced from Kmax*1e-5 to Kmax, plus K=0 at start
+  const kMin = Math.max(1e-10, Kmax * 1e-5);
+  const kvals = [0];
+  for (let i = 0; i < nPts; i++) {
+    const t = i / (nPts - 1);
+    kvals.push(kMin * Math.pow(Kmax / kMin, t));
+  }
+
+  // At K=0, roots = poles
+  const branches = new Array(n);
+  let prevRoots = poles.map(p => C(p.re, p.im));
+
+  // Initial state for each branch
+  for (let i = 0; i < n; i++) {
+    branches[i] = [C(prevRoots[i].re, prevRoots[i].im)];
+  }
+
+  // Track roots forward through increasing K
+  for (let ki = 1; ki < kvals.length; ki++) {
+    const K = kvals[ki];
+    // Build D + K*N
+    const charPoly = new Array(D.length);
+    for (let i = 0; i < D.length; i++) {
+      charPoly[i] = cAdd(D[i], cMul(Npadded[i], C(K, 0)));
+    }
+
+    // Use previous roots as initial guesses
+    const roots = durandKerner(charPoly, prevRoots);
+
+    // Match roots to previous roots (greedy nearest-neighbor) to maintain branch ordering
+    const used = new Array(n).fill(false);
+    const matched = new Array(n).fill(null);
+    for (let bi = 0; bi < n; bi++) {
+      let bestJ = -1, bestDist = Infinity;
+      for (let j = 0; j < n; j++) {
+        if (used[j]) continue;
+        const d = cDist(roots[j], prevRoots[bi]);
+        if (d < bestDist) { bestDist = d; bestJ = j; }
+      }
+      used[bestJ] = true;
+      matched[bi] = roots[bestJ];
+    }
+
+    prevRoots = matched;
+    for (let bi = 0; bi < n; bi++) {
+      branches[bi].push(C(matched[bi].re, matched[bi].im));
+    }
+  }
+
+  return { branches, kvals, centroid, asymptoteAngles };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CLOSED-LOOP POLES AT SPECIFIC K
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeCLPolesAtK(poles, zeros, K) {
+  if (poles.length === 0) return [];
+  const D = polyFromRoots(poles);
+  const N = polyFromRoots(zeros);
+  const Npadded = N.slice();
+  while (Npadded.length < D.length) Npadded.push(C(0, 0));
+
+  const charPoly = new Array(D.length);
+  for (let i = 0; i < D.length; i++) {
+    charPoly[i] = cAdd(D[i], cMul(Npadded[i], C(K, 0)));
+  }
+
+  // For K close to 0, use poles as initial guesses
+  let init = null;
+  if (K < 1e-6) {
+    init = poles.map(p => C(p.re, p.im));
+  }
+  return durandKerner(charPoly, init);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CLOSED-LOOP TF SIMULATION (step response)
+   Build state-space controllable canonical form from:
+     T(s) = K·N(s) / (D(s) + K·N(s))
+   Simulate step input with RK4.
+   ═══════════════════════════════════════════════════════════════════════ */
+function simulateCLStep(poles, zeros, K, tMax, nPts) {
+  if (poles.length === 0) {
+    // No poles — return trivial
+    const t = new Array(nPts), y = new Array(nPts);
+    for (let i = 0; i < nPts; i++) { t[i] = i * tMax / (nPts - 1); y[i] = 0; }
+    return { t, y };
+  }
+
+  const n = poles.length;
+
+  // Build denominator: D(s) + K·N(s)
+  const D = polyFromRoots(poles);
+  const N = polyFromRoots(zeros);
+
+  const denPadded = new Array(Math.max(D.length, N.length));
+  for (let i = 0; i < denPadded.length; i++) {
+    const di = i < D.length ? D[i] : C(0, 0);
+    const ni = i < N.length ? N[i] : C(0, 0);
+    denPadded[i] = cAdd(di, cMul(ni, C(K, 0)));
+  }
+
+  // Numerator: K·N(s)
+  const num = N.map(c => cMul(c, C(K, 0)));
+
+  // Normalize so leading den coeff = 1
+  const lead = denPadded[denPadded.length - 1];
+  const den = denPadded.map(c => cDiv(c, lead));
+  const numN = num.map(c => cDiv(c, lead));
+  // Extend num to same length as den (padding with zeros)
+  while (numN.length < den.length) numN.push(C(0, 0));
+
+  // Degree of the system
+  const deg = den.length - 1;
+
+  // Build controllable canonical form:
+  // A is deg×deg, last row = [-a_0, -a_1, ..., -a_{deg-1}]
+  // B = [0, ..., 0, 1]^T
+  // C = [numN_0, numN_1, ..., numN_{deg-1}]
+  // D = 0
+
+  // For the step response, we need to handle the case where there's a feedthrough term.
+  // T(s) = K*N(s) / (D+KN). If deg(num) < deg(den), D=0.
+  // If deg(num) == deg(den), there's feedthrough. But since N has degree m ≤ n,
+  // and D+KN has degree n, deg(num) = m ≤ n = deg(den). So if m==n, we have feedthrough.
+
+  const hasFeedthrough = (N.length === den.length); // i.e., m == n
+
+  // Build A matrix
+  const A = new Array(deg);
+  for (let i = 0; i < deg; i++) {
+    A[i] = new Array(deg).fill(0);
+    if (i < deg - 1) A[i][i + 1] = 1;
+  }
+  // Last row: -a_0 through -a_{deg-1}
+  for (let j = 0; j < deg; j++) {
+    A[deg - 1][j] = -den[j].re; // coefficients are real (conjugate symmetry guaranteed)
+  }
+
+  // B = [0, ..., 0, 1]
+  const B = new Array(deg).fill(0);
+  B[deg - 1] = 1;
+
+  // C row
+  const Cmat = new Array(deg);
+  for (let j = 0; j < deg; j++) {
+    Cmat[j] = j < numN.length ? numN[j].re : 0;
+  }
+
+  // Feedthrough D
+  const Dmat = hasFeedthrough ? numN[deg].re : 0;
+
+  // RK4 simulation
+  const dt = tMax / (nPts - 1);
+  const t = new Array(nPts), y = new Array(nPts);
+  const x = new Array(deg).fill(0);
+
+  function dxdt(v) {
+    const out = new Array(deg);
+    for (let i = 0; i < deg; i++) {
+      let sum = 0;
+      for (let j = 0; j < deg; j++) sum += A[i][j] * v[j];
+      out[i] = sum + B[i]; // step input r=1
+    }
+    return out;
+  }
+
+  for (let k = 0; k < nPts; k++) {
+    t[k] = k * dt;
+    let yVal = 0;
+    for (let j = 0; j < deg; j++) yVal += Cmat[j] * x[j];
+    yVal += Dmat * 1; // step input
+    y[k] = yVal;
+
+    const k1 = dxdt(x);
+    const x2 = x.map((xi, i) => xi + 0.5 * dt * k1[i]);
+    const k2 = dxdt(x2);
+    const x3 = x.map((xi, i) => xi + 0.5 * dt * k2[i]);
+    const k3 = dxdt(x3);
+    const x4 = x.map((xi, i) => xi + dt * k3[i]);
+    const k4 = dxdt(x4);
+    for (let i = 0; i < deg; i++) x[i] += (dt / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
+  }
+
+  return { t, y };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STEP RESPONSE METRICS
+   ═══════════════════════════════════════════════════════════════════════ */
+function computeMetrics(t, y) {
+  const yMax = Math.max(...y), yMin = Math.min(...y);
+  const yEnd = y[y.length - 1];
+  const osPct = yMax > 1.001 ? (yMax - 1) * 100 : 0;
+  const ssErr = Math.abs(yEnd - 1) * 100;
+
+  let t10 = -1, t90 = -1;
+  for (let i = 0; i < y.length; i++) {
+    if (y[i] >= 0.1 && t10 < 0) t10 = t[i];
+    if (y[i] >= 0.9 && t90 < 0) t90 = t[i];
+  }
+  const tr = (t10 >= 0 && t90 >= 0) ? (t90 - t10) : null;
+
+  let ts = null;
+  for (let i = y.length - 1; i >= 0; i--) {
+    if (Math.abs(y[i] - 1) > 0.02) { ts = i + 1 < y.length ? t[i + 1] : t[i]; break; }
+  }
+
+  return { osPct, ssErr, tr, ts, yMax, yMin, yEnd };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CANVAS HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  }
+  return { w, h, dpr };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DRAW ROOT LOCUS (s‑PLANE)
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawRootLocus() {
+  const container = $('plotRL');
+  const { w, h, dpr } = resizeCanvas(canvasRL, container);
+  const ctx = ctxRL;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  // Determine axis range
+  const allPts = [...olPoles, ...olZeros];
+  // Also include branch points
+  for (const branch of rlBranches) {
+    for (const pt of branch) allPts.push(pt);
+  }
+
+  let span = 5;
+  if (allPts.length > 0) {
+    const maxRe = allPts.reduce((m, p) => Math.max(m, Math.abs(p.re)), 0);
+    const maxIm = allPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
+    span = Math.max(4, maxRe * 1.5, maxIm * 1.5);
+    // Ensure some RHP visible
+    span = Math.max(span, 4);
+  }
+
+  const cx = w / 2, cy = h / 2;
+  const scale = (Math.min(w, h) / 2 - 42) / span;
+
+  function sx(re) { return cx + re * scale; }
+  function sy(im) { return cy - im * scale; }
+
+  // Background
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#161b22'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 0.5;
+  const gridStep = span >= 20 ? 4 : span >= 10 ? 2 : 1;
+  for (let v = -Math.floor(span / gridStep) * gridStep; v <= span; v += gridStep) {
+    // Vertical grid lines
+    ctx.beginPath(); ctx.moveTo(sx(v), 8); ctx.lineTo(sx(v), h - 8); ctx.stroke();
+    // Horizontal grid lines
+    if (v !== 0) {
+      ctx.beginPath(); ctx.moveTo(8, sy(v)); ctx.lineTo(w - 8, sy(v)); ctx.stroke();
+    }
+  }
+
+  // Axes
+  ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1.5;
+  // Re axis
+  ctx.beginPath(); ctx.moveTo(8, cy); ctx.lineTo(w - 8, cy); ctx.stroke();
+  // Im axis
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h - 8); ctx.stroke();
+
+  // Imaginary axis emphasis (stability boundary)
+  ctx.strokeStyle = 'rgba(248,81,73,0.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(cx, 8); ctx.lineTo(cx, h - 8); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // RHP shading
+  ctx.fillStyle = 'rgba(248,81,73,0.04)';
+  ctx.fillRect(cx, 8, sx(span) - cx, h - 16);
+
+  // Axis labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  const labelStep = gridStep >= 4 ? gridStep : gridStep * 2;
+  for (let v = -Math.floor(span / labelStep) * labelStep; v <= span; v += labelStep) {
+    if (v !== 0) ctx.fillText(v, sx(v), cy + 15);
+  }
+  ctx.textAlign = 'right';
+  for (let v = -Math.floor(span / labelStep) * labelStep; v <= span; v += labelStep) {
+    if (v !== 0) ctx.fillText(v, cx - 6, sy(v) + 4);
+  }
+  ctx.fillText('Re', w - 14, cy + 15);
+  ctx.fillText('Im', cx - 6, 14);
+
+  // Asymptotes
+  if (rlBranches._centroid && rlBranches._asymptoteAngles && rlBranches._asymptoteAngles.length > 0) {
+    const cent = rlBranches._centroid;
+    const { _asymptoteAngles: angs } = rlBranches;
+    const len = span * scale * 0.95;
+    ctx.strokeStyle = 'rgba(139,148,158,0.4)'; ctx.lineWidth = 0.8; ctx.setLineDash([3, 5]);
+    for (const ang of angs) {
+      ctx.beginPath();
+      ctx.moveTo(sx(cent.re), sy(cent.im));
+      ctx.lineTo(sx(cent.re) + len * Math.cos(ang), sy(cent.im) - len * Math.sin(ang));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // Centroid marker
+    ctx.fillStyle = 'rgba(139,148,158,0.6)';
+    ctx.beginPath(); ctx.arc(sx(cent.re), sy(cent.im), 3.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = '#8b949e';
+    ctx.textAlign = 'left';
+    ctx.fillText('\u03c3' + '_a=' + cent.re.toFixed(2), sx(cent.re) + 6, sy(cent.im) - 4);
+  }
+
+  // Root locus branches
+  for (let bi = 0; bi < rlBranches.length; bi++) {
+    const branch = rlBranches[bi];
+    if (branch.length < 2) continue;
+    // Draw as a connected path
+    ctx.strokeStyle = 'rgba(88,166,255,0.6)'; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < branch.length; i++) {
+      const px = sx(branch[i].re), py = sy(branch[i].im);
+      if (Math.abs(px) < 1e6 && Math.abs(py) < 1e6) {
+        if (!started) { ctx.moveTo(px, py); started = true; }
+        else ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+  }
+
+  // Current K marker on branches: interpolate to find CL pole positions
+  // Highlight current CL poles
+  const clPoles = currentCLPoles;
+  if (clPoles.length > 0) {
+    // Draw filled diamonds at current CL pole locations
+    for (const p of clPoles) {
+      const sz = 6;
+      const px = sx(p.re), py = sy(p.im);
+      // Glow
+      ctx.fillStyle = p.re > 0.01 ? 'rgba(248,81,73,0.5)' : 'rgba(88,166,255,0.5)';
+      ctx.beginPath(); ctx.arc(px, py, sz + 4, 0, 2 * Math.PI); ctx.fill();
+      // Diamond
+      ctx.fillStyle = p.re > 0.01 ? '#f85149' : '#79c0ff';
+      ctx.beginPath();
+      ctx.moveTo(px, py - sz); ctx.lineTo(px + sz, py);
+      ctx.lineTo(px, py + sz); ctx.lineTo(px - sz, py);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Open-loop poles (× markers)
+  for (const p of olPoles) {
+    const sz = 7;
+    const px = sx(p.re), py = sy(p.im);
+    ctx.strokeStyle = '#f85149'; ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(px - sz, py - sz); ctx.lineTo(px + sz, py + sz);
+    ctx.moveTo(px + sz, py - sz); ctx.lineTo(px - sz, py + sz);
+    ctx.stroke();
+  }
+
+  // Open-loop zeros (○ markers)
+  for (const z of olZeros) {
+    const sz = 6;
+    const px = sx(z.re), py = sy(z.im);
+    ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(px, py, sz, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Legend
+  const lx = 16, ly = 18;
+  ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+
+  // OL pole legend
+  ctx.strokeStyle = '#f85149'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx, ly - 3); ctx.lineTo(lx + 8, ly + 5);
+  ctx.moveTo(lx + 8, ly - 3); ctx.lineTo(lx, ly + 5); ctx.stroke();
+  ctx.fillStyle = '#c9d1d9'; ctx.fillText('OL poles', lx + 14, ly + 4);
+
+  // OL zero legend
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(lx + 4, ly + 18, 5, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillText('OL zeros', lx + 14, ly + 22);
+
+  // Branch legend
+  ctx.strokeStyle = 'rgba(88,166,255,0.6)'; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(lx, ly + 34); ctx.lineTo(lx + 12, ly + 34); ctx.stroke();
+  ctx.fillText('Locus branches', lx + 14, ly + 38);
+
+  // CL pole legend
+  ctx.fillStyle = '#79c0ff';
+  ctx.beginPath(); ctx.moveTo(lx + 4, ly + 48); ctx.lineTo(lx + 8, ly + 54);
+  ctx.lineTo(lx + 4, ly + 60); ctx.lineTo(lx, ly + 54); ctx.closePath(); ctx.fill();
+  ctx.fillText('CL poles (at K)', lx + 14, ly + 58);
+
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DRAW STEP RESPONSE
+   ═══════════════════════════════════════════════════════════════════════ */
+function drawStepResponse() {
+  const container = $('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  const margin = { top: 30, right: 20, bottom: 38, left: 50 };
+  const pw = w - margin.left - margin.right, ph = h - margin.top - margin.bottom;
+
+  // Determine simulation time
+  let tMax = 10;
+  if (currentCLPoles.length > 0) {
+    // Estimate settling time from dominant pole
+    let minAbsRe = Infinity;
+    for (const p of currentCLPoles) {
+      if (p.re < -1e-6) minAbsRe = Math.min(minAbsRe, -p.re);
+    }
+    if (minAbsRe < Infinity && minAbsRe > 0.001) {
+      tMax = Math.max(6, Math.min(30, 6 / minAbsRe));
+    }
+  }
+
+  // Simulate
+  let res;
+  if (olPoles.length > 0 && kGain > 0) {
+    res = simulateCLStep(olPoles, olZeros, kGain, tMax, 600);
+  } else if (olPoles.length > 0) {
+    // K=0: simulate open-loop
+    res = simulateCLStep(olPoles, olZeros, 1e-10, tMax, 600);
+  } else {
+    // No plant: flat line
+    const nPts = 600;
+    res = { t: new Array(nPts), y: new Array(nPts) };
+    for (let i = 0; i < nPts; i++) { res.t[i] = i * tMax / (nPts - 1); res.y[i] = 0; }
+  }
+
+  const metrics = computeMetrics(res.t, res.y);
+
+  // Y range
+  let yMin = -0.3, yMax = 2.2;
+  const dMin = Math.min(...res.y), dMax = Math.max(...res.y);
+  if (dMin < 0) yMin = Math.min(yMin, dMin * 1.3);
+  if (dMax > 2.2) yMax = Math.max(yMax, dMax * 1.2);
+  if (dMax > 20) yMax = Math.min(dMax, 20);
+
+  function tx(t) { return margin.left + (t / tMax) * pw; }
+  function tY(yv) { return margin.top + ph - ((yv - yMin) / (yMax - yMin)) * ph; }
+
+  // Background
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#161b22'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= tMax; i += Math.max(1, Math.ceil(tMax / 6))) {
+    ctx.beginPath(); ctx.moveTo(tx(i), margin.top); ctx.lineTo(tx(i), margin.top + ph); ctx.stroke();
+  }
+  const yStep = (yMax - yMin) > 5 ? 1 : 0.5;
+  for (let yv = Math.ceil(yMin / yStep) * yStep; yv <= yMax; yv += yStep) {
+    if (Math.abs(yv - 1) < 0.001) continue;
+    ctx.beginPath(); ctx.moveTo(margin.left, tY(yv)); ctx.lineTo(margin.left + pw, tY(yv)); ctx.stroke();
+  }
+  // y=1 reference
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(margin.left, tY(1)); ctx.lineTo(margin.left + pw, tY(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top + ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top + ph); ctx.lineTo(margin.left + pw, margin.top + ph); ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= tMax; i += Math.max(1, Math.ceil(tMax / 6))) {
+    ctx.fillText(i.toFixed(i < 1 ? 1 : 0), tx(i), margin.top + ph + 16);
+  }
+  ctx.fillText('Time [s]', margin.left + pw / 2, margin.top + ph + 34);
+  ctx.textAlign = 'right';
+  for (let yv = Math.ceil(yMin / yStep) * yStep; yv <= yMax; yv += yStep) {
+    ctx.fillText(yv.toFixed(yStep < 0.5 ? 2 : 1), margin.left - 8, tY(yv) + 4);
+  }
+  ctx.save();
+  ctx.translate(14, margin.top + ph / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Output', 0, 0);
+  ctx.restore();
+
+  // Step response trace
+  const hasUnstable = currentCLPoles.some(p => p.re > 0.01);
+  const traceColor = hasUnstable ? '#f85149' : '#58a6ff';
+  ctx.strokeStyle = traceColor; ctx.lineWidth = 2.5;
+  ctx.shadowColor = traceColor; ctx.shadowBlur = hasUnstable ? 6 : 3;
+  ctx.beginPath();
+  for (let i = 0; i < res.t.length; i++) {
+    const sx = tx(res.t[i]), sy = tY(Math.max(yMin, Math.min(yMax, res.y[i])));
+    i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Metrics overlay HTML
+  let mHtml = '';
+  if (metrics.osPct > 0.1) mHtml += '<span class="metric" style="color:var(--warn);">OS ' + metrics.osPct.toFixed(1) + '%</span>';
+  if (metrics.ssErr > 0.5) mHtml += '<span class="metric" style="color:var(--orange);">SS err ' + metrics.ssErr.toFixed(1) + '%</span>';
+  if (metrics.tr !== null) mHtml += '<span class="metric">t\u1D63 ' + metrics.tr.toFixed(2) + 's</span>';
+  if (metrics.ts !== null) mHtml += '<span class="metric">t\u209B ' + metrics.ts.toFixed(2) + 's</span>';
+  if (hasUnstable) mHtml += '<span class="metric" style="color:var(--warn);">UNSTABLE</span>';
+  $('metricsStep').innerHTML = mHtml;
+
+  ctx.restore();
+  return metrics;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FULL UPDATE
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateAll() {
+  // Compute root locus branches
+  const rl = computeRootLocus(olPoles, olZeros, kMax, 250);
+  rlBranches = rl.branches;
+  rlKvals = rl.kvals;
+  rlBranches._centroid = rl.centroid;
+  rlBranches._asymptoteAngles = rl.asymptoteAngles;
+
+  // Compute closed-loop poles at current K
+  currentCLPoles = computeCLPolesAtK(olPoles, olZeros, kGain);
+
+  // Draw
+  drawRootLocus();
+  const metrics = drawStepResponse();
+
+  // Update readout
+  updateCLPoleReadout();
+  updateInsight(metrics);
+  updateRLMetrics();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   READOUT HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+function fmtC(p) {
+  if (Math.abs(p.im) < 0.001) return p.re.toFixed(2);
+  const sign = p.im >= 0 ? '+' : '\u2212';
+  return p.re.toFixed(2) + ' ' + sign + ' j' + Math.abs(p.im).toFixed(2);
+}
+
+function updateCLPoleReadout() {
+  const container = $('clPoleReadout');
+  let html = '';
+  if (currentCLPoles.length === 0) {
+    html = '<div class="readout-item"><div class="rv">&mdash;</div><div class="rl">No poles placed</div></div>';
+  } else {
+    for (let i = 0; i < Math.min(currentCLPoles.length, 6); i++) {
+      const p = currentCLPoles[i];
+      const isUnstable = p.re > 0.005;
+      const color = isUnstable ? 'var(--warn)' : 'var(--accent)';
+      html += '<div class="readout-item"><div class="rv" style="font-size:12px;color:' + color + '">' + fmtC(p) + '</div><div class="rl">CL Pole ' + (i + 1) + '</div></div>';
+    }
+  }
+  container.innerHTML = html;
+}
+
+function updateRLMetrics() {
+  let mHtml = '';
+  mHtml += '<span class="metric">n=' + olPoles.length + '</span>';
+  mHtml += '<span class="metric">m=' + olZeros.length + '</span>';
+  if (currentCLPoles.length > 0) {
+    const nRHP = currentCLPoles.filter(p => p.re > 0.005).length;
+    mHtml += '<span class="metric" style="color:' + (nRHP > 0 ? 'var(--warn)' : 'var(--accent)') + ';">RHP=' + nRHP + '</span>';
+  }
+  $('metricsRL').innerHTML = mHtml;
+}
+
+function updateInsight(metrics) {
+  const msgs = [];
+  const hasUnstable = currentCLPoles.some(p => p.re > 0.01);
+
+  if (hasUnstable) {
+    $('warnBadge').classList.add('show');
+    msgs.push('RHP poles detected — system is UNSTABLE at this gain. Reduce K or add compensation.');
+  } else {
+    $('warnBadge').classList.remove('show');
+  }
+
+  if (olPoles.length === 0) {
+    msgs.push('Click on the s‑plane to place open‑loop poles (×) and zeros (○). Then slide K to see the root locus.');
+  } else if (olPoles.length === 1 && olZeros.length === 0) {
+    msgs.push('One pole — the root locus is a single branch on the real axis moving left as K increases.');
+  } else if (kGain < 0.001 && olPoles.length > 0) {
+    msgs.push('At K≈0, closed-loop poles sit at the open-loop pole locations. Increase K to see them move.');
+  } else if (hasUnstable) {
+    msgs.push('At least one closed-loop pole is in the RHP. The step response grows without bound.');
+  } else if (metrics && metrics.osPct > 0.1) {
+    msgs.push('Overshoot = ' + metrics.osPct.toFixed(1) + '%. Complex poles create oscillatory response — increase damping by adding a zero or reducing K.');
+  } else if (metrics && metrics.ssErr > 2) {
+    msgs.push('Steady-state error = ' + metrics.ssErr.toFixed(1) + '%. Add a pole at the origin (integrator) to eliminate SSE.');
+  } else if (currentCLPoles.length >= 3 && !hasUnstable) {
+    msgs.push('Third-order system — the extra pole pulls branches toward the RHP at higher gains.');
+  }
+
+  if (msgs.length === 0) {
+    msgs.push('Stable response. Experiment with different pole/zero placements to see how the root locus changes.');
+  }
+
+  $('insightText').textContent = msgs.join(' · ');
+  $('insightIcon').textContent = hasUnstable ? '\u26A0\uFE0F' : '\uD83D\uDCA1';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRESETS
+   ═══════════════════════════════════════════════════════════════════════ */
+const presets = {
+  twoPole: {
+    poles: [C(-1, 2), C(-1, -2)],
+    zeros: [],
+    kMax: 20,
+    description: '2 Poles at \u22121\u00B1j2'
+  },
+  threePole: {
+    poles: [C(-1, 2), C(-1, -2), C(-4, 0)],
+    zeros: [],
+    kMax: 50,
+    description: '3 Poles at \u22121\u00B1j2, \u22124'
+  },
+  poleZero: {
+    poles: [C(-1, 2), C(-1, -2)],
+    zeros: [C(-3, 0)],
+    kMax: 30,
+    description: '2 Poles at \u22121\u00B1j2, Zero at \u22123'
+  },
+  rhpPole: {
+    poles: [C(1, 1.5), C(1, -1.5)],
+    zeros: [],
+    kMax: 30,
+    description: 'RHP Poles at +1\u00B1j1.5'
+  },
+  complexPair: {
+    poles: [C(-0.5, 3), C(-0.5, -3)],
+    zeros: [C(-2, 1.5), C(-2, -1.5)],
+    kMax: 40,
+    description: '2 Poles at \u22120.5\u00B1j3, 2 Zeros at \u22122\u00B1j1.5'
+  }
+};
+
+function loadPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  olPoles = p.poles.map(pt => C(pt.re, pt.im));
+  olZeros = p.zeros.map(pt => C(pt.re, pt.im));
+  kMax = p.kMax;
+  $('kMax').value = kMax;
+  $('kMaxVal').textContent = kMax;
+  // Reset K to 0
+  $('kGain').value = 0;
+  kGain = 0;
+  $('kGainVal').textContent = '0.00';
+  updateAll();
+  updatePresetHighlight();
+}
+
+function updatePresetHighlight() {
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    const name = b.dataset.preset;
+    const p = presets[name];
+    if (!p) { b.classList.remove('active'); return; }
+    // Match poles and zeros
+    const polesMatch = p.poles.length === olPoles.length &&
+      p.poles.every(pp => olPoles.some(op => Math.abs(op.re - pp.re) < 0.01 && Math.abs(op.im - pp.im) < 0.01));
+    const zerosMatch = p.zeros.length === olZeros.length &&
+      p.zeros.every(pz => olZeros.some(oz => Math.abs(oz.re - pz.re) < 0.01 && Math.abs(oz.im - pz.im) < 0.01));
+    b.classList.toggle('active', polesMatch && zerosMatch);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVENT HANDLERS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// Canvas click: place pole or zero
+canvasRL.addEventListener('click', (e) => {
+  const container = $('plotRL');
+  const rect = container.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+  // Convert to s-plane coordinates
+  const { w, h } = resizeCanvas(canvasRL, container);
+  const dpr = window.devicePixelRatio || 1;
+  const displayW = w / dpr, displayH = h / dpr;
+  const cx = displayW / 2, cy = displayH / 2;
+
+  // Determine span (same logic as drawRootLocus)
+  const allPts = [...olPoles, ...olZeros];
+  let span = 5;
+  if (allPts.length > 0) {
+    const maxRe = allPts.reduce((m, p) => Math.max(m, Math.abs(p.re)), 0);
+    const maxIm = allPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
+    span = Math.max(4, maxRe * 1.5, maxIm * 1.5);
+  }
+  const scale = (Math.min(displayW, displayH) / 2 - 42) / span;
+
+  const re = (x - cx) / scale;
+  const im = (cy - y) / scale;
+
+  // Snap to grid for cleaner values
+  const snappedRe = Math.round(re * 10) / 10;
+  const snappedIm = Math.round(im * 10) / 10;
+
+  // Snap close-to-real-axis placements to real axis
+  const finalIm = Math.abs(snappedIm) < 0.3 ? 0 : snappedIm;
+
+  if (placeMode === 'pole') {
+    olPoles.push(C(snappedRe, finalIm));
+    // Enforce conjugate symmetry for complex poles
+    if (Math.abs(finalIm) > 0.001) {
+      olPoles.push(C(snappedRe, -finalIm));
+    }
+  } else {
+    olZeros.push(C(snappedRe, finalIm));
+    if (Math.abs(finalIm) > 0.001) {
+      olZeros.push(C(snappedRe, -finalIm));
+    }
+  }
+
+  updateAll();
+  updatePresetHighlight();
+});
+
+// Mode buttons
+$('modePole').addEventListener('click', () => {
+  placeMode = 'pole';
+  $('modePole').classList.add('active');
+  $('modeZero').classList.remove('active');
+  $('cursorHint').textContent = 'Click on the s‑plane to place an open‑loop pole';
+});
+$('modeZero').addEventListener('click', () => {
+  placeMode = 'zero';
+  $('modeZero').classList.add('active');
+  $('modePole').classList.remove('active');
+  $('cursorHint').textContent = 'Click on the s‑plane to place an open‑loop zero';
+});
+
+// Clear all
+$('btnClear').addEventListener('click', () => {
+  olPoles = [];
+  olZeros = [];
+  kGain = 0;
+  $('kGain').value = 0;
+  $('kGainVal').textContent = '0.00';
+  updateAll();
+  updatePresetHighlight();
+});
+
+// Undo last placement
+$('btnUndo').addEventListener('click', () => {
+  if (placeMode === 'pole' && olPoles.length > 0) {
+    // Remove last pole (and its conjugate if complex)
+    const last = olPoles[olPoles.length - 1];
+    if (Math.abs(last.im) > 0.001 && olPoles.length >= 2) {
+      const secondLast = olPoles[olPoles.length - 2];
+      if (Math.abs(secondLast.im + last.im) < 0.001 && Math.abs(secondLast.re - last.re) < 0.001) {
+        olPoles.pop(); olPoles.pop();
+      } else {
+        olPoles.pop();
+      }
+    } else {
+      olPoles.pop();
+    }
+  } else if (placeMode === 'zero' && olZeros.length > 0) {
+    const last = olZeros[olZeros.length - 1];
+    if (Math.abs(last.im) > 0.001 && olZeros.length >= 2) {
+      const secondLast = olZeros[olZeros.length - 2];
+      if (Math.abs(secondLast.im + last.im) < 0.001 && Math.abs(secondLast.re - last.re) < 0.001) {
+        olZeros.pop(); olZeros.pop();
+      } else {
+        olZeros.pop();
+      }
+    } else {
+      olZeros.pop();
+    }
+  }
+  updateAll();
+  updatePresetHighlight();
+});
+
+// K gain slider
+$('kGain').addEventListener('input', () => {
+  const sliderVal = $('kGain').valueAsNumber;
+  // Map slider 0-1000 to K linearly: K = sliderVal/1000 * kMax
+  kGain = (sliderVal / 1000) * kMax;
+  $('kGainVal').textContent = kGain < 0.01 ? '0.00' : kGain.toFixed(kGain < 1 ? 3 : 2);
+  updateAll();
+  updatePresetHighlight();
+});
+
+// K max slider
+$('kMax').addEventListener('input', () => {
+  kMax = $('kMax').valueAsNumber;
+  $('kMaxVal').textContent = kMax;
+  // Recompute K from slider
+  const sliderVal = $('kGain').valueAsNumber;
+  kGain = (sliderVal / 1000) * kMax;
+  $('kGainVal').textContent = kGain < 0.01 ? '0.00' : kGain.toFixed(kGain < 1 ? 3 : 2);
+  updateAll();
+  updatePresetHighlight();
+});
+
+// Preset buttons
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    loadPreset(btn.dataset.preset);
+  });
+});
+
+// Help toggle
+$('helpToggle').addEventListener('click', () => {
+  const body = $('helpBody');
+  const toggle = $('helpToggle');
+  if (body.classList.contains('show')) {
+    body.classList.remove('show');
+    toggle.innerHTML = '&#9654; What is a Root Locus?';
+  } else {
+    body.classList.add('show');
+    toggle.innerHTML = '&#9660; What is a Root Locus?';
+  }
+});
+
+// Resize
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(updateAll, 100);
+});
+
+// Touch events for mobile: prevent default only on canvas to allow sidebar scrolling
+canvasRL.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  // Simulate click
+  const click = new MouseEvent('click', {
+    clientX: touch.clientX,
+    clientY: touch.clientY
+  });
+  canvasRL.dispatchEvent(click);
+}, { passive: false });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOOT: Load default preset
+   ═══════════════════════════════════════════════════════════════════════ */
+loadPreset('twoPole');
+</script>
+</body>
+</html>
