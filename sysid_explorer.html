@@ -1108,9 +1108,19 @@ $('btnExcite').addEventListener('click', () => {
 });
 
 $('btnFit').addEventListener('click', () => {
-  if (!state.yTrue) excitePlant();
-  fitModel();
-  drawAll();
+  $('btnFit').textContent = 'Fitting…';
+  $('btnFit').disabled = true;
+  // Run asynchronously so the browser can update the UI
+  setTimeout(() => {
+    try {
+      if (!state.yTrue) excitePlant();
+      fitModel();
+      drawAll();
+    } finally {
+      $('btnFit').textContent = 'Fit Model';
+      $('btnFit').disabled = false;
+    }
+  }, 10);
 });
 
 // Sliders
