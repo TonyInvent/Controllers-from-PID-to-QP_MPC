@@ -572,10 +572,11 @@ function simulateCLStep(poles, zeros, K, tMax, nPts) {
 
 /* ═══════════════════════════════════════════════════════════════════════
    STEP RESPONSE METRICS
-   ═══════════════════════════════════════════════════════════════════════ */
 function computeMetrics(t, y) {
-  const yMax = Math.max(...y), yMin = Math.min(...y);
-  const yEnd = y[y.length - 1];
+  // Clamp against unstable/overflow responses
+  const clampY = y.map(v => isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : 0);
+  const yMax = Math.max(...clampY), yMin = Math.min(...clampY);
+  const yEnd = clampY[clampY.length - 1];
   const osPct = yMax > 1.001 ? (yMax - 1) * 100 : 0;
   const ssErr = Math.abs(yEnd - 1) * 100;
 
@@ -835,14 +836,15 @@ function drawStepResponse() {
 
   // Y range
   let yMin = -0.3, yMax = 2.2;
-  const dMin = Math.min(...res.y), dMax = Math.max(...res.y);
-  if (dMin < 0) yMin = Math.min(yMin, dMin * 1.3);
-  if (dMax > 2.2) yMax = Math.max(yMax, dMax * 1.2);
-  if (dMax > 20) yMax = Math.min(dMax, 20);
+  const finiteY = res.y.filter(v => isFinite(v));
+  if (finiteY.length > 0) {
+    const dMin = Math.min(...finiteY), dMax = Math.max(...finiteY);
+    if (dMin < 0) yMin = Math.min(yMin, dMin * 1.3);
+    if (dMax > 2.2) yMax = Math.max(yMax, Math.min(dMax, 20));
+  }
 
   function tx(t) { return margin.left + (t / tMax) * pw; }
-  function tY(yv) { return margin.top + ph - ((yv - yMin) / (yMax - yMin)) * ph; }
-
+  function tY(yv) { const denom = Math.max(yMax - yMin, 0.001); return margin.top + ph - ((yv - yMin) / denom) * ph; }
   // Background
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#161b22'; ctx.fillRect(0, 0, w, h);
