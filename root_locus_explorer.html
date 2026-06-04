@@ -210,6 +210,7 @@ const ctxRL = canvasRL.getContext('2d'), ctxStep = canvasStep.getContext('2d');
    ═══════════════════════════════════════════════════════════════════════ */
 let olPoles = [];   // {re, im} — open-loop poles
 let olZeros = [];   // {re, im} — open-loop zeros
+let plotSpan = 5;   // current axis range — only grows, never shrinks
 let placeMode = 'pole'; // 'pole' | 'zero'
 let kGain = 0;      // current gain K (linear mapped from slider)
 let kMax = 50;      // maximum K (slider ceiling)
@@ -615,22 +616,17 @@ function drawRootLocus() {
   const { w, h, dpr } = resizeCanvas(canvasRL, container);
   const ctx = ctxRL;
   ctx.save(); ctx.scale(dpr, dpr);
+  // Determine axis range — only grow from pole/zero positions, not branches
+  const directPts = [...olPoles, ...olZeros];
 
-  // Determine axis range
-  const allPts = [...olPoles, ...olZeros];
-  // Also include branch points
-  for (const branch of rlBranches) {
-    for (const pt of branch) allPts.push(pt);
+  if (directPts.length > 0) {
+    const maxRe = directPts.reduce((m, p) => Math.max(m, Math.abs(p.re)), 0);
+    const maxIm = directPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
+    const needed = Math.max(4, maxRe * 1.5, maxIm * 1.5, 4);
+    if (needed > plotSpan) plotSpan = needed;
   }
 
-  let span = 5;
-  if (allPts.length > 0) {
-    const maxRe = allPts.reduce((m, p) => Math.max(m, Math.abs(p.re)), 0);
-    const maxIm = allPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
-    span = Math.max(4, maxRe * 1.5, maxIm * 1.5);
-    // Ensure some RHP visible
-    span = Math.max(span, 4);
-  }
+  const span = plotSpan;
 
   const cx = w / 2, cy = h / 2;
   const scale = (Math.min(w, h) / 2 - 42) / span;
@@ -1047,10 +1043,10 @@ function loadPreset(name) {
   if (!p) return;
   olPoles = p.poles.map(pt => C(pt.re, pt.im));
   olZeros = p.zeros.map(pt => C(pt.re, pt.im));
+  plotSpan = 5; // reset — drawRootLocus will grow as needed
   kMax = p.kMax;
   $('kMax').value = kMax;
   $('kMaxVal').textContent = kMax;
-  // Reset K to 0
   $('kGain').value = 0;
   kGain = 0;
   $('kGainVal').textContent = '0.00';
@@ -1088,14 +1084,8 @@ canvasRL.addEventListener('click', (e) => {
   // NOT device pixels. canvas.width = w*dpr but style.width = w.
   const cx = w / 2, cy = h / 2;
 
-  // Determine span (same logic as drawRootLocus)
-  const allPts = [...olPoles, ...olZeros];
-  let span = 5;
-  if (allPts.length > 0) {
-    const maxRe = allPts.reduce((m, p) => Math.max(m, Math.abs(p.re)), 0);
-    const maxIm = allPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
-    span = Math.max(4, maxRe * 1.5, maxIm * 1.5);
-  }
+  // Use the same span that the plot is currently displaying
+  const span = plotSpan;
   const scale = (Math.min(w, h) / 2 - 42) / span;
 
   const re = (x - cx) / scale;
@@ -1143,6 +1133,7 @@ $('modeZero').addEventListener('click', () => {
 $('btnClear').addEventListener('click', () => {
   olPoles = [];
   olZeros = [];
+  plotSpan = 5;
   kGain = 0;
   $('kGain').value = 0;
   $('kGainVal').textContent = '0.00';
