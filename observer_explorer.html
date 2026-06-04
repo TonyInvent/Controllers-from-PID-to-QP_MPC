@@ -1140,31 +1140,31 @@ function drawEstimationPlot(simResult) {
   }
   ctx.fillText('Time [s]', margin.left + pw/2, h - 2);
 
-  // Legend
-  const legY = 18;
+  // Legend — left-aligned for reliable positioning
+  const legY = 18, legX = margin.left + 4;
   ctx.font = '9px ' + FONT; ctx.textAlign = 'left';
   // True
   ctx.fillStyle = '#06d6a0';
-  ctx.fillRect(w - 170, legY, 10, 2);
-  ctx.fillText('True', w - 155, legY + 3);
+  ctx.fillRect(legX, legY, 10, 2);
+  ctx.fillText('True', legX + 14, legY + 3);
   // Estimated
   ctx.setLineDash([4, 2]);
   ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(w - 115, legY + 1); ctx.lineTo(w - 95, legY + 1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(legX + 55, legY + 1); ctx.lineTo(legX + 75, legY + 1); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = '#ffd166';
-  ctx.fillText('Est', w - 90, legY + 3);
+  ctx.fillText('Est', legX + 80, legY + 3);
   // Open-loop
   ctx.setLineDash([2, 3]);
   ctx.strokeStyle = '#f72585'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(w - 60, legY + 1); ctx.lineTo(w - 40, legY + 1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(legX + 115, legY + 1); ctx.lineTo(legX + 135, legY + 1); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = '#f72585';
-  ctx.fillText('OL', w - 36, legY + 3);
+  ctx.fillText('OL', legX + 140, legY + 3);
   // Measurement
   ctx.fillStyle = '#4cc9f0';
-  ctx.beginPath(); ctx.arc(w - 15, legY + 1, 2.5, 0, 2*Math.PI); ctx.fill();
-  ctx.fillText('Meas', w - 10, legY + 3);
+  ctx.beginPath(); ctx.arc(legX + 165, legY + 1, 2.5, 0, 2*Math.PI); ctx.fill();
+  ctx.fillText('Meas', legX + 172, legY + 3);
 
   ctx.restore();
 }
