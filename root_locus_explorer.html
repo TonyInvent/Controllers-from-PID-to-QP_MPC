@@ -1084,9 +1084,9 @@ canvasRL.addEventListener('click', (e) => {
 
   // Convert to s-plane coordinates
   const { w, h } = resizeCanvas(canvasRL, container);
-  const dpr = window.devicePixelRatio || 1;
-  const displayW = w / dpr, displayH = h / dpr;
-  const cx = displayW / 2, cy = displayH / 2;
+  // w and h are already CSS pixel dimensions (from getBoundingClientRect),
+  // NOT device pixels. canvas.width = w*dpr but style.width = w.
+  const cx = w / 2, cy = h / 2;
 
   // Determine span (same logic as drawRootLocus)
   const allPts = [...olPoles, ...olZeros];
@@ -1096,7 +1096,7 @@ canvasRL.addEventListener('click', (e) => {
     const maxIm = allPts.reduce((m, p) => Math.max(m, Math.abs(p.im)), 0);
     span = Math.max(4, maxRe * 1.5, maxIm * 1.5);
   }
-  const scale = (Math.min(displayW, displayH) / 2 - 42) / span;
+  const scale = (Math.min(w, h) / 2 - 42) / span;
 
   const re = (x - cx) / scale;
   const im = (cy - y) / scale;
