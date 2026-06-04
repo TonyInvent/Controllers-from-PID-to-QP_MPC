@@ -62,24 +62,24 @@ print(f"  DC gain = {float(ct.dcgain(G)):.3f}  → steady-state error = "
 # 3. Lead compensator — add phase near the crossover
 # ═══════════════════════════════════════════════════════════════════
 #
-# Lead:  C(s) = Kc · (α τ s + 1) / (τ s + 1),   α > 1
+# Lead:  C(s) = Kc · (τ s + 1) / (α τ s + 1),   0 < α < 1
 #
-# The phase boost peaks at ω_max = 1/(τ√α), height = arcsin((α−1)/(α+1)).
-# We want ≈ 50° extra phase at ω_max ≈ 1.5× the bare crossover, so the
-# compensated crossover moves up → faster response.
+# Zero at −1/τ, pole at −1/(ατ). α<1 ⇒ pole further from origin ⇒ phase lead.
+# Phase boost peaks at ω_max = 1/(τ√α), height = arcsin((1−α)/(1+α)).
+# We want ≈ 50° extra phase at ω_max ≈ 1.5× bare crossover.
 
 
 def design_lead(plant, desired_pm_extra=50, crossover_mult=1.5):
     """Return C_lead(s) and a diagnostics dict."""
     _, pm0, _, wcp0 = ct.margin(plant)
     phi = np.deg2rad(desired_pm_extra)         # phase boost we want
-    alpha = (1 + np.sin(phi)) / (1 - np.sin(phi))
+    alpha = (1 - np.sin(phi)) / (1 + np.sin(phi))  # 0 < α < 1
     w_max = crossover_mult * wcp0               # centre the bump above current BW
     tau = 1 / (w_max * np.sqrt(alpha))
 
-    num = alpha * tau, 1
-    den = tau, 1
-    C = ct.tf([alpha * tau, 1], [tau, 1])
+    num = tau, 1                               # τs + 1
+    den = alpha * tau, 1                       # ατs + 1
+    C = ct.tf([tau, 1], [alpha * tau, 1])
 
     # Scale so that |C(j wcp0)| ≈ 1 — keep the old crossover gain unchanged
     mag_at_wcp0 = np.abs(ct.evalfr(C, 1j * wcp0))
@@ -103,8 +103,10 @@ print(f"  C_lead(s) = {C_lead}")
 #
 # Lag:  C(s) = Kc · (τ s + 1) / (β τ s + 1),   β > 1
 #
-# The pole is closer to the origin than the zero → low-frequency gain
-# rises by β while the phase dip sits a decade below the crossover.
+# Pole at −1/(βτ) is closer to origin than zero at −1/τ ⇒ phase lag.
+# This is a LOW-PASS: DC gain = 1, HF gain = 1/β. Cascaded with an
+# overall loop gain K, the DC loop gain becomes K (boosted) while the
+# lag rolls off before crossover, preserving PM.
 
 
 def design_lag(plant, dc_gain_boost=10, decade_below=10):
@@ -116,12 +118,9 @@ def design_lag(plant, dc_gain_boost=10, decade_below=10):
     tau = 1 / wz
     C = ct.tf([tau, 1], [beta * tau, 1])
 
-    # Scale to keep the crossover gain unchanged (lag should be transparent
-    # at mid/high frequency)
-    mag_at_wcp0 = np.abs(ct.evalfr(C, 1j * wcp0))
-    # For pure lag, mag_at_wcp0 ≈ 1/β at crossover (since pole dominates zero
-    # above wz).  Compensate so |C(j wcp0)| = 1.
-    C *= beta * mag_at_wcp0
+    # The lag network has |C(jω_cp)| ≈ 1/β at the original crossover.
+    # Boost overall gain by β so the compensated crossover stays near ω_cp.
+    C *= beta
 
     return C, dict(beta=beta, tau=tau, wz=wz)
 

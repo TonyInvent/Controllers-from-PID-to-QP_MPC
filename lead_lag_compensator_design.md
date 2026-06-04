@@ -127,9 +127,7 @@ Now the pole and zero are swapped compared to lead:
 - Zero at $s = -1/T$
 - Pole at $s = -1/(\beta T)$
 
-Since $\beta > 1$, the **pole** is closer to the origin than the zero. At DC ($s = 0$), the gain is 1; at high frequencies, it drops to $1/\beta$. The lag network is a **low-pass** filter — it passes low frequencies and attenuates high frequencies.
-
-By itself, the lag network doesn't boost DC gain. The boost comes from the **overall loop gain** $K$: you set $K$ high enough to meet steady-state accuracy at low frequencies, and the lag rolls off the gain before the crossover so the phase margin isn't destroyed. In the design procedure, the lag is always cascaded with an overall gain $K$ that provides the necessary DC amplification.
+Since $\beta > 1$, the **pole** is closer to the origin than the zero. This is a **low-pass** filter: DC gain = 1, high-frequency gain = $1/\beta$. The lag network itself has unity DC gain — the DC boost comes from the **overall loop gain** $K$, which the lag makes feasible by rolling off before the crossover.
 
 ### 4.2 The trick: place the lag well below the crossover
 
@@ -143,7 +141,7 @@ The solution is simple: **place the zero at least a decade below the crossover f
 
 **Step 2 — Place the zero a decade below crossover.** $\omega_z = \omega_{cp} / 10$, where $\omega_{cp}$ is the bare plant's 0 dB crossover. Then $T = 1/\omega_z$.
 
-**Step 3 — The lag self-compensates.** Since the lag network has unity gain at high frequencies ($|C_{\text{lag}}(j\infty)| = 1/\beta \approx 0$ for large $\beta$), you don't need a separate gain correction at the crossover — the lag is already transparent there.
+**Step 3 — Adjust gain.** The lag attenuates at the crossover by roughly $1/\beta$. Compensate by multiplying by $\beta$ so $|C_{\text{lag}}(j\omega_{cp})| \approx 1$.
 
 ### 4.4 What lag does to the closed loop
 
