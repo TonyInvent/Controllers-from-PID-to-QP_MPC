@@ -840,12 +840,13 @@ function simulateObserver(motor, lqrInfo, obsInfo, noiseAmp, tMax, nPts, noiseEn
 
   // Compute RMSE for each state
   function rmse(trueVals, estVals) {
+    if (!trueVals || trueVals.length === 0) return 0;
     let sum = 0;
     for (let i = 0; i < trueVals.length; i++) {
       const diff = trueVals[i] - estVals[i];
       sum += diff * diff;
     }
-    return Math.sqrt(sum / trueVals.length);
+    return Math.sqrt(sum / trueVals.length) || 0;
   }
 
   return {
@@ -1502,10 +1503,10 @@ function updateAll() {
   const clTMax = Math.max(tMax, 2);
   const clResult = simulateClosedLoop(motor, lqrInfo, obsInfo, noiseEnabled, noiseAmp, clTMax, 600);
 
-  // Display RMSE
-  $('rvErrTheta').textContent = simResult.rmse.theta.toExponential(2);
-  $('rvErrOmega').textContent = simResult.rmse.omega.toExponential(2);
-  $('rvErrCur').textContent = simResult.rmse.i.toExponential(2);
+  // Display RMSE (guard against NaN at extreme settings)
+  $('rvErrTheta').textContent = isNaN(simResult.rmse.theta) ? '—' : simResult.rmse.theta.toExponential(2);
+  $('rvErrOmega').textContent = isNaN(simResult.rmse.omega) ? '—' : simResult.rmse.omega.toExponential(2);
+  $('rvErrCur').textContent = isNaN(simResult.rmse.i) ? '—' : simResult.rmse.i.toExponential(2);
 
   // Badges
   const hasUnstable = obsPoles.some(p => p.re > 0.01);
