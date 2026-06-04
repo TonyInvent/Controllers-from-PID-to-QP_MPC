@@ -289,11 +289,21 @@ function update() {
     }
   }
   // Find -180° crossing and gain margin
+  // Find -180° crossing for gain margin. If phase never crosses -180°
+  // (2nd-order plant asymptotes to -180° from above), find where it's closest.
   let gm = Infinity;
   for (let i = 1; i < omega.length; i++) {
     if (Lphase[i-1] > -180 && Lphase[i] <= -180) { gm = -Lmag[i]; break; }
   }
-
+  if (gm === Infinity) {
+    // Find frequency where phase is closest to -180°
+    let minDist = Infinity, bestM = 0;
+    for (let i = 0; i < omega.length; i++) {
+      const d = Math.abs(Lphase[i] + 180);
+      if (d < minDist) { minDist = d; bestM = -Lmag[i]; }
+    }
+    if (bestM < 0) gm = bestM; // gain margin if we pushed to exactly -180°
+  }
   // DC gain of loop → steady-state error
   const Ldc = cabs(tfEval(c.compNum, c.compDen, 1e-6)) * cabs(tfEval(P.num, P.den, 1e-6));
   const ssErr = 1/(1+Ldc)*100;
