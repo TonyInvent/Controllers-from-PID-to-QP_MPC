@@ -40,9 +40,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); }
 .plot-box { flex: 1; min-height: 0; }
 
 @media (max-width: 800px) {
-  .layout { grid-template-columns: 1fr; }
-  .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
-  .main { min-height: 60vh; }
+  html, body { height: auto; overflow: auto; }
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: none; overflow-y: visible; padding: 10px 10px; }
+  .main { min-height: auto; overflow: visible; }
+  .plot-box { height: min(50vw, 340px); min-height: 260px; }
+  .header { padding: 12px 14px; }
+  .header h1 { font-size: 1rem; }
+  .param-row input[type=range] { height: 6px; min-height: 28px; accent-color: var(--accent); }
+  .param-row input[type=range]::-webkit-slider-thumb { width: 24px; height: 24px; }
+  .param-row label { font-size: 0.78rem; }
+  .param-section h2 { font-size: 0.8rem; }
+  .readout .item .val { font-size: 1.1rem; }
+  .insight, .comp-info { font-size: 0.72rem; }
 }
 </style>
 </head>
