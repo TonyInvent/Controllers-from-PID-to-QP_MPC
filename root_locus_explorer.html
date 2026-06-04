@@ -295,8 +295,8 @@ function polyScale(coeffs, scalar) {
    initGuesses: optional array of initial root estimates.
    ═══════════════════════════════════════════════════════════════════════ */
 function durandKerner(coeffs, initGuesses, maxIters, tol) {
-  maxIters = maxIters || 200;
-  tol = tol || 1e-10;
+  maxIters = maxIters || 50;
+  tol = tol || 1e-8;
 
   // Normalize: divide by leading coefficient
   const n = coeffs.length - 1; // degree
@@ -355,7 +355,7 @@ function durandKerner(coeffs, initGuesses, maxIters, tol) {
    N(s) = Π(s - z_j)    (degree m = number of OL zeros)
    ═══════════════════════════════════════════════════════════════════════ */
 function computeRootLocus(poles, zeros, Kmax, nPts) {
-  nPts = nPts || 250;
+  nPts = nPts || 100;
   const n = poles.length;
   const m = zeros.length;
 
@@ -911,17 +911,18 @@ function drawStepResponse() {
    FULL UPDATE
    ═══════════════════════════════════════════════════════════════════════ */
 function updateAll() {
-  // Compute root locus branches
-  const rl = computeRootLocus(olPoles, olZeros, kMax, 250);
-  rlBranches = rl.branches;
-  rlKvals = rl.kvals;
-  rlBranches._centroid = rl.centroid;
-  rlBranches._asymptoteAngles = rl.asymptoteAngles;
+function updateAll(fullRecompute) {
+  if (fullRecompute !== false) {
+    // Recompute branches — expensive, only when poles/zeros/Kmax change
+    const rl = computeRootLocus(olPoles, olZeros, kMax, 100);
+    rlBranches = rl.branches;
+    rlKvals = rl.kvals;
+    rlBranches._centroid = rl.centroid;
+    rlBranches._asymptoteAngles = rl.asymptoteAngles;
+  }
 
-  // Compute closed-loop poles at current K
+  // Compute closed-loop poles at current K — fast
   currentCLPoles = computeCLPolesAtK(olPoles, olZeros, kGain);
-
-  // Draw
   drawRootLocus();
   const metrics = drawStepResponse();
 
@@ -1174,24 +1175,23 @@ $('btnUndo').addEventListener('click', () => {
 });
 
 // K gain slider
+// K gain slider — fast path: only K changes, don't recompute branches
 $('kGain').addEventListener('input', () => {
   const sliderVal = $('kGain').valueAsNumber;
-  // Map slider 0-1000 to K linearly: K = sliderVal/1000 * kMax
   kGain = (sliderVal / 1000) * kMax;
   $('kGainVal').textContent = kGain < 0.01 ? '0.00' : kGain.toFixed(kGain < 1 ? 3 : 2);
-  updateAll();
+  updateAll(false);
   updatePresetHighlight();
 });
 
-// K max slider
+// K max slider — full recompute needed (branches depend on Kmax)
 $('kMax').addEventListener('input', () => {
   kMax = $('kMax').valueAsNumber;
   $('kMaxVal').textContent = kMax;
-  // Recompute K from slider
   const sliderVal = $('kGain').valueAsNumber;
   kGain = (sliderVal / 1000) * kMax;
   $('kGainVal').textContent = kGain < 0.01 ? '0.00' : kGain.toFixed(kGain < 1 ? 3 : 2);
-  updateAll();
+  updateAll(true);
   updatePresetHighlight();
 });
 
