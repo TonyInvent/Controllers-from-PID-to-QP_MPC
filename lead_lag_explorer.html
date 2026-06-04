@@ -324,9 +324,9 @@ function update() {
   const rampSSErr = 1 / Kv;  // ramp steady-state error = 1/K_v
 
   // ---- Step responses ----
-  const stepComp = simulateStep(c.compNum, c.compDen, 1.5, 600);
+  const stepComp = simulateStep(c.compNum, c.compDen, 10, 600);
   // Bare: C(s) = 1  →  compNum = [1], compDen = [1]
-  const stepBare = simulateStep([1], [1], 1.5, 600);
+  const stepBare = simulateStep([1], [1], 10, 600);
 
   // ====== Bode plot (dual y-axis) ======
   const shapes = [];
@@ -413,7 +413,7 @@ function update() {
       line: { color: '#8b949e', width: 1 }, name: 'bare (C=1)' },
     { x: stepComp.t, y: stepComp.y, type: 'scatter', mode: 'lines',
       line: { color: '#7c4dff', width: 2.2 }, name: 'compensated' },
-    { x: [0, 1.5], y: [1, 1], type: 'scatter', mode: 'lines',
+    { x: [0, 10], y: [1, 1], type: 'scatter', mode: 'lines',
       line: { color: '#8b949e', width: 0.5, dash: 'dot' }, showlegend: false, hoverinfo: 'none' }
   ], {
     paper_bgcolor: '#0d1117', plot_bgcolor: '#0d1117',
