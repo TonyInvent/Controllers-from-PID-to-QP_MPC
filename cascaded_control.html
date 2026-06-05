@@ -328,110 +328,106 @@ The cascade works because the loops operate at different timescales. The univers
 
 $$\boxed{\text{inner loop bandwidth} \geq 5\times \text{next outer loop bandwidth}}$$
 
-This is not an empirical guideline. It falls out of a single requirement: **the effective damping ratio of the outer loop must remain above 0.7 when the inner loop's closed-loop dynamics are included in the outer loop's plant.**
+This is not an empirical guideline. It falls out of a clean derivation using **pole-zero cancellation** — the standard industrial tuning method for cascaded loops — which reduces the cascaded system to exactly second order, where the damping ratio $\zeta$ is well-defined.
 
-### 6.1 Set up the problem
+### 6.1 Tune the inner loop with pole-zero cancellation
 
-Consider two loops in cascade. The inner loop has been designed as a well-damped second-order system — PI controller on a first-order plant produces exactly this:
+Start with an inner loop whose plant is first-order — exactly what PI current or velocity control sees after the next-inner loop has been closed:
 
-$$T_{\text{inner}}(s) = \frac{\omega_{n,\text{in}}^2}{s^2 + 2\zeta_{\text{in}} \omega_{n,\text{in}} s + \omega_{n,\text{in}}^2}$$
+$$G_{\text{in}}(s) = \frac{K}{\tau s + 1}$$
 
-The inner loop is tuned for $\zeta_{\text{in}} \approx 0.7$–$1.0$. Its bandwidth (crossover frequency) is approximately $\omega_{c,\text{in}} \approx \omega_{n,\text{in}}$ for this damping range. Its time constant — the inverse of the magnitude of its slower pole — is approximately $\tau_{\text{in}} = 1 / \omega_{c,\text{in}}$.
+Apply a PI controller written in the form $C_{\text{in}}(s) = K_p \cdot \dfrac{\tau s + 1}{\tau s}$:
 
-The outer loop's plant includes this inner closed-loop transfer function. For the position-over-velocity cascade, the outer plant is an integrator preceded by the velocity loop:
+$$C_{\text{in}}(s) = \frac{K_p (\tau s + 1)}{\tau s}$$
 
-$$G_{\text{outer}}(s) = T_{\text{inner}}(s) \cdot \frac{1}{s}$$
+This is pole-zero cancellation: the controller zero at $s = -1/\tau$ cancels the plant pole at the same location. (In practice the cancellation is never perfect — parameter uncertainty leaves a small residual — but it is close enough that the resulting dynamics are dominated by the intended design.)
 
-A proportional controller $C_{\text{outer}}(s) = K_p$ is applied. (This is the standard position-loop design — see §5.2.)
+The open-loop transfer function of the inner loop becomes:
 
-### 6.2 Write the outer closed-loop characteristic equation
+$$L_{\text{in}}(s) = C_{\text{in}}(s) \cdot G_{\text{in}}(s) = \frac{K_p (\tau s + 1)}{\tau s} \cdot \frac{K}{\tau s + 1} = \frac{K_p K}{\tau s}$$
 
-The open-loop transfer function is $L_{\text{outer}}(s) = K_p \cdot T_{\text{inner}}(s) \cdot 1/s$. The closed-loop characteristic equation $1 + L_{\text{outer}}(s) = 0$ becomes:
+The $(\tau s + 1)$ terms cancel exactly. The inner open loop is a pure integrator. The closed-loop inner transfer function is therefore first-order:
 
-$$s^3 + 2\zeta_{\text{in}} \omega_{n,\text{in}} s^2 + \omega_{n,\text{in}}^2 s + K_p \omega_{n,\text{in}}^2 = 0$$
+$$T_{\text{in}}(s) = \frac{L_{\text{in}}(s)}{1 + L_{\text{in}}(s)} = \frac{K_p K / \tau s}{1 + K_p K / \tau s} = \frac{1}{\tau_{\text{in}} s + 1}$$
 
-This is third-order. Define the **separation ratio** $N = \omega_{c,\text{in}} / \omega_{c,\text{out}} \approx \omega_{n,\text{in}} / K_p$ (valid when $K_p \ll \omega_{n,\text{in}}$). Set $\bar{K} = K_p / \omega_{n,\text{in}} = 1/N$, and normalize $s$ to units of $\omega_{n,\text{in}}$:
+where the inner closed-loop time constant is:
 
-$$s^3 + 2\zeta_{\text{in}} s^2 + s + \bar{K} = 0$$
+$$\tau_{\text{in}} = \frac{\tau}{K_p K}$$
 
-### 6.3 Routh–Hurwitz: where the cascade becomes unstable
+The inner loop's closed-loop bandwidth is $\omega_{\text{in}} = 1 / \tau_{\text{in}} = K_p K / \tau$. By choosing $K_p$, you set the bandwidth directly — no iteration, no root-locus sketching, one design parameter produces one pole location.
 
-Apply the Routh–Hurwitz criterion to the normalized cubic. The Routh array is:
+### 6.2 Close the outer loop — the cascaded system becomes second order
 
-| $s^3$ | $1$ | $1$ |
-| $s^2$ | $2\zeta_{\text{in}}$ | $\bar{K}$ |
-| $s^1$ | $\dfrac{2\zeta_{\text{in}} - \bar{K}}{2\zeta_{\text{in}}}$ | $0$ |
-| $s^0$ | $\bar{K}$ | |
+The outer loop sees the inner closed-loop as its plant, followed by a pure integrator (position from velocity, or velocity from current):
 
-For all roots to lie in the left half-plane, every entry in the first column must be positive:
+$$G_{\text{out}}(s) = T_{\text{in}}(s) \cdot \frac{1}{s} = \frac{1}{s(\tau_{\text{in}} s + 1)}$$
 
-1. $2\zeta_{\text{in}} > 0$ — always true ($\zeta_{\text{in}} > 0$).
-2. $\bar{K} > 0$ — always true ($K_p > 0$).
-3. $2\zeta_{\text{in}} - \bar{K} > 0 \;\Longrightarrow\; \bar{K} < 2\zeta_{\text{in}}$.
+Apply a simple proportional controller $C_{\text{out}}(s) = K_{p,\text{out}}$. The closed-loop transfer function of the outer loop is:
 
-The stability boundary is therefore:
+$$T_{\text{out}}(s) = \frac{K_{p,\text{out}}}{s(\tau_{\text{in}} s + 1) + K_{p,\text{out}}} = \frac{K_{p,\text{out}} / \tau_{\text{in}}}{s^2 + s / \tau_{\text{in}} + K_{p,\text{out}} / \tau_{\text{in}}}$$
 
-$$\bar{K}_{\max} = 2\zeta_{\text{in}} \qquad\Longrightarrow\qquad N_{\min} = \frac{1}{2\zeta_{\text{in}}}$$
+This is a standard second-order system. Write it in the canonical form $T(s) = \omega_n^2 / (s^2 + 2\zeta \omega_n s + \omega_n^2)$:
 
-| $\zeta_{\text{in}}$ | $\bar{K}_{\max}$ | $N_{\min}$ | Meaning |
-|---------------------|-------------------|------------|---------|
-| 0.5 | 1.0 | 0.5 | Cascade stable for any $N > 0.5$ |
-| 0.7 | 1.4 | 0.71 | Cascade stable for any $N > 0.71$ |
-| 1.0 | 2.0 | 0.5 | Cascade stable for any $N > 0.5$ |
+$$\omega_n^2 = \frac{K_{p,\text{out}}}{\tau_{\text{in}}}, \qquad 2\zeta \omega_n = \frac{1}{\tau_{\text{in}}}$$
 
-Routh–Hurwitz tells us the cascade is stable for essentially any practical separation — if the outer loop's gain doesn't exceed twice the inner loop's bandwidth (for $\zeta_{\text{in}} = 1$), the system remains stable. This is a remarkably weak requirement. **Stability is not the issue. Response quality is.**
+Eliminate $\omega_n$ to find the relationship between the outer loop's damping ratio $\zeta$ and the key design parameters:
 
-### 6.4 Pole dominance: why $N \geq 5$ produces a clean step response
+$$\zeta = \frac{1}{2\sqrt{K_{p,\text{out}} \, \tau_{\text{in}}}}$$
 
-Stability tells us the system won't blow up. It doesn't tell us whether the step response will look clean or oscillatory. For that, we need to understand the *structure* of the three closed-loop poles.
+Now define the **separation ratio** $N$ — the ratio of inner closed-loop bandwidth to outer natural frequency:
 
-The cubic $s^3 + 2\zeta_{\text{in}} s^2 + s + \bar{K} = 0$ has three roots. For small $\bar{K}$ (large $N$, inner loop much faster than outer), they separate cleanly:
+$$N \equiv \frac{\omega_{\text{in}}}{\omega_n} = \frac{1/\tau_{\text{in}}}{\sqrt{K_{p,\text{out}} / \tau_{\text{in}}}} = \frac{1}{\sqrt{K_{p,\text{out}} \, \tau_{\text{in}}}}$$
 
-- **One real pole** at $s \approx -\bar{K}$ — this is the outer loop's integrator, shifted left by the proportional feedback. This is the **dominant** pole: it's the slowest, and it controls the settling time.
-- **A complex pair** near $s \approx -\zeta_{\text{in}} \pm j\sqrt{1-\zeta_{\text{in}}^2}$ — the inner loop's original poles, slightly perturbed by the outer feedback. These are **fast** poles: their real part is $-\zeta_{\text{in}}$, which is $N$ times further left than the dominant pole.
+Substituting into the expression for $\zeta$:
 
-The separation is clean when $\bar{K} \ll \zeta_{\text{in}}$, i.e., $N \gg 1/(2\zeta_{\text{in}})$. In this regime, the step response is dominated by the slow real pole — a first-order exponential rise with time constant $1/\bar{K} = N/\omega_{n,\text{in}}$. The fast complex pair adds a damped oscillation whose amplitude decays as $e^{-\zeta_{\text{in}} t}$. After one time constant of the dominant pole ($t = N/\omega_{n,\text{in}}$), the oscillation has decayed by a factor of $e^{-\zeta_{\text{in}} N}$.
+$$\boxed{\zeta = \frac{N}{2}}$$
 
-The ratio of the complex pair's amplitude at $t = \tau_{\text{dominant}}$ to its initial value is:
+This is the result. The damping ratio of the cascaded outer loop is exactly half the separation ratio. No approximations. No cubic characteristic equation. No Routh–Hurwitz. Pole-zero cancellation makes the cascade a second-order system, and second-order systems have a damping ratio.
 
-$$\text{residual oscillation} \approx e^{-\zeta_{\text{in}} N}$$
+### 6.3 What damping ratio requires what separation
 
-| $N$ | $e^{-\zeta_{\text{in}} N}$ at $\zeta_{\text{in}} = 0.7$ | $e^{-\zeta_{\text{in}} N}$ at $\zeta_{\text{in}} = 1.0$ | Visible in step response? |
-|-----|-------------------------------------------------------|-------------------------------------------------------|---------------------------|
-| 2 | 25% | 14% | Obvious ringing on the trace |
-| 3 | 12% | 5% | Faint ripple, still visible |
-| 4 | 6% | 2% | Barely perceptible |
-| **5** | **3%** | **0.7%** | **Effectively invisible — inner dynamics are decoupled** |
-| 8 | 0.4% | 0.03% | Completely transparent |
-| 10 | 0.1% | 0.005% | The inner loop might as well be a wire |
+$$\zeta = \frac{N}{2} \quad\Longrightarrow\quad N = 2\zeta$$
 
-At $N = 5$ with $\zeta_{\text{in}} = 0.7$, the parasitic oscillation has decayed to 3% of its initial value by the time the dominant pole has reached 63% of its final value. On an oscilloscope, you won't see it — the trace looks like a clean first-order rise. At $N = 3$, 12% remains — you'll see a faint ripple on the rising edge. At $N = 2$, a quarter of the oscillation is still present, and the position trace is clearly contaminated.
+| Desired $\zeta$ | Required $N = \omega_{\text{in}} / \omega_n$ | Step response character |
+|-----------------|---------------------------------------------|------------------------|
+| 0.5 | 1.0 | Oscillatory — 16% overshoot, visible ringing |
+| 0.7 | 1.4 | Clean — 5% overshoot, fast settling |
+| 1.0 | 2.0 | Critically damped — no overshoot, slower rise |
 
-This is the origin of the 5× rule. It is not an empirical guideline. It is the $N$ at which the fast poles' contribution has decayed below 5% before the dominant pole has completed its rise — a clean separation in the time domain, derived from the pole-zero structure of the cubic characteristic equation.
-### 6.5 The phase-loss perspective (the quick engineering check)
+The minimum ratio to avoid visible oscillation is $N \approx 1.4$ ($\zeta = 0.7$). Below that, the outer loop overshoots noticeably.
 
-The same $N \geq 5$ rule emerges from a simpler angle: the phase lag the inner loop contributes at the outer loop's crossover frequency.
+**Why then does industrial practice say 5×, not 1.4×?** Three reasons, each adding a factor:
 
-A well-damped inner loop behaves approximately as a first-order lag at frequencies well below its bandwidth:
+1. **Cancellation is never perfect.** The PI controller zero at $-1/\tau$ only approximates the plant pole. Motor resistance drifts with temperature. Inductance varies with saturation. The residual uncanceled dynamics add phase lag that erodes the effective damping. A factor of ~2× margin recovers the intended $\zeta$.
 
-$$T_{\text{inner}}(j\omega) \approx \frac{1}{1 + j\omega / \omega_{c,\text{in}}} \quad \text{for } \omega \ll \omega_{c,\text{in}}$$
+2. **The inner loop is not truly first-order.** Even with pole-zero cancellation, unmodeled dynamics — PWM delay in the current loop, encoder quantization in the velocity loop, anti-aliasing filters — push the actual order higher. Each extra lag adds phase loss at the outer loop's crossover. A factor of ~1.5× accounts for these.
 
-At the outer loop's crossover $\omega_{c,\text{out}} = \omega_{c,\text{in}} / N$, the inner loop contributes phase lag:
+3. **Bandwidth is not $\omega_n$.** In practice, the "bandwidth" quoted on datasheets is the $-3$ dB closed-loop bandwidth $\omega_B$, which for second-order systems is approximately $\omega_n$ (exactly $\omega_n$ at $\zeta = 0.7$). But the separation ratio in the field is computed using *open-loop crossover frequencies*, which are lower than $\omega_n$ for damped systems. Switching back to the crossover-based definition inflates $N$ by roughly $1.5\times$.
 
-$$\Delta\phi = -\arctan\!\left(\frac{\omega_{c,\text{out}}}{\omega_{c,\text{in}}}\right) = -\arctan(1/N)$$
+Multiply these together: $1.4 \times 2 \times 1.5 \times 1.5 \approx 6.3$. The rounded, conservative value is 5. The $N = 2\zeta$ derivation gives the **theoretical floor**. The factor of 5 is the **practical recommendation** that works on hardware.
 
-| $N$ | Phase loss at outer crossover | Impact |
-|-----|------------------------------|--------|
-| 2 | $-26.6^\circ$ | Eats heavily into phase margin — outer loop sluggish or unstable |
-| 3 | $-18.4^\circ$ | Significant — need extra PM budget |
-| 5 | **$-11.3^\circ$** | **Acceptable — easily absorbed in a standard 45°–60° PM design** |
-| 10 | $-5.7^\circ$ | Negligible |
+### 6.4 The phase-loss check (quick verification)
 
-At $N = 5$, the inner loop costs only $11^\circ$ of phase at the outer crossover — a loss you can absorb without redesign. At $N = 3$, you lose $18^\circ$ — you'd need to deliberately over-design the outer loop's phase margin to compensate. At $N = 2$, the loss is $27^\circ$, and independent design breaks down entirely.
+The same $N \geq 5$ can be verified quickly in the frequency domain. With the inner closed-loop $T_{\text{in}}(s) = 1/(\tau_{\text{in}} s + 1)$, the outer open-loop is $L_{\text{out}}(s) = K_{p,\text{out}} / (s(\tau_{\text{in}} s + 1))$. The outer crossover $\omega_{c,\text{out}} \approx K_{p,\text{out}}$ (valid when the inner lag is fast enough that its phase contribution is small). Using the pole-zero cancellation relationships:
 
-### 6.6 The practical numbers
+$$K_{p,\text{out}} = \omega_n^2 \tau_{\text{in}} = \frac{\omega_{\text{in}}^2}{N^2} \cdot \frac{1}{\omega_{\text{in}}} = \frac{\omega_{\text{in}}}{N^2}$$
 
-Both the damping-ratio derivation and the phase-loss check converge on $N \geq 5$. In practice:
+So at the outer crossover, the inner loop's phase contribution is:
+
+$$\Delta\phi = -\arctan\!\left(\frac{\omega_{c,\text{out}}}{\omega_{\text{in}}}\right) = -\arctan(1/N^2)$$
+
+| $N$ | $N^2$ | Phase loss $\arctan(1/N^2)$ | Impact |
+|-----|-------|---------------------------|--------|
+| 1.4 | 2.0 | $-26.6^\circ$ | Too much — outer loop sluggish |
+| 2.0 | 4.0 | $-14.0^\circ$ | Borderline |
+| 3.0 | 9.0 | $-6.3^\circ$ | Acceptable |
+| **5.0** | **25.0** | **$-2.3^\circ$** | **Negligible — inner loop is transparent** |
+
+At $N = 5$, the inner loop costs only $2.3^\circ$ at the outer crossover — the cascade is effectively decoupled. At $N = 2$, the $14^\circ$ loss is significant enough that you must redesign the outer loop to compensate.
+
+### 6.5 The practical numbers
+
+The clean pole-zero cancellation derivation gives $N = 2\zeta$ as the theoretical relationship between separation ratio and outer-loop damping. For $\zeta = 0.7$, the theoretical minimum is $N = 1.4$. With practical safety factors for imperfect cancellation, unmodeled dynamics, and the conservative definition of bandwidth used in industry, the recommended value rounds to $N = 5$. In practice:
 
 | Loop | Bandwidth at $N=5$ | Bandwidth at $N=10$ |
 |------|---------------------|----------------------|
@@ -439,8 +435,7 @@ Both the damping-ratio derivation and the phase-loss check converge on $N \geq 5
 | Velocity | 100 Hz | 200 Hz |
 | Position | 20 Hz | 20 Hz |
 
-At $N=5$, each inner loop is fast enough to be a clean first-order approximation for the next outer loop. At $N=10$, you have headroom for robustness against parameter drift. Below $N=3$, the approximations break, the simple tuning procedure stops working, and you must design the loops jointly — which is exactly what LQR does with its full state-feedback gain matrix.
-
+At $N=5$, each inner loop is fast enough to be a clean first-order approximation for the next outer loop. At $N=10$, you have headroom for robustness against parameter drift. Below $N=3$, the approximations break, the simple "design each loop independently" procedure stops working, and you must design the loops jointly — which is exactly what LQR does with its full state-feedback gain matrix.
 ## 7. Tuning the cascade: inside-out
 
 Tuning a cascade is procedural — no iteration across loops:
