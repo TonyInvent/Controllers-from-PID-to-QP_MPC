@@ -185,49 +185,68 @@ A proportional controller $C_{\text{outer}}(s) = K_p$ is applied. (This is the s
 
 ### 6.2 Write the outer closed-loop characteristic equation
 
-The open-loop transfer function is:
-
-$$L_{\text{outer}}(s) = K_p \cdot \frac{\omega_{n,\text{in}}^2}{s^2 + 2\zeta_{\text{in}} \omega_{n,\text{in}} s + \omega_{n,\text{in}}^2} \cdot \frac{1}{s}$$
-
-The closed-loop characteristic equation $1 + L_{\text{outer}}(s) = 0$ becomes:
+The open-loop transfer function is $L_{\text{outer}}(s) = K_p \cdot T_{\text{inner}}(s) \cdot 1/s$. The closed-loop characteristic equation $1 + L_{\text{outer}}(s) = 0$ becomes:
 
 $$s^3 + 2\zeta_{\text{in}} \omega_{n,\text{in}} s^2 + \omega_{n,\text{in}}^2 s + K_p \omega_{n,\text{in}}^2 = 0$$
 
-This is third-order. The outer loop's gain $K_p$ controls the outer bandwidth. Let's define the **separation ratio** $N$ — the ratio of inner bandwidth to desired outer bandwidth:
-
-$$N \equiv \frac{\omega_{c,\text{in}}}{\omega_{c,\text{out}}} \approx \frac{\omega_{n,\text{in}}}{K_p}$$
-
-(For a critically-damped inner loop and a pure integrator outer plant with proportional control, the outer crossover frequency $\omega_{c,\text{out}} \approx K_p$ when $K_p \ll \omega_{n,\text{in}}$. This is the regime we care about — the inner loop is much faster than the outer.)
-
-### 6.3 The effective damping of the outer loop
-
-The third-order characteristic equation has three poles: one real pole (from the outer integrator) and a complex pair (from the inner loop, shifted by the outer feedback). As $K_p$ increases — as we push the outer bandwidth higher — the real pole moves left, and the complex pair is perturbed.
-
-Define the normalized gain $\bar{K} = K_p / \omega_{n,\text{in}} = 1/N$. The characteristic equation in normalized form:
+This is third-order. Define the **separation ratio** $N = \omega_{c,\text{in}} / \omega_{c,\text{out}} \approx \omega_{n,\text{in}} / K_p$ (valid when $K_p \ll \omega_{n,\text{in}}$). Set $\bar{K} = K_p / \omega_{n,\text{in}} = 1/N$, and normalize $s$ to units of $\omega_{n,\text{in}}$:
 
 $$s^3 + 2\zeta_{\text{in}} s^2 + s + \bar{K} = 0$$
 
-(where $s$ is now in units of $\omega_{n,\text{in}}$). The three roots determine the outer loop's step response. The dominant dynamics — what you actually see on an oscilloscope — are controlled by the slowest pole.
+### 6.3 Routh–Hurwitz: where the cascade becomes unstable
 
-For the outer loop's step response to have **no oscillatory overshoot from the inner loop's residual dynamics**, the complex pair must have $\zeta_{\text{eff}} \geq 0.7$. The effective damping of the perturbed complex pair depends on $\bar{K}$ (equivalently, on $N$). Here is the relationship, obtained by solving the cubic for its complex roots at each $\bar{K}$:
+Apply the Routh–Hurwitz criterion to the normalized cubic. The Routh array is:
 
-| $N$ (separation ratio) | $\bar{K} = 1/N$ | $\zeta_{\text{eff}}$ of perturbed inner poles | Outer step response |
-|------------------------|-----------------|-----------------------------------------------|---------------------|
-| 2 | 0.50 | $\approx 0.45$ | Rippling overshoot — inner loop bleeds through |
-| 3 | 0.33 | $\approx 0.55$ | Visible ringing in the position trace |
-| 4 | 0.25 | $\approx 0.63$ | Marginal — slight overshoot ripple |
-| **5** | **0.20** | **$\approx 0.69$** | **Clean — inner dynamics effectively decoupled** |
-| 8 | 0.125 | $\approx 0.77$ | Excellent — inner loop is essentially transparent |
-| 10 | 0.10 | $\approx 0.82$ | Conservative — safe, but leaves bandwidth on the table |
+| $s^3$ | $1$ | $1$ |
+| $s^2$ | $2\zeta_{\text{in}}$ | $\bar{K}$ |
+| $s^1$ | $\dfrac{2\zeta_{\text{in}} - \bar{K}}{2\zeta_{\text{in}}}$ | $0$ |
+| $s^0$ | $\bar{K}$ | |
 
-At $N = 5$, the perturbed damping crosses $\zeta \approx 0.7$ — the threshold where the step response has negligible overshoot and the inner loop's dynamics are effectively invisible. This is not a coincidence. For a factor of 5 in frequency separation, the dominant real pole (the outer loop's integrator) produces 87% of the step response energy, and the residual complex mode has died out before it can contribute visible oscillation.
+For all roots to lie in the left half-plane, every entry in the first column must be positive:
 
-### 6.4 Why $\zeta = 0.7$ is the magic number
+1. $2\zeta_{\text{in}} > 0$ — always true ($\zeta_{\text{in}} > 0$).
+2. $\bar{K} > 0$ — always true ($K_p > 0$).
+3. $2\zeta_{\text{in}} - \bar{K} > 0 \;\Longrightarrow\; \bar{K} < 2\zeta_{\text{in}}$.
 
-The damping ratio $\zeta = 0.7$ (specifically $1/\sqrt{2}$) is not arbitrary. It is the value that minimizes the ITAE (integral of time-weighted absolute error) for a second-order step response. Below 0.7, overshoot becomes visually apparent and the settling time lengthens. Above 0.7, the response becomes increasingly sluggish — you're sacrificing speed for marginal damping improvement.
+The stability boundary is therefore:
 
-$\zeta = 0.7$ represents the optimal trade-off between speed and overshoot for a second-order system. In a cascaded loop, the inner loop's perturbed poles act as a "parasitic second-order system" superimposed on the outer loop's first-order response. Keeping $\zeta_{\text{eff}} \geq 0.7$ for those parasitic poles ensures they don't contaminate the outer loop's step with visible ringing.
+$$\bar{K}_{\max} = 2\zeta_{\text{in}} \qquad\Longrightarrow\qquad N_{\min} = \frac{1}{2\zeta_{\text{in}}}$$
 
+| $\zeta_{\text{in}}$ | $\bar{K}_{\max}$ | $N_{\min}$ | Meaning |
+|---------------------|-------------------|------------|---------|
+| 0.5 | 1.0 | 0.5 | Cascade stable for any $N > 0.5$ |
+| 0.7 | 1.4 | 0.71 | Cascade stable for any $N > 0.71$ |
+| 1.0 | 2.0 | 0.5 | Cascade stable for any $N > 0.5$ |
+
+Routh–Hurwitz tells us the cascade is stable for essentially any practical separation — if the outer loop's gain doesn't exceed twice the inner loop's bandwidth (for $\zeta_{\text{in}} = 1$), the system remains stable. This is a remarkably weak requirement. **Stability is not the issue. Response quality is.**
+
+### 6.4 Pole dominance: why $N \geq 5$ produces a clean step response
+
+Stability tells us the system won't blow up. It doesn't tell us whether the step response will look clean or oscillatory. For that, we need to understand the *structure* of the three closed-loop poles.
+
+The cubic $s^3 + 2\zeta_{\text{in}} s^2 + s + \bar{K} = 0$ has three roots. For small $\bar{K}$ (large $N$, inner loop much faster than outer), they separate cleanly:
+
+- **One real pole** at $s \approx -\bar{K}$ — this is the outer loop's integrator, shifted left by the proportional feedback. This is the **dominant** pole: it's the slowest, and it controls the settling time.
+- **A complex pair** near $s \approx -\zeta_{\text{in}} \pm j\sqrt{1-\zeta_{\text{in}}^2}$ — the inner loop's original poles, slightly perturbed by the outer feedback. These are **fast** poles: their real part is $-\zeta_{\text{in}}$, which is $N$ times further left than the dominant pole.
+
+The separation is clean when $\bar{K} \ll \zeta_{\text{in}}$, i.e., $N \gg 1/(2\zeta_{\text{in}})$. In this regime, the step response is dominated by the slow real pole — a first-order exponential rise with time constant $1/\bar{K} = N/\omega_{n,\text{in}}$. The fast complex pair adds a damped oscillation whose amplitude decays as $e^{-\zeta_{\text{in}} t}$. After one time constant of the dominant pole ($t = N/\omega_{n,\text{in}}$), the oscillation has decayed by a factor of $e^{-\zeta_{\text{in}} N}$.
+
+The ratio of the complex pair's amplitude at $t = \tau_{\text{dominant}}$ to its initial value is:
+
+$$\text{residual oscillation} \approx e^{-\zeta_{\text{in}} N}$$
+
+| $N$ | $e^{-\zeta_{\text{in}} N}$ at $\zeta_{\text{in}} = 0.7$ | $e^{-\zeta_{\text{in}} N}$ at $\zeta_{\text{in}} = 1.0$ | Visible in step response? |
+|-----|-------------------------------------------------------|-------------------------------------------------------|---------------------------|
+| 2 | 25% | 14% | Obvious ringing on the trace |
+| 3 | 12% | 5% | Faint ripple, still visible |
+| 4 | 6% | 2% | Barely perceptible |
+| **5** | **3%** | **0.7%** | **Effectively invisible — inner dynamics are decoupled** |
+| 8 | 0.4% | 0.03% | Completely transparent |
+| 10 | 0.1% | 0.005% | The inner loop might as well be a wire |
+
+At $N = 5$ with $\zeta_{\text{in}} = 0.7$, the parasitic oscillation has decayed to 3% of its initial value by the time the dominant pole has reached 63% of its final value. On an oscilloscope, you won't see it — the trace looks like a clean first-order rise. At $N = 3$, 12% remains — you'll see a faint ripple on the rising edge. At $N = 2$, a quarter of the oscillation is still present, and the position trace is clearly contaminated.
+
+This is the origin of the 5× rule. It is not an empirical guideline. It is the $N$ at which the fast poles' contribution has decayed below 5% before the dominant pole has completed its rise — a clean separation in the time domain, derived from the pole-zero structure of the cubic characteristic equation.
 ### 6.5 The phase-loss perspective (the quick engineering check)
 
 The same $N \geq 5$ rule emerges from a simpler angle: the phase lag the inner loop contributes at the outer loop's crossover frequency.
