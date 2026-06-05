@@ -291,7 +291,7 @@ If LQR is strictly better (it solves the optimal control problem exactly), why d
 
 3. **Diagnostics.** If the position is oscillating, the technician checks the velocity loop. If the motor sounds rough, check the current loop. The cascade provides a direct physical interpretation for every symptom.
 
-4. **Implementation.** Three PI loops = six gains, zero matrix operations. Runs on a \$2 microcontroller.
+4. **Implementation.** Three PI loops = six gains, zero matrix operations. Runs on a two-dollar microcontroller.
 
 5. **Guaranteed stability at each stage.** If each inner loop is stable and 5× faster, the whole cascade is stable. The proof is structural, not numerical.
 
@@ -305,7 +305,7 @@ The cascade is an example of something deep: **optimality is not the only design
 |-----|-----------|
 | `servo_motor_pid.html` | The PID simulator treats the motor as a single controller. This deep-dive shows how it *could* be decomposed into three nested controllers — current → velocity → position — each handling its own timescale. The simulator's anti-windup on voltage saturation is the current-loop anti-windup; velocity and position anti-windup would be the natural next steps. |
 | `lqr_explorer.html` | LQR on the full motor produces a single optimal gain vector $K = [k_\theta, k_\omega, k_i]$. The cascade is a *structured approximation* to this — it imposes zeros on certain off-diagonal gains to respect the physical directionality. LQR can use current feedback ($k_i$) to partially cancel back-EMF; the cascade can't. |
-| `servo_qp_mpc.html` | MPC handles constraints in the optimization. The cascade handles them independently at each level with anti-windup. MPC is the theoretically clean solution; cascading with back-calculation is the practical one that runs on a \$2 microcontroller. |
+| `servo_qp_mpc.html` | MPC handles constraints in the optimization. The cascade handles them independently at each level with anti-windup. MPC is the theoretically clean solution; cascading with back-calculation is the practical one that runs on a two-dollar microcontroller. |
 | `anti_windup.md` | Back-calculation anti-windup appears at every level of the cascade — current, velocity, and position — each with its own tracking time constant. The cascade naturally isolates saturation effects so a saturated inner loop doesn't corrupt outer loop integrators. |
 | `core_problems_controller_design.md` | Problem #2 (inertia/delay) is *why* we cascade — instead of one controller fighting three orders of dynamics, three controllers each fight one. Problem #3 (constraints) is managed by anti-windup at each level. Problem #8 (computation) explains why three PIs beat one MPC on real hardware. |
 | `bellman_to_lqr.md` | The cascade is a value-function decomposition: the current loop's value depends only on current error, the velocity loop's on velocity error, the position loop's on position error. LQR's value function couples all states. The cascade approximates optimality by assuming the value function is separable. |
