@@ -415,6 +415,65 @@ The **3–5× rule** is not folklore. It is the theoretical optimum ($2\times$) 
 | Position | 33 Hz | 20 Hz |
 
 At $3\times$, the cascade is at $\zeta \approx 0.87$ — well-damped. At $5\times$, it's at $\zeta \approx 1.12$ — conservative. Below $2\times$, the inner loop's phase lag begins to contaminate the outer loop's dynamics, and the simple "design each loop independently" procedure stops working — which is exactly what LQR does with its full state-feedback gain matrix.
+
+### 6.6 Why the outer loop runs slower: the discrete-time trap
+
+Everything in §6.1–6.5 was derived in continuous time. In $s$-domain, the bandwidth separation is the whole story — keep $\omega_{\text{in}} \geq 3\omega_{\text{out}}$, tune each loop independently, done.
+
+But real motor drives are digital. The controller executes in discrete time on a microcontroller. And here a second, independent reason for multi-rate execution appears. It has nothing to do with continuous-time stability and everything to do with **finite word-length effects** — the fact that a 32-bit floating-point number is not a real number.
+
+**The mathematical non-problem.** From pure discrete-time control theory ($z$-domain), there is no need to slow down the outer loop at all. In fact, the $s \to z$ mapping says the opposite: higher sampling rates are better. The zero-order hold introduces an effective delay of $T_s/2$. Halve $T_s$, halve the delay, gain phase margin. If you simply tune the outer controller so its closed-loop bandwidth is 3–5× below the inner loop's bandwidth, running both loops at the same blazing-fast sample rate is mathematically correct and perfectly stable. The Bode plots work. The $z$-domain poles stay inside the unit circle. The simulations verify it.
+
+**The numerical disaster.** Now implement that mathematically-correct design on a real microcontroller. The outer loop has bandwidth $\omega_{\text{out}}$ (say 10 rad/s for a position loop). The inner loop runs at $f_s = 10\,\text{kHz}$ ($T_s = 0.0001$ s). Following the "no need to slow down" logic, the outer loop also runs at 10 kHz.
+
+The $s \to z$ mapping for the outer loop's dominant pole is:
+
+$$z = e^{s T_s}$$
+
+The outer loop's pole at $s = -\omega_{\text{out}}$ maps to:
+
+$$z = e^{-\omega_{\text{out}} T_s} = e^{-10 \times 0.0001} = e^{-0.001} \approx 0.9990005$$
+
+If the outer bandwidth is lower or the sample rate higher, the pole migrates even closer to $z = 1$ — the edge of the unit circle. This is **pole clustering**: low-bandwidth poles collapse onto $z \approx 1$ when the sample rate is far higher than the dynamics they represent.
+
+**Why $z \approx 0.9990005$ is catastrophic.** A digital controller executes a difference equation:
+
+$$y[k] = a_1 y[k-1] + a_2 y[k-2] + b_0 x[k] + b_1 x[k-1] + \cdots$$
+
+The coefficients $a_1, a_2$ are determined by the $z$-domain pole locations. When a pole sits at $z = 0.9990005$, the coefficients involve numbers extraordinarily close to 1, or differences of large numbers that produce tiny results. A 32-bit float has approximately 7 decimal digits of precision. The difference between two numbers around 1.0 that are only 0.001 apart is computed with only 3–4 significant digits of accuracy. The quantization error in the coefficient is comparable to the distance from the pole to the unit circle.
+
+Now iterate that difference equation thousands of times per second. Each iteration accumulates a tiny rounding error. With the pole at $0.9990005$, the system's eigenvalues are **hypersensitive** to coefficient errors. A single-bit rounding error in the least significant digit of a 32-bit float can shift the effective pole from $z = 0.999$ to $z = 1.00001$. That crosses the unit circle. The system that was proven stable in $z$-domain theory diverges — not because the theory was wrong, but because the arithmetic implementing it does not have infinite precision.
+
+**The fix: pull the pole away from $z = 1$.** The only degree of freedom is $T_s$. By running the outer loop at a lower rate — $T_s$ increases — the exponent $-\omega_{\text{out}} T_s$ becomes more negative, and the pole moves leftward, away from the dangerous $z = 1$ boundary.
+
+For example, if the outer loop runs at $f_s = 1\,\text{kHz}$ ($T_s = 0.001$ s) instead of 10 kHz:
+
+$$z = e^{-10 \times 0.001} = e^{-0.01} \approx 0.99005$$
+
+The pole now sits comfortably at $z = 0.99$, with a 1% margin to the unit circle instead of 0.1%. A 32-bit float can represent the coefficients of a pole at $z = 0.99$ with several decimal digits of margin. The difference equation iterates stably. The rounding errors stay where they belong — in the noise floor.
+
+At $f_s = 100\,\text{Hz}$ ($T_s = 0.01$ s):
+
+$$z = e^{-10 \times 0.01} = e^{-0.1} \approx 0.9048$$
+
+Now the pole is firmly inside the unit circle with enormous numerical margin. No finite-precision arithmetic can push it across $z = 1$.
+
+**The three reasons for multi-rate, summarized.** Engineers slow down the outer loop for three independent reasons. The first two are practical conveniences; the third is a hard numerical constraint:
+
+| Reason | Mechanism | Consequence of ignoring it |
+|--------|-----------|---------------------------|
+| **Sensor noise** | Lower sample rate → averaging over more samples → quieter measurement | Noisy derivative, rough control |
+| **Computation budget** | Outer loop runs less often → more CPU for inner loop, comms, diagnostics | Missed real-time deadlines |
+| **Finite word length** | Larger $T_s$ pulls $z$-domain poles away from $z = 1$ | Floating-point rounding pushes stable poles outside the unit circle → numerical divergence |
+
+The first two can be engineered around (better sensors, faster processors). The third cannot — it is a structural property of the $s \to z$ mapping interacting with finite-precision arithmetic. No amount of processor speed fixes a pole at $z = 0.9990005$ when you only have 32 bits to represent it.
+
+This is also why integrators in fixed-point DSP code are implemented with double-precision accumulators (e.g., 32-bit multiply, 64-bit accumulate). An integrator is a pole exactly at $z = 1$ — the worst possible case — and without extended precision it accumulates rounding errors linearly with time. The cascade's outer loop, with its slow dynamics relative to the sample rate, faces the same problem in milder form.
+
+**The unifying picture.** Section 6.1–6.5 gave the continuous-time rule: $\omega_{\text{in}} \geq 3\omega_{\text{out}}$ for damping. Section 6.6 gives the discrete-time companion: $T_{s,\text{out}} \geq (3\text{--}10) \times T_{s,\text{in}}$ for numerical stability. Together they constrain the design in two dimensions — bandwidth ratio and sample-rate ratio. A well-designed cascade satisfies both.
+
+---
+
 ## 7. Tuning the cascade: inside-out
 
 Tuning a cascade is procedural — no iteration across loops:
