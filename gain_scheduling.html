@@ -221,6 +221,28 @@ where $w_i(\rho)$ are interpolation weights — typically piecewise linear betwe
 
 That's it. That's gain scheduling. Design linear controllers at points, interpolate, deploy.
 
+### 2.4 Engineering examples — what this looks like in real products
+
+**ODrive tension wheel control (asymmetric load).** The ODrive motor controller uses gain scheduling for tension wheels — rollers that apply controlled tension to belts, filaments, or webs. The problem: the load torque on the motor depends on whether it's pulling *with* or *against* gravity and belt tension. In one direction, the motor works against the tension; in the other, the tension *assists* the motor. The effective plant gain — how much torque is needed to produce a given acceleration — is direction-dependent. A single set of PID gains tuned for the "pulling up" case will overshoot or oscillate when "pulling down," because the same control signal produces a larger acceleration when tension is helping.
+
+The ODrive fix: two sets of gains, scheduled on the sign of the velocity command (or the measured load torque). When the motor reverses direction, the controller swaps gain sets. This is the simplest possible gain schedule — a binary switch with exactly two operating points. No interpolation, just a clean transition with bumpless transfer logic. The same pattern appears in any application where load is asymmetric: a hoist lifting vs. lowering, a robot joint working with gravity vs. against it, a cable-driven mechanism where tension stiffens the plant in one direction.
+
+**Aircraft pitch control (the classic example).** An aircraft's pitch dynamics depend on airspeed $V$ and altitude (air density $\rho_{\text{air}}$). The aerodynamic coefficients in the short-period mode vary by a factor of 3–5× across the flight envelope. At low speed and high altitude, the control surfaces have little authority; at high speed and low altitude, they bite hard. A single pitch-rate feedback gain would be either dangerously aggressive at high speed or dangerously sluggish at low speed. The standard solution — used in every fly-by-wire aircraft — is a gain schedule on dynamic pressure $\bar{q} = \frac{1}{2}\rho_{\text{air}} V^2$ and Mach number. The scheduling variable is measured directly by the pitot-static system, the grid spans the entire flight envelope, and the interpolation is piecewise-linear between Mach-altitude breakpoints. The F-16's flight control system, for example, schedules over 50 grid points.
+
+**Robot arm across joint angles.** A robot arm's effective inertia at each joint depends on the configuration of all the *other* joints. When the arm is stretched out, the elbow motor sees a large reflected inertia; when tucked in, the same motor sees a small inertia. A PID loop tuned at the stretched configuration will oscillate when the arm tucks in (the plant gain effectively increases — less inertia for the same torque). Gain scheduling on joint angles solves this: at each configuration, the inertia matrix is computed (or measured during calibration), and the controller gains are functions of the joint-angle vector. For a 6-axis arm, this means a 6-dimensional scheduling variable — impractical to grid fully. In practice, only 1–2 dominant joint angles are scheduled.
+
+**pH neutralisation (extreme gain variation).** The pH of a solution as a function of added reagent follows a titration curve that is nearly flat far from neutrality and nearly vertical near pH 7. The *process gain* — the change in pH per unit of reagent added — can vary by a factor of 100–1000× across a small pH range. A PID controller tuned at pH 6 will be 100× too aggressive at pH 7 (massive overshoot) and 100× too sluggish at pH 5 (will never reach the setpoint). Gain scheduling on the measured pH itself (or on the slope of the titration curve, estimated online) is the only way to get acceptable control across the full range. This is the extreme case: the scheduling variable is the controlled variable itself, gain variation is orders of magnitude, and the wrong gains produce either wild oscillation or complete inaction.
+
+**Automotive engine management.** An internal combustion engine's air-fuel ratio dynamics depend strongly on RPM and manifold pressure. The engine control unit (ECU) contains a 2D gain schedule — a table of PID gains indexed by (RPM, manifold pressure) — with 16×16 or 32×32 grid points. This table is populated during calibration on a dynamometer: an engineer sweeps RPM and load, tunes a PI(D) controller at each operating point, and writes the gains into the ECU's memory. No interpolation formula, no gain-scheduling theory — just a lookup table built by a calibration engineer with a laptop. It's the crudest form of gain scheduling, and it's in every car on the road.
+
+| Application | Scheduling variable | Grid | Gain variation | How it fails if you don't schedule |
+|------------|-------------------|------|---------------|-------------------------------------|
+| ODrive tension wheel | Velocity sign (2 states) | 2 points | ~2–5× | Oscillation in one direction, sluggish in the other |
+| Aircraft pitch | Dynamic pressure + Mach | ~50 points | ~3–5× | Aggressive at high speed, unresponsive at low speed |
+| Robot arm | Joint angles (1–2 dominant) | ~5–10 points | ~3–10× | Oscillation when tucked, slow when stretched |
+| pH control | Measured pH | ~10–20 points | **100–1000×** | Either wild oscillation or no response at all |
+| Engine ECU | RPM + manifold pressure | 16×16 grid | ~2–5× | Poor idle, hesitation, emissions compliance failure |
+
 ---
 
 ## 3. When it works
