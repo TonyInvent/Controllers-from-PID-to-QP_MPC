@@ -143,10 +143,6 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         <button class="btn primary" id="btnFit">Fit Model</button>
         <button class="btn" id="btnExcite">New Excitation</button>
       </div>
-      <div style="margin-top:4px;">
-        <button class="btn" id="btnStress" style="font-size:9px;padding:3px 8px;flex:0 0 auto;background:rgba(247,37,133,0.08);border-color:rgba(247,37,133,0.3);color:var(--warn);">Stress Test (20×)</button>
-        <span id="stressResult" style="font-size:9px;color:var(--text-dim);margin-left:6px;"></span>
-      </div>
     </div>
 
     <!-- Fit Results Readout -->
@@ -1115,68 +1111,6 @@ $('btnFit').addEventListener('click', () => {
       $('btnFit').disabled = false;
     }
   }, 10);
-});
-
-// Stress test: async, one iteration per frame — never blocks the UI
-$('btnStress').addEventListener('click', () => {
-  const r = $('stressResult');
-  r.style.color = 'var(--accent)';
-  // Force ARX(3,3,1) to repro user's exact scenario
-  $('modelStructure').value = '3,3,1';
-
-  let i = 0;
-  let errors = 0;
-  let lastErr = '';
-  let hung = false;
-  const t0 = performance.now();
-
-  function runOne() {
-    if (hung) return;
-    const tIter = performance.now();
-    let step = '';
-
-    try {
-      step = 'select';  console.log('#'+i,step);  selectRandomPlant();
-      step = 'excite';  console.log('#'+i,step);  excitePlant();
-      step = 'fit';     console.log('#'+i,step);  fitModel();
-      console.log('#'+i,'done');
-    } catch (e) {
-      errors++;
-      lastErr = step + ': ' + (e.message || String(e)).slice(0, 50);
-      console.error('stress#' + i + ' ' + lastErr, e);
-    }
-
-    const dt = (performance.now() - tIter).toFixed(0);
-    i++;
-    r.textContent = `… ${i}/20  (last ${dt}ms)`;
-
-    if (i < 20) {
-      setTimeout(runOne, 0);  // yield to browser between iterations
-    } else {
-      // Done
-      const totalMs = (performance.now() - t0).toFixed(0);
-      if (errors > 0) {
-        r.style.color = 'var(--warn)';
-        r.textContent = `${errors}/${i} errors in ${totalMs}ms.  Last: ${lastErr}`;
-      } else {
-        r.style.color = 'var(--green)';
-        r.textContent = `0/${i} errors in ${totalMs}ms — all clean`;
-      }
-      drawAll();
-    }
-  }
-
-  // Safety: if any single iteration exceeds 8 seconds, abort
-  const watchdog = setInterval(() => {
-    if (i === 0) return;
-    hung = true;
-    clearInterval(watchdog);
-    r.style.color = 'var(--warn)';
-    r.textContent = `HUNG at iteration ${i}!  Last error: ${lastErr || 'none'}`;
-    drawAll();
-  }, 8000);
-
-  runOne();
 });
 
 // Sliders
