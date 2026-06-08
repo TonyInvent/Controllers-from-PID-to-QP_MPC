@@ -201,7 +201,7 @@ const HIDDEN_PLANTS = [
     params: { K: 2, tau: 3 },
     /* dx/dt = (K*u - x) / tau,  y = x */
     simulate: function(tArr, uArr, dt) {
-      const y = new Array(tArr.length);
+      const y = new Array(tArr.length).fill(0);
       let x = 0; // initial state
       for (let k = 1; k < tArr.length; k++) {
         const u = uArr[k - 1];
@@ -226,7 +226,7 @@ const HIDDEN_PLANTS = [
     params: { K: 1, wn: 2, zeta: 0.25 },
     /* ÿ + 2ζωₙẏ + ωₙ²y = K ωₙ² u */
     simulate: function(tArr, uArr, dt) {
-      const y = new Array(tArr.length);
+      const y = new Array(tArr.length).fill(0);
       let x1 = 0, x2 = 0; // state: x1=y, x2=ẏ
       const { K, wn, zeta } = this.params;
       const w2 = wn * wn;
@@ -257,7 +257,7 @@ const HIDDEN_PLANTS = [
     params: { K: 1.5, tau1: 2, tau2: 1 },
     /* G(s) = K / ((τ₁s+1)(τ₂s+1)) = K / (τ₁τ₂ s² + (τ₁+τ₂)s + 1) */
     simulate: function(tArr, uArr, dt) {
-      const y = new Array(tArr.length);
+      const y = new Array(tArr.length).fill(0);
       let x1 = 0, x2 = 0;
       const { K, tau1, tau2 } = this.params;
       const den = tau1 * tau2;
@@ -287,11 +287,11 @@ const HIDDEN_PLANTS = [
     tfLabel: 'G(s) = 3·e^(-1.5s) / (4s + 1)',
     params: { K: 3, tau: 4, delay: 1.5 },
     simulate: function(tArr, uArr, dt) {
-      const y = new Array(tArr.length);
+      const y = new Array(tArr.length).fill(0);
       let x = 0;
       const { K, tau, delay } = this.params;
       const delaySteps = Math.round(delay / dt);
-      const uBuf = new Array(delaySteps + 1);
+      const uBuf = new Array(delaySteps + 1).fill(0);
       for (let k = 1; k < tArr.length; k++) {
         // Shift delay buffer
         for (let i = delaySteps; i > 0; i--) uBuf[i] = uBuf[i - 1];
@@ -318,7 +318,7 @@ const HIDDEN_PLANTS = [
 function generatePRBS(length, bitDur, amplitude) {
   // Use 9-bit LFSR with taps at [9,5] → period 511
   let reg = 0x1FF; // non-zero seed
-  const seq = new Array(length);
+  const seq = new Array(length).fill(0);
   let bitVal = amplitude * (reg & 1 ? 1 : -1);
   let bitCounter = 0;
 
@@ -340,7 +340,7 @@ function generatePRBS(length, bitDur, amplitude) {
    LEAST SQUARES: solve ΦᵀΦ θ = Φᵀy via Cholesky
    ═══════════════════════════════════════════════════════════════════════ */
 function cholesky(A, n) {
-  const L = new Array(n * n);
+  const L = new Array(n * n).fill(0);
   for (let i = 0; i < n; i++) {
     for (let j = 0; j <= i; j++) {
       let sum = A[i * n + j];
@@ -358,14 +358,14 @@ function cholesky(A, n) {
 
 function solveCholesky(L, b, n) {
   // Forward: L y = b
-  const y = new Array(n);
+  const y = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
     let sum = b[i];
     for (let j = 0; j < i; j++) sum -= L[i * n + j] * y[j];
     y[i] = sum / L[i * n + i];
   }
   // Backward: Lᵀ x = y
-  const x = new Array(n);
+  const x = new Array(n).fill(0);
   for (let i = n - 1; i >= 0; i--) {
     let sum = y[i];
     for (let j = i + 1; j < n; j++) sum -= L[j * n + i] * x[j];
@@ -382,9 +382,9 @@ function leastSquares(na, nb, nk, u, y, startIdx, endIdx) {
   if (nRows < nParams * 2) return null; // not enough data
 
   // Build normal equations directly to avoid storing full Φ
-  const A = new Array(nParams * nParams); // ΦᵀΦ
-  const b = new Array(nParams);           // Φᵀy
-  const phi = new Array(nParams);         // reused per row
+  const A = new Array(nParams * nParams).fill(0); // ΦᵀΦ
+  const b = new Array(nParams).fill(0);           // Φᵀy
+  const phi = new Array(nParams).fill(0);         // reused per row
 
   for (let k = maxLag + startIdx; k < endIdx; k++) {
     phi.fill(0);
@@ -419,8 +419,8 @@ function leastSquares(na, nb, nk, u, y, startIdx, endIdx) {
 /* Gaussian elimination fallback for ill-conditioned normal equations */
 function solveGauss(A, b, n) {
   // Make working copy
-  const M = new Array(A);
-  const v = new Array(b);
+  const M = Array.from(A);
+  const v = Array.from(b);
 
   for (let col = 0; col < n; col++) {
     // Partial pivot
@@ -453,7 +453,7 @@ function solveGauss(A, b, n) {
   }
 
   // Back substitution
-  const x = new Array(n);
+  const x = new Array(n).fill(0);
   for (let i = n - 1; i >= 0; i--) {
     let sum = v[i];
     for (let j = i + 1; j < n; j++) sum -= M[i * n + j] * x[j];
@@ -466,7 +466,7 @@ function solveGauss(A, b, n) {
    SIMULATE ARX MODEL for prediction
    ═══════════════════════════════════════════════════════════════════════ */
 function simulateARX(theta, na, nb, nk, u, tLen) {
-  const yPred = new Array(tLen);
+  const yPred = new Array(tLen).fill(0);
   // Guard: if theta contains NaN/Infinity, return zeros rather than propagating
   for (let i = 0; i < theta.length; i++) {
     if (!isFinite(theta[i])) { yPred.fill(0); return yPred; }
@@ -517,16 +517,16 @@ function rSquared(yTrue, yPred, start, end) {
    STEP RESPONSE SIMULATION (for comparison plot)
    ═══════════════════════════════════════════════════════════════════════ */
 function simulatePlantStep(plant, tMax, nPts, dt) {
-  const t = new Array(nPts);
-  const u = new Array(nPts);
+  const t = new Array(nPts).fill(0);
+  const u = new Array(nPts).fill(0);
   for (let i = 0; i < nPts; i++) { t[i] = i * dt; u[i] = 1; }
   const y = plant.simulate(t, u, dt);
   return { t, y };
 }
 
 function simulateARXStep(theta, na, nb, nk, tMax, nPts, dt) {
-  const t = new Array(nPts);
-  const u = new Array(nPts);
+  const t = new Array(nPts).fill(0);
+  const u = new Array(nPts).fill(0);
   for (let i = 0; i < nPts; i++) { t[i] = i * dt; u[i] = 1; }
   const y = simulateARX(theta, na, nb, nk, u, nPts);
   return { t, y };
@@ -589,8 +589,8 @@ function excitePlant() {
   state.prbs = generatePRBS(state.nSamples, bitDur, amp);
 
   // Build time vector and input
-  state.t = new Array(state.nSamples);
-  state.u = new Array(state.nSamples);
+  state.t = new Array(state.nSamples).fill(0);
+  state.u = new Array(state.nSamples).fill(0);
   for (let i = 0; i < state.nSamples; i++) {
     state.t[i] = i * state.dt;
     state.u[i] = state.prbs[i];
