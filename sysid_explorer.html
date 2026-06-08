@@ -384,9 +384,10 @@ function leastSquares(na, nb, nk, u, y, startIdx, endIdx) {
   // Build normal equations directly to avoid storing full Φ
   const A = new Float64Array(nParams * nParams); // ΦᵀΦ
   const b = new Float64Array(nParams);           // Φᵀy
+  const phi = new Float64Array(nParams);         // reused per row
 
   for (let k = maxLag + startIdx; k < endIdx; k++) {
-    const phi = new Float64Array(nParams);
+    phi.fill(0);
     for (let i = 0; i < na; i++) phi[i] = -y[k - 1 - i];
     for (let i = 0; i < nb; i++) phi[na + i] = u[k - nk - i];
 
@@ -397,6 +398,15 @@ function leastSquares(na, nb, nk, u, y, startIdx, endIdx) {
       }
     }
   }
+
+  // Cache condition number from diagonal of ΦᵀΦ
+  let dMax = 0, dMin = Infinity;
+  for (let i = 0; i < nParams; i++) {
+    const d = A[i * nParams + i];
+    if (d > dMax) dMax = d;
+    if (d < dMin && d > 1e-30) dMin = d;
+  }
+  state._condNum = (dMin < Infinity && dMin > 0) ? Math.sqrt(dMax / dMin) : 1e6;
 
   const L = cholesky(A, nParams);
   if (!L) {
@@ -601,9 +611,8 @@ function excitePlant() {
    FIT MODEL
    ═══════════════════════════════════════════════════════════════════════ */
 function fitModel() {
-  if (!state.yTrue) { excitePlant(); }
-
   try {
+    if (!state.yTrue) { excitePlant(); }
     const struct = $('modelStructure').value.split(',').map(Number);
     const na = struct[0], nb = struct[1], nk = struct[2];
     state.na = na; state.nb = nb; state.nk = nk;
@@ -630,38 +639,13 @@ function fitModel() {
     state.valRMSE = rmse(state.yTrue, state.yFitTrain, state.trainEnd, state.nSamples);
     state.r2 = rSquared(state.yTrue, state.yFitTrain, 0, state.trainEnd);
 
-    // Condition-number estimate: ||Φ||² / ||(ΦᵀΦ)⁻¹|| ≈ (Σσ²/n) / (smallest σ² guess)
-    // Cheap trace-based estimate — avoids rebuilding ΦᵀΦ and power iteration
-    const nParams = na + nb;
-    const maxLag = Math.max(na, nk + nb - 1);
-    let tr = 0, nRows = 0;
-    for (let k = maxLag; k < state.trainEnd; k++) {
-      let rowNorm = 0;
-      for (let i = 0; i < nParams; i++) {
-        const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
-        rowNorm += phi_i * phi_i;
-      }
-      tr += rowNorm;
-      nRows++;
+    // Condition-number estimate: ratio of max/min diagonal of ΦᵀΦ, computed
+    // inside leastSquares and cached.  Fallback if not available.
+    if (state._condNum !== undefined && isFinite(state._condNum)) {
+      state.condNum = state._condNum;
+    } else {
+      state.condNum = 10;  // default: well-conditioned
     }
-    // tr ≈ nRows × avg row norm.  Cond ≈ (max row norm) / (min singular value proxy).
-    // Use a simple heuristic: ratio of largest to smallest diagonal element of ΦᵀΦ
-    // approximated by the trace and the minimum row contribution.
-    const avgDiag = tr / Math.max(1, nRows * nParams);
-    // Reconstruct approximate diagonal elements
-    const diag = new Float64Array(nParams);
-    for (let k = maxLag; k < state.trainEnd; k++) {
-      for (let i = 0; i < nParams; i++) {
-        const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
-        diag[i] += phi_i * phi_i;
-      }
-    }
-    let dMax = 0, dMin = Infinity;
-    for (let i = 0; i < nParams; i++) {
-      if (diag[i] > dMax) dMax = diag[i];
-      if (diag[i] < dMin) dMin = diag[i];
-    }
-    state.condNum = (dMin > 1e-15) ? Math.sqrt(dMax / dMin) : 1e8;
 
     // Step response for identified model
     state.stepIdent = simulateARXStep(theta, na, nb, nk, state.stepTMax, 400, state.dt);
@@ -1014,12 +998,17 @@ function updateInsight() {
 /* ═══════════════════════════════════════════════════════════════════════
    UPDATE UI READOUTS
    ═══════════════════════════════════════════════════════════════════════ */
+function fmtVal(v, decimals) {
+  if (!isFinite(v)) return '—';
+  return v.toFixed(decimals);
+}
 function updateReadouts() {
   if (state.theta) {
-    $('rvTrainRMSE').textContent = state.trainRMSE.toFixed(4);
-    $('rvValRMSE').textContent = state.valRMSE.toFixed(4);
-    $('rvR2').textContent = state.r2.toFixed(4);
-    $('rvCond').textContent = state.condNum > 1e6 ? state.condNum.toExponential(2) : state.condNum.toFixed(2);
+    $('rvTrainRMSE').textContent = fmtVal(state.trainRMSE, 4);
+    $('rvValRMSE').textContent = fmtVal(state.valRMSE, 4);
+    $('rvR2').textContent = fmtVal(state.r2, 4);
+    const c = state.condNum;
+    $('rvCond').textContent = isFinite(c) ? (c > 1e6 ? c.toExponential(2) : c.toFixed(2)) : '—';
 
     // Color-code
     $('rvTrainRMSE').style.color = state.trainRMSE < 0.1 ? 'var(--accent)' : state.trainRMSE < 0.5 ? 'var(--orange)' : 'var(--warn)';
