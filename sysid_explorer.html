@@ -420,7 +420,7 @@ function solveGauss(A, b, n) {
       const av = Math.abs(M[row * n + col]);
       if (av > maxVal) { maxVal = av; maxRow = row; }
     }
-    if (maxVal < 1e-15) return null;
+    if (maxVal < 1e-15 || !isFinite(maxVal)) return null;
 
     // Swap
     if (maxRow !== col) {
@@ -457,6 +457,10 @@ function solveGauss(A, b, n) {
    ═══════════════════════════════════════════════════════════════════════ */
 function simulateARX(theta, na, nb, nk, u, tLen) {
   const yPred = new Float64Array(tLen);
+  // Guard: if theta contains NaN/Infinity, return zeros rather than propagating
+  for (let i = 0; i < theta.length; i++) {
+    if (!isFinite(theta[i])) { yPred.fill(0); return yPred; }
+  }
   // Use zeros for initial conditions (no past data)
   for (let k = 0; k < tLen; k++) {
     let yk = 0;
@@ -466,6 +470,8 @@ function simulateARX(theta, na, nb, nk, u, tLen) {
     for (let i = 0; i < nb; i++) {
       if (k - nk - i >= 0) yk += theta[na + i] * u[k - nk - i];
     }
+    // Clamp: prevent exponential divergence from unstable models
+    if (!isFinite(yk)) yk = yk > 0 ? 1e6 : -1e6;
     yPred[k] = yk;
   }
   return yPred;
@@ -597,85 +603,76 @@ function excitePlant() {
 function fitModel() {
   if (!state.yTrue) { excitePlant(); }
 
-  const struct = $('modelStructure').value.split(',').map(Number);
-  const na = struct[0], nb = struct[1], nk = struct[2];
-  state.na = na; state.nb = nb; state.nk = nk;
+  try {
+    const struct = $('modelStructure').value.split(',').map(Number);
+    const na = struct[0], nb = struct[1], nk = struct[2];
+    state.na = na; state.nb = nb; state.nk = nk;
 
-  const valPct = parseInt($('valSplit').value) / 100;
-  state.trainEnd = Math.floor(state.nSamples * (1 - valPct));
+    const valPct = parseInt($('valSplit').value) / 100;
+    state.trainEnd = Math.floor(state.nSamples * (1 - valPct));
 
-  const theta = leastSquares(na, nb, nk, state.u, state.yTrue, 0, state.trainEnd);
-  if (!theta) {
-    $('insightText').textContent = 'Fit failed — not enough data or ill-conditioned regression. Try more samples or a simpler model.';
-    $('insightIcon').textContent = '⚠️';
-    state.theta = null;
-    state.yFitTrain = null;
-    return;
-  }
+    const theta = leastSquares(na, nb, nk, state.u, state.yTrue, 0, state.trainEnd);
+    if (!theta) {
+      $('insightText').textContent = 'Fit failed — not enough data or ill-conditioned regression. Try more samples or a simpler model.';
+      $('insightIcon').textContent = '⚠️';
+      state.theta = null;
+      state.yFitTrain = null;
+      return;
+    }
 
-  state.theta = theta;
+    state.theta = theta;
 
-  // Predict on all data
-  state.yFitTrain = simulateARX(theta, na, nb, nk, state.u, state.nSamples);
+    // Predict on all data
+    state.yFitTrain = simulateARX(theta, na, nb, nk, state.u, state.nSamples);
 
-  // Metrics
-  state.trainRMSE = rmse(state.yTrue, state.yFitTrain, 0, state.trainEnd);
-  state.valRMSE = rmse(state.yTrue, state.yFitTrain, state.trainEnd, state.nSamples);
-  state.r2 = rSquared(state.yTrue, state.yFitTrain, 0, state.trainEnd);
+    // Metrics
+    state.trainRMSE = rmse(state.yTrue, state.yFitTrain, 0, state.trainEnd);
+    state.valRMSE = rmse(state.yTrue, state.yFitTrain, state.trainEnd, state.nSamples);
+    state.r2 = rSquared(state.yTrue, state.yFitTrain, 0, state.trainEnd);
 
-  // Estimate condition number via power iteration on ΦᵀΦ (approximate)
-  // Build normal matrix for cond estimation
-  const nParams = na + nb;
-  const maxLag = Math.max(na, nk + nb - 1);
-  const A = new Float64Array(nParams * nParams);
-  for (let k = maxLag; k < state.trainEnd; k++) {
-    for (let i = 0; i < nParams; i++) {
-      const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
-      for (let j = 0; j <= i; j++) {
-        const phi_j = (j < na) ? -state.yTrue[k - 1 - j] : state.u[k - nk - (j - na)];
-        A[i * nParams + j] += phi_i * phi_j;
+    // Condition-number estimate: ||Φ||² / ||(ΦᵀΦ)⁻¹|| ≈ (Σσ²/n) / (smallest σ² guess)
+    // Cheap trace-based estimate — avoids rebuilding ΦᵀΦ and power iteration
+    const nParams = na + nb;
+    const maxLag = Math.max(na, nk + nb - 1);
+    let tr = 0, nRows = 0;
+    for (let k = maxLag; k < state.trainEnd; k++) {
+      let rowNorm = 0;
+      for (let i = 0; i < nParams; i++) {
+        const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
+        rowNorm += phi_i * phi_i;
+      }
+      tr += rowNorm;
+      nRows++;
+    }
+    // tr ≈ nRows × avg row norm.  Cond ≈ (max row norm) / (min singular value proxy).
+    // Use a simple heuristic: ratio of largest to smallest diagonal element of ΦᵀΦ
+    // approximated by the trace and the minimum row contribution.
+    const avgDiag = tr / Math.max(1, nRows * nParams);
+    // Reconstruct approximate diagonal elements
+    const diag = new Float64Array(nParams);
+    for (let k = maxLag; k < state.trainEnd; k++) {
+      for (let i = 0; i < nParams; i++) {
+        const phi_i = (i < na) ? -state.yTrue[k - 1 - i] : state.u[k - nk - (i - na)];
+        diag[i] += phi_i * phi_i;
       }
     }
-  }
-  for (let i = 0; i < nParams; i++)
-    for (let j = i + 1; j < nParams; j++)
-      A[j * nParams + i] = A[i * nParams + j];
+    let dMax = 0, dMin = Infinity;
+    for (let i = 0; i < nParams; i++) {
+      if (diag[i] > dMax) dMax = diag[i];
+      if (diag[i] < dMin) dMin = diag[i];
+    }
+    state.condNum = (dMin > 1e-15) ? Math.sqrt(dMax / dMin) : 1e8;
 
-  // Approximate condition number: ||A||_F / (smallest |eigenvalue| estimate via trace)
-  let trace = 0, frob = 0;
-  for (let i = 0; i < nParams; i++) {
-    trace += A[i * nParams + i];
-    for (let j = 0; j < nParams; j++) frob += A[i * nParams + j] ** 2;
+    // Step response for identified model
+    state.stepIdent = simulateARXStep(theta, na, nb, nk, state.stepTMax, 400, state.dt);
+  } catch (e) {
+    console.error('fitModel error:', e);
+    state.theta = null;
+    state.yFitTrain = null;
+    state.stepIdent = null;
+    $('insightText').textContent = 'Fit error — please try again or choose a different model structure.';
+    $('insightIcon').textContent = '⚠️';
   }
-  frob = Math.sqrt(frob);
-  const avgEig = trace / nParams;
-  // Power iteration for largest eigenvalue
-  let v = new Float64Array(nParams);
-  for (let i = 0; i < nParams; i++) v[i] = 1;
-  for (let iter = 0; iter < 10; iter++) {
-    const w = new Float64Array(nParams);
-    for (let i = 0; i < nParams; i++)
-      for (let j = 0; j < nParams; j++)
-        w[i] += A[i * nParams + j] * v[j];
-    let norm = 0;
-    for (let i = 0; i < nParams; i++) norm += w[i] * w[i];
-    norm = Math.sqrt(norm);
-    if (norm < 1e-15) break;
-    for (let i = 0; i < nParams; i++) v[i] = w[i] / norm;
-  }
-  let lambdaMax = 0;
-  for (let i = 0; i < nParams; i++) {
-    let Av = 0;
-    for (let j = 0; j < nParams; j++) Av += A[i * nParams + j] * v[j];
-    lambdaMax += v[i] * Av;
-  }
-  // Estimate lambdaMin via trace argument (rough)
-  const lambdaMin = Math.max(1e-12, trace - (nParams - 1) * lambdaMax);
-  state.condNum = lambdaMax / Math.max(1e-15, Math.abs(lambdaMin));
-
-
-  // Step response for identified model (same time range as hidden plant)
-  state.stepIdent = simulateARXStep(theta, na, nb, nk, state.stepTMax, 400, state.dt);
 }
 /* ═══════════════════════════════════════════════════════════════════════
    CANVAS HELPERS
@@ -1069,11 +1066,15 @@ function syncSliders() {
    MAIN DRAW
    ═══════════════════════════════════════════════════════════════════════ */
 function drawAll() {
-  syncSliders();
-  updateReadouts();
-  drawIOPlot();
-  drawStepPlot();
-  updateInsight();
+  try {
+    syncSliders();
+    updateReadouts();
+    drawIOPlot();
+    drawStepPlot();
+    updateInsight();
+  } catch (e) {
+    console.error('drawAll error:', e);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
