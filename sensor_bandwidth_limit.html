@@ -335,7 +335,140 @@ Sometimes the right answer is: accept the bandwidth limit. A temperature control
 
 ---
 
-## 8. Connection to this project
+## 8. State observers: a digital twin to break the bandwidth barrier
+
+The five mitigations in §7 are about *working within* the sensor's limits. Sections 8–11 are about *transcending* them — using models, estimators, and signal processing to reconstruct the high-frequency information the sensor cannot provide.
+
+The core philosophy of a state observer: **if you can't trust the sensor at high frequencies, trust your model instead.**
+
+### 8.1 The Luenberger architecture
+
+We run a copy of the plant model *inside* the controller, in parallel with the real plant. Both receive the same control signal $u(t)$. The model predicts the state $\hat{x}(t)$ without any sensor delay or bandwidth limitation. The real sensor $y(t)$, slow but accurate at low frequencies, corrects the model's inevitable drift:
+
+$$\dot{\hat{x}} = A \hat{x} + B u + L\big(y - C \hat{x}\big)$$
+
+The observer gain matrix $L$ is the mixing desk. It determines, at every frequency, whether the state estimate leans toward the fast model prediction or the slow-but-accurate measurement:
+
+- **High frequencies** ($\omega \gg$ observer bandwidth): $L$ is small relative to the model dynamics. The correction term $L(y - C\hat{x})$ fades. The observer output $\hat{x}$ is driven almost entirely by the plant model $A\hat{x} + Bu$ — fast, no sensor lag, pure prediction.
+- **Low frequencies** ($\omega \ll$ observer bandwidth): $L$ dominates. The observer trusts the sensor, pulling $\hat{x}$ toward the true measured state $y$. Model drift is corrected.
+
+The observer effectively reconstructs the full state vector $\hat{x}$ with a bandwidth far exceeding the physical sensor's $\omega_s$. The controller then acts on $\hat{x}$ instead of $y$, and the sensor bandwidth ceiling is **raised** — not eliminated, but pushed from $\omega_s$ to the observer's own bandwidth, which is limited by the model's accuracy, not the sensor's physics.
+
+For a humanoid robot with EtherCAT-connected joints: the joint-level encoder runs at the bus cycle (e.g., 100 µs). The IMU updates at its own rate with its own internal LPF. Rather than using either sensor directly for derivative estimates (velocity from position, acceleration from velocity — both amplifying noise and lag), the observer runs a full-body dynamics model (Pinocchio, MuJoCo) that predicts joint velocities and accelerations from the applied torques. The encoder and IMU provide low-frequency correction. The observer's $L$ matrix blends "trust the model" (fast, physics-based) with "trust the sensor" (slow, measurement-based) at every frequency independently.
+
+### 8.2 What limits the observer's bandwidth
+
+The observer's achievable bandwidth is limited not by the sensor, but by the **model's fidelity**. If $A$ and $B$ are wrong — wrong inertia, wrong friction, wrong torque constant — the model prediction diverges from reality, and the observer must lean more heavily on the slow sensor, defeating the purpose. The observer is only as good as the model inside it. This is why system identification (§7.3 of `system_identification.md`) is the prerequisite: you need a trustworthy model before you can build a trustworthy observer.
+
+In practice, for a well-identified motor model, an observer can extend effective bandwidth 5–10× beyond the raw sensor bandwidth. The gain is limited by unmodeled dynamics (flexible coupling resonances, torque ripple, friction stiction) that the linear model $A, B$ does not capture.
+
+---
+
+## 9. Kalman filtering: fusing fast-and-drifty with slow-and-accurate
+
+If one sensor is bandlimited, a second sensor with complementary characteristics can fill the gap. The Kalman filter is the optimal way to fuse them.
+
+### 9.1 The multi-rate fusion problem
+
+Consider a typical robot state estimation setup:
+
+| Sensor | What it measures | Bandwidth | Problem |
+|--------|-----------------|-----------|---------|
+| IMU accelerometer | Linear acceleration $\ddot{x}$ | ~500 Hz | Double integration → drift grows as $t^2$ |
+| IMU gyroscope | Angular velocity $\dot{\theta}$ | ~250 Hz | Single integration → drift grows as $t$ |
+| Joint encoder | Joint angle $\theta$ | EtherCAT cycle (~10 kHz raw, filtered to ~1 kHz) | Derivative for velocity amplifies quantization noise |
+| Camera / visual odometry | Absolute position $(x, y, z)$ | 15–60 Hz (frame rate) | Far too slow for torque-level control at 1 kHz |
+
+No single sensor provides the full state at the required rate and accuracy. The IMU is fast but drifts. The camera is accurate but slow. The encoder is clean but needs differentiation.
+
+### 9.2 How the Kalman filter fuses them
+
+The Kalman filter runs a plant model (the "prediction" step, driven by IMU data at the IMU's fast rate) and corrects it whenever a slower absolute measurement arrives (the "update" step):
+
+$$\text{Predict (fast, every IMU sample): } \hat{x}_{k|k-1} = A \hat{x}_{k-1} + B u_k$$
+$$\text{Update (slow, when camera frame arrives): } \hat{x}_k = \hat{x}_{k|k-1} + K_k (y_k - C \hat{x}_{k|k-1})$$
+
+Between camera frames, the IMU drives the prediction forward — the state estimate continues updating at the IMU's 500 Hz, not the camera's 30 Hz. When a new camera frame arrives, the Kalman gain $K_k$ optimally blends the drifted prediction with the accurate measurement, weighting each by their covariance.
+
+The result: a state estimate at the fast sensor's rate, with the slow sensor's long-term accuracy. This is the practical way to build a "virtual super-sensor" with the bandwidth of the IMU and the DC accuracy of the camera. Every modern drone flight controller and humanoid robot state estimator uses this architecture.
+
+### 9.3 The covariance matrices encode the sensor bandwidth limit
+
+The Kalman filter's process noise covariance $Q$ and measurement noise covariance $R$ directly encode the sensor's bandwidth limitation:
+
+- A low-bandwidth sensor has a large $R$ at high frequencies — the filter knows the measurement is unreliable there and trusts the model prediction instead.
+- A sensor with known roll-off characteristics (the low-pass $H(s)$ we analyzed in §3) can be modeled by augmenting the state with the sensor dynamics. The Kalman filter then *automatically* compensates for the sensor's phase lag, because it knows how the sensor distorts the truth.
+
+---
+
+## 10. Disturbance observer (DOB) and ADRC: when you don't have a good model
+
+What if building an accurate plant model is impractical — too many unmodeled dynamics, too much nonlinearity, too little identification data? The disturbance observer takes the opposite approach: don't model what you *do* know. Estimate and cancel everything you *don't*.
+
+### 10.1 The DOB principle
+
+The disturbance observer compares the actual plant output $y$ to what a *nominal* model $G_n(s)$ predicts:
+
+$$\hat{d} = G_n^{-1}(s) \cdot y - u$$
+
+The signal $\hat{d}$ is an estimate of *everything* that made the real plant deviate from the nominal model: external disturbances (load torque, wind), unmodeled dynamics (flexible modes, friction), and — critically — the high-frequency content that the sensor missed due to its bandwidth limitation. This total "disturbance" is then fed forward and subtracted from the control signal:
+
+$$u_{\text{actual}} = u_{\text{cmd}} - Q(s) \cdot \hat{d}$$
+
+The $Q(s)$ filter is a low-pass filter that determines the bandwidth of disturbance rejection. Inside the DOB bandwidth, disturbances are estimated and cancelled. Outside it, the DOB is transparent. The effective plant seen by the outer controller becomes approximately the nominal model $G_n(s)$ — clean, linear, predictable.
+
+### 10.2 Why DOB helps with sensor bandwidth
+
+The DOB does not directly fix the sensor. But it makes the outer controller's job dramatically easier by rejecting the high-frequency disturbances that the sensor *would have missed*. The outer loop (position, velocity) now controls a plant that behaves much closer to the nominal model, so its bandwidth can be lower — and therefore comfortably within the sensor's $\omega_s$.
+
+This is the DOB philosophy: **if you can't see the high-frequency mess, cancel it before the outer controller has to deal with it.**
+
+### 10.3 ADRC: the extreme version
+
+Active Disturbance Rejection Control (Han, 1990s) takes this to its logical extreme. The Extended State Observer (ESO) augments the plant state with a "total disturbance" term that lumps together:
+
+- Unknown plant dynamics
+- Nonlinearities (friction, saturation, backlash)
+- External disturbances
+- **Sensor dynamics and bandwidth limitations**
+
+The ESO estimates this total disturbance as an additional state. The controller then cancels it with feedforward. What remains is approximately a pure integrator chain — the simplest possible plant to control. ADRC achieves remarkable performance with almost no model information, at the cost of requiring high controller bandwidth (which may conflict with the very sensor limitation we're trying to overcome — a tension that limits ADRC's applicability in extremely sensor-constrained scenarios).
+
+---
+
+## 11. Detecting sensor saturation online: how to know you're in the danger zone
+
+The previous sections assume you *know* the sensor's bandwidth. In a real deployed system, the effective sensor bandwidth can change: an IMU's internal LPF cutoff may shift with temperature, a camera's frame rate drops in low light, an encoder's velocity estimate degrades at low speed. How do you detect, at runtime, that you're approaching the sensor bandwidth ceiling — before the system oscillates?
+
+### 11.1 Coherence analysis between control effort and measurement
+
+Monitor the cross-spectral density between the control signal $u(t)$ and the sensor output $y(t)$. If the controller is injecting significant high-frequency energy into the plant (visible in $u(t)$'s spectrum), but the sensor's spectrum shows no corresponding energy at those frequencies, the sensor is rolling off. The frequency at which the coherence drops below a threshold (e.g., 0.8) is the *effective* sensor bandwidth at that moment.
+
+This can be computed online with a sliding FFT of moderate length (256–512 samples at 1 kHz gives a 250–500 ms detection latency — acceptable for slowly-varying sensor degradation).
+
+### 11.2 Innovation sequence monitoring
+
+In any Kalman filter or observer, the **innovation** (residual) is:
+
+$$\nu_k = y_k - C \hat{x}_{k|k-1}$$
+
+If the sensor is operating within its bandwidth, $\nu_k$ is white (uncorrelated) with variance matching the filter's expected innovation covariance $S_k = C P_{k|k-1} C^T + R$.
+
+If the sensor becomes bandlimited relative to the actual state dynamics, the innovation sequence develops **structure**: it becomes correlated at high frequencies (the sensor can't track the fast state changes, so successive innovations have the same sign) and its variance exceeds the expected $S_k$. Monitor $\nu_k^T S_k^{-1} \nu_k$ — the normalized innovation squared (NIS). A persistent NIS exceeding the $\chi^2$ threshold triggers a warning: the sensor is saturated.
+
+The response: either reduce the outer loop gain (accept lower bandwidth), increase the observer's reliance on the model (increase $Q$ relative to $R$), or switch to a degraded mode that prioritizes stability over performance.
+
+### 11.3 The practical trigger
+
+In a real-time control loop (1 kHz), the most lightweight detector is a simple high-pass energy ratio:
+
+$$\eta = \frac{\text{HP-filtered energy in } y(t)}{\text{HP-filtered energy in } u(t)}$$
+
+Both signals are passed through the same high-pass filter with cutoff at the expected sensor bandwidth $\omega_s$. If $\eta$ drops below a threshold (say 0.3), the sensor is attenuating high frequencies — the bandwidth ceiling is active. The controller should back off its gain or switch to a more conservative observer configuration.
+
+---
+
+## 12. Connection to this project
 
 | Doc | Connection |
 |-----|-----------|
@@ -345,10 +478,14 @@ Sometimes the right answer is: accept the bandwidth limit. A temperature control
 | `system_identification.md` | Before you can build an observer, you need a model. System identification provides the model from the same (bandlimited) sensor data |
 | `bode_integral_waterbed.md` | Bode's integral says sensitivity suppression at one frequency must be paid for with amplification at another. The sensor bandwidth places a hard bound on where you can push the sensitivity dip |
 | `digital_control_sampling.md` | Sampling is the discrete-time cousin of the continuous bandwidth limit. Aliasing and the ZOH delay are the sampling-domain manifestations of the same underlying truth: you can't control what you can't measure |
+| `sensor_bandwidth_explorer.html` | Interactive step response comparison: ideal H(s)=1 vs bandlimited H(s). Slide Kp and ωs to see the hidden positive feedback destabilize the loop. The companion explorer to this document |
+| §8 (State observers) → `observer_explorer.html` | The observer explorer implements the Luenberger architecture from §8.1 — tune the observer gain L and see how it reconstructs high-frequency state information beyond the sensor bandwidth |
+| §9 (Kalman filtering) → `observer_design.md` | The theory behind multi-rate sensor fusion: prediction at the fast sensor's rate, correction at the slow sensor's rate. The Kalman filter as the optimal blending machine |
+| §10 (DOB/ADRC) → `core_problems_controller_design.md` | Problem #5 (Disturbances) and #6 (Nonlinearity). DOB and ADRC address both by estimating and cancelling everything the model doesn't capture — including sensor limitations |
 
 ---
 
-## 9. Further reading
+## 13. Further reading
 
 - Shannon, C.E. (1948). "A Mathematical Theory of Communication." *Bell System Technical Journal*, 27(3), 379–423. — The original. While about communication, the connection to control (feedback as information channel) was noted by Wiener and formalized later.
 - Wiener, N. (1948). *Cybernetics: Or Control and Communication in the Animal and the Machine.* MIT Press. — Chapter 4 on feedback and oscillation. Wiener understood the sensor bandwidth problem before control theory had the language for it.
@@ -356,7 +493,22 @@ Sometimes the right answer is: accept the bandwidth limit. A temperature control
 - Franklin, G.F., Powell, J.D., & Emami-Naeini, A. (2019). *Feedback Control of Dynamic Systems*, 8th ed. Pearson. — Chapter 6 covers sensor dynamics and noise in control loops.
 - Skogestad, S. & Postlethwaite, I. (2005). *Multivariable Feedback Control*, 2nd ed. Wiley. — Chapter 5 covers fundamental limitations, including sensor bandwidth constraints from Bode's integral.
 
-**Interactive exploration:** The `observer_explorer.html` in this project lets you design a Luenberger observer and see how sensor bandwidth and noise trade off against state estimation quality — the practical implementation of the theory in this document.
+**State observers and Kalman filtering:**
+- Simon, D. (2006). *Optimal State Estimation.* Wiley. — Chapters 5–8 on the Kalman filter, extended KF, unscented KF. The multi-rate sensor fusion architecture in §9 is covered in Chapter 8.
+- Luenberger, D.G. (1971). "An Introduction to Observers." *IEEE Trans. Automatic Control*, 16(6), 596–602. — The original observer paper. Six pages that launched a thousand estimation algorithms.
+
+**Disturbance observer and ADRC:**
+- Chen, W.H., Yang, J., Guo, L., & Li, S. (2016). "Disturbance-Observer-Based Control and Related Methods — An Overview." *IEEE Trans. Industrial Electronics*, 63(2), 1083–1095. — The definitive survey of DOB techniques, including applications to motor control and robotics.
+- Han, J. (2009). "From PID to Active Disturbance Rejection Control." *IEEE Trans. Industrial Electronics*, 56(3), 900–906. — The ADRC manifesto. Shows how an extended state observer can replace detailed plant modeling.
+
+**Online detection of sensor limitations:**
+- Mehra, R.K. & Peschon, J. (1971). "An innovations approach to fault detection and diagnosis in dynamic systems." *Automatica*, 7(5), 637–640. — The innovation sequence as a diagnostic tool; the foundation of §11.2.
+- Bendat, J.S. & Piersol, A.G. (2010). *Random Data: Analysis and Measurement Procedures*, 4th ed. Wiley. — Chapter 6 on coherence analysis; the engineering reference for §11.1.
+
+**Observers in robotics (the humanoid use case):**
+- Siciliano, B., Sciavicco, L., Villani, L., & Oriolo, G. (2009). *Robotics: Modelling, Planning and Control.* Springer. — Chapter 10 on interaction control, including force observers and the role of joint torque sensing in high-bandwidth control loops.
+
+**Interactive exploration:** `observer_explorer.html` (this project) lets you design a Luenberger observer and see how sensor bandwidth and noise trade off against state estimation quality. `sensor_bandwidth_explorer.html` shows the raw sensor bandwidth limit in action — the problem these techniques solve.
 
 </script>
 
