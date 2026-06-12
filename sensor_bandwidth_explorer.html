@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensor Bandwidth Explorer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0;
+  --warn: #f72585; --orange: #f77f00; --green: #06d6a0;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 300px 1fr; grid-template-rows: 48px 1fr auto;
+       grid-template-areas: "header header" "sidebar main" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 10px; font-size: 15px; font-weight: 600; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 14px;
+           display: flex; flex-direction: column; gap: 12px; }
+.main { grid-area: main; display: flex; flex-direction: column; gap: 1px; background: var(--border); min-height: 0; }
+.plot-box { flex: 1; position: relative; background: var(--surface); min-height: 0; }
+.plot-box canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; pointer-events: none; z-index: 2; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.insight strong { color: var(--text); }
+.section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 4px; }
+.param-group { background: var(--surface2); border-radius: 8px; padding: 12px 14px; }
+.param-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.param-row label { font-size: 12px; width: 30px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; background: var(--accent); border: 2px solid var(--surface); }
+.param-row .val { width: 44px; text-align: right; font-size: 12px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+.readout { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.readout .item { background: var(--surface2); border-radius: 5px; padding: 7px 8px; text-align: center; }
+.readout .item .rv { font-size: 1.05rem; font-weight: 700; font-family: var(--mono); }
+.readout .item .rl { font-size: 9px; color: var(--text-dim); text-transform: uppercase; }
+
+@media (max-width: 800px) {
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto; grid-template-areas: "header" "sidebar" "main" "insight"; height: auto; }
+  .plot-box { height: min(55vw, 350px); min-height: 240px; }
+  .param-row input[type="range"] { height: 6px; min-height: 28px; }
+  .param-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header"><div class="dot"></div>Sensor Bandwidth Limit Explorer</div>
+
+  <div class="sidebar">
+    <div class="param-group">
+      <div class="section-title">Controller</div>
+      <div class="param-row">
+        <label>K<sub>p</sub></label>
+        <input type="range" id="kp" min="1" max="80" step="0.5" value="10">
+        <span class="val" id="kpVal">10.0</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">
+        Plant: G(s) = K<sub>p</sub> / (s² + 2s + 1)
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">Sensor</div>
+      <div class="param-row">
+        <label>&omega;<sub>s</sub></label>
+        <input type="range" id="ws" min="2" max="100" step="1" value="20">
+        <span class="val" id="wsVal">20</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">
+        H(s) = &omega;<sub>s</sub> / (s + &omega;<sub>s</sub>)
+      </div>
+    </div>
+
+    <div class="readout">
+      <div class="item"><div class="rv" id="pmIdeal" style="color:var(--accent)">—</div><div class="rl">PM (ideal)</div></div>
+      <div class="item"><div class="rv" id="pmActual" style="color:var(--warn)">—</div><div class="rl">PM (real)</div></div>
+      <div class="item"><div class="rv" id="bwIdeal">—</div><div class="rl">BW ideal</div></div>
+      <div class="item"><div class="rv" id="status" style="font-size:0.8rem;">—</div><div class="rl">Status</div></div>
+    </div>
+
+    <div class="param-group" style="font-size:10px;color:var(--text-dim);line-height:1.5;">
+      <b style="color:var(--accent);">Blue</b> = ideal sensor H=1<br>
+      <b style="color:var(--warn);">Red</b> = bandlimited H(s)<br><br>
+      Push K<sub>p</sub> ↑ or &omega;<sub>s</sub> ↓ until the red trace oscillates.
+      The sensor bandwidth sets a hard ceiling.
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="plot-box" id="plotStep">
+      <div class="plot-label">Step Response — ideal vs bandlimited sensor</div>
+      <canvas id="canvasStep"></canvas>
+    </div>
+    <div class="plot-box" id="plotPoles">
+      <div class="plot-label">Closed-Loop Pole Migration as K<sub>p</sub> increases</div>
+      <canvas id="canvasPoles"></canvas>
+    </div>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span>💡</span> <span id="insightText">Slide Kp up or ωs down to see the sensor bandwidth limit in action.</span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvasStep = $('canvasStep'), canvasPoles = $('canvasPoles');
+const ctxStep = canvasStep.getContext('2d'), ctxPoles = canvasPoles.getContext('2d');
+
+// ===================== Simulation =====================
+function simulateStep(Kp, ws, tMax, nPts) {
+  // Plant:  G(s) = Kp / (s² + 2s + 1)
+  // Ideal closed-loop:  T(s) = G / (1+G)  = Kp / (s² + 2s + 1 + Kp)
+  //   poles: s = -1 ± j√Kp  when Kp > 1  (underdamped)
+  //
+  // Real closed-loop:  T(s) = G / (1 + G·H)  with H = ωs/(s+ωs)
+  //   = Kp(s+ωs) / [(s²+2s+1)(s+ωs) + Kp·ωs]
+  //   = Kp(s+ωs) / [s³ + (ωs+2)s² + (2ωs+1)s + ωs(1+Kp)]
+  //
+  // Simulate via RK4 on state-space
+
+  const dt = tMax / (nPts - 1);
+  const t = new Float64Array(nPts);
+  const yIdeal = new Float64Array(nPts);
+  const yActual = new Float64Array(nPts);
+  for (let i = 0; i < nPts; i++) t[i] = i * dt;
+
+  // Ideal: 2nd order.  State x = [y, ẏ]
+  // ẍ + 2ẋ + x = Kp (1 − x)  →  ẍ = Kp(1−x) − 2ẋ − x
+  let x1_i = 0, x2_i = 0;
+  function fIdeal(x1, x2) {
+    const dx1 = x2;
+    const dx2 = Kp * (1 - x1) - 2 * x2 - x1;
+    return [dx1, dx2];
+  }
+
+  // Actual: 3rd order.  State x = [y, ẏ, ÿ] ... no, let's use the sensor state.
+  // Plant + sensor:  ẍ + 2ẋ + x = Kp (1 − H·x)
+  // Sensor:  ḣ = ωs (x − h), where h is the measured output
+  // Then the control is Kp(1 − h), so ẍ = Kp(1−h) − 2ẋ − x
+  let x1_a = 0, x2_a = 0, h = 0;
+  function fActual(x1, x2, hv) {
+    const dx1 = x2;
+    const dx2 = Kp * (1 - hv) - 2 * x2 - x1;
+    const dh = ws * (x1 - hv);
+    return [dx1, dx2, dh];
+  }
+
+  const sub = 5, dtF = dt / sub;
+  for (let k = 0; k < nPts; k++) {
+    yIdeal[k] = x1_i;
+    yActual[k] = x1_a;
+
+    if (k < nPts - 1) {
+      // RK4 ideal
+      for (let s = 0; s < sub; s++) {
+        const [k11, k12] = fIdeal(x1_i, x2_i);
+        const [k21, k22] = fIdeal(x1_i + 0.5*dtF*k11, x2_i + 0.5*dtF*k12);
+        const [k31, k32] = fIdeal(x1_i + 0.5*dtF*k21, x2_i + 0.5*dtF*k22);
+        const [k41, k42] = fIdeal(x1_i + dtF*k31, x2_i + dtF*k32);
+        x1_i += (dtF/6)*(k11 + 2*k21 + 2*k31 + k41);
+        x2_i += (dtF/6)*(k12 + 2*k22 + 2*k32 + k42);
+      }
+
+      // RK4 actual (3rd order with sensor state)
+      for (let s = 0; s < sub; s++) {
+        const [k11, k12, k13] = fActual(x1_a, x2_a, h);
+        const [k21, k22, k23] = fActual(x1_a + 0.5*dtF*k11, x2_a + 0.5*dtF*k12, h + 0.5*dtF*k13);
+        const [k31, k32, k33] = fActual(x1_a + 0.5*dtF*k21, x2_a + 0.5*dtF*k22, h + 0.5*dtF*k23);
+        const [k41, k42, k43] = fActual(x1_a + dtF*k31, x2_a + dtF*k32, h + dtF*k33);
+        x1_a += (dtF/6)*(k11 + 2*k21 + 2*k31 + k41);
+        x2_a += (dtF/6)*(k12 + 2*k22 + 2*k32 + k42);
+        h    += (dtF/6)*(k13 + 2*k23 + 2*k33 + k43);
+      }
+    }
+  }
+  return { t, yIdeal, yActual };
+}
+
+// ===================== Pole computation =====================
+function computePoles(Kp, ws) {
+  // Ideal: s² + 2s + (1+Kp) = 0
+  const discI = 4 - 4*(1+Kp);
+  let polesIdeal;
+  if (discI >= 0) {
+    polesIdeal = [{ re: -1 + Math.sqrt(discI)/2, im: 0 }, { re: -1 - Math.sqrt(discI)/2, im: 0 }];
+  } else {
+    const wd = Math.sqrt(-discI) / 2;
+    polesIdeal = [{ re: -1, im: wd }, { re: -1, im: -wd }];
+  }
+
+  // Actual: s³ + (ws+2)s² + (2ws+1)s + ws(1+Kp) = 0
+  // Use companion matrix eigenvalues
+  const a2 = ws + 2, a1 = 2*ws + 1, a0 = ws*(1+Kp);
+  // Companion matrix for monic poly s³ + a2 s² + a1 s + a0
+  // M = [0  1  0; 0  0  1; -a0 -a1 -a2]
+  // Find eigenvalues via QR algorithm (simplified — power iteration for dominant)
+  // For display, compute characteristic polynomial roots via cubic formula
+  const p = a1 - a2*a2/3;
+  const q = a0 - a2*a1/3 + 2*a2*a2*a2/27;
+  const disc = q*q/4 + p*p*p/27;
+
+  let polesActual;
+  if (disc > 0) {
+    // One real root
+    const u = Math.cbrt(-q/2 + Math.sqrt(disc));
+    const v = Math.cbrt(-q/2 - Math.sqrt(disc));
+    const r1 = u + v - a2/3;
+    polesActual = [{ re: r1, im: 0 }];
+    // Quadratic factor: (s - r1)(s² + bs + c) = s³ + a2 s² + a1 s + a0
+    const b = a2 + r1;
+    const c = a1 + b*r1;
+    const disc2 = b*b - 4*c;
+    if (disc2 >= 0) {
+      polesActual.push({ re: (-b + Math.sqrt(disc2))/2, im: 0 });
+      polesActual.push({ re: (-b - Math.sqrt(disc2))/2, im: 0 });
+    } else {
+      const wd2 = Math.sqrt(-disc2)/2;
+      polesActual.push({ re: -b/2, im: wd2 });
+      polesActual.push({ re: -b/2, im: -wd2 });
+    }
+  } else {
+    // Three real roots (trigonometric solution, simplified for this plot)
+    // Just use numerical approximation for the poles sweep
+    const phi = Math.acos(-q/2 / Math.sqrt(-p*p*p/27));
+    const r = 2 * Math.sqrt(-p/3);
+    polesActual = [
+      { re: r*Math.cos(phi/3) - a2/3, im: 0 },
+      { re: r*Math.cos((phi+2*Math.PI)/3) - a2/3, im: 0 },
+      { re: r*Math.cos((phi+4*Math.PI)/3) - a2/3, im: 0 },
+    ];
+  }
+
+  return { polesIdeal, polesActual };
+}
+
+// ===================== Phase margin estimate =====================
+function estimatePM(Kp, ws) {
+  // Ideal: L(s) = G = Kp/(s²+2s+1)
+  // Crossover where |G|=1: ω⁴ + 2ω² + 1 = Kp² → ω² = √(Kp²) − 1  (approx)
+  // For large Kp: ωc ≈ √Kp.  Phase: ∠G = −atan2(2ω, 1−ω²)
+  const wcI = Kp > 1 ? Math.sqrt(Math.sqrt(Kp*Kp + 0) - 1) : 0.1;
+  // Actually: |Kp/(−ω² + 2jω + 1)| = Kp/√((1−ω²)² + 4ω²) = 1
+  // Solve: Kp² = (1−ω²)² + 4ω² = ω⁴ + 2ω² + 1 → ω² = √(Kp²+?...) hmm
+  // Let's just compute numerically:
+  let wcIActual = 0.1;
+  for (let w = 0.01; w < 200; w *= 1.01) {
+    const mag = Kp / Math.sqrt((1-w*w)*(1-w*w) + 4*w*w);
+    if (mag < 1) { wcIActual = w; break; }
+  }
+  const phaseI = -Math.atan2(2*wcIActual, 1-wcIActual*wcIActual) * 180/Math.PI;
+  const pmIdeal = 180 + phaseI;
+
+  // Actual: L = G·H.  Crossover where |G·H| = 1.  More complex.
+  // For estimate: the sensor adds −atan(ω/ωs) phase at crossover.
+  // Search numerically:
+  let wcA = 0.1, pmActual = 0;
+  for (let w = 0.01; w < 200; w *= 1.005) {
+    const magG = Kp / Math.sqrt((1-w*w)*(1-w*w) + 4*w*w);
+    const magH = ws / Math.sqrt(w*w + ws*ws);
+    if (magG * magH < 1) {
+      wcA = w;
+      const phaseG = -Math.atan2(2*w, 1-w*w) * 180/Math.PI;
+      const phaseH = -Math.atan2(w, ws) * 180/Math.PI;
+      pmActual = 180 + phaseG + phaseH;
+      break;
+    }
+  }
+
+  return { pmIdeal, pmActual, wcIdeal: wcIActual, wcActual: wcA };
+}
+
+// ===================== Canvas helpers =====================
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  }
+  return { w, h, dpr };
+}
+
+// ===================== Step response plot =====================
+function drawStep(Kp, ws) {
+  const container = $('plotStep');
+  const { w, h, dpr } = resizeCanvas(canvasStep, container);
+  const ctx = ctxStep;
+
+  const tMax = 5, nPts = 500;
+  const { t, yIdeal, yActual } = simulateStep(Kp, ws, tMax, nPts);
+
+  ctx.save(); ctx.scale(dpr, dpr);
+  const m = { top: 28, right: 20, bottom: 36, left: 48 };
+  const pw = w - m.left - m.right, ph = h - m.top - m.bottom;
+
+  // Y range
+  let yMin = -0.5, yMax = 1.8;
+  for (let i = 0; i < nPts; i++) {
+    if (yIdeal[i] > yMax) yMax = yIdeal[i];
+    if (yIdeal[i] < yMin) yMin = yIdeal[i];
+    const ya = Math.abs(yActual[i]);
+    if (ya < 10 && yActual[i] > yMax) yMax = yActual[i];
+    if (ya < 10 && yActual[i] < yMin) yMin = yActual[i];
+  }
+  yMax = Math.min(yMax + 0.3, 5);
+  yMin = Math.max(yMin - 0.3, -4);
+
+  function tx(tv) { return m.left + (tv/tMax)*pw; }
+  function ty(yv) { return m.top + ph - ((yv-yMin)/(yMax-yMin))*ph; }
+
+  // Background
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  for (let tv = 0; tv <= tMax; tv += 1) {
+    ctx.beginPath(); ctx.moveTo(tx(tv), m.top); ctx.lineTo(tx(tv), m.top+ph); ctx.stroke();
+  }
+  ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(m.left, ty(1)); ctx.lineTo(m.left+pw, ty(1)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(m.left, m.top); ctx.lineTo(m.left, m.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(m.left, m.top+ph); ctx.lineTo(m.left+pw, m.top+ph); ctx.stroke();
+
+  // Ideal trace (blue)
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5; ctx.shadowColor = '#4cc9f0'; ctx.shadowBlur = 2;
+  ctx.beginPath();
+  for (let i = 0; i < nPts; i++) {
+    const sx = tx(t[i]), sy = ty(Math.max(yMin, Math.min(yMax, yIdeal[i])));
+    i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Actual trace (red)
+  ctx.strokeStyle = '#f72585'; ctx.lineWidth = 2; ctx.shadowColor = '#f72585'; ctx.shadowBlur = 2;
+  ctx.beginPath();
+  for (let i = 0; i < nPts; i++) {
+    const ya = yActual[i];
+    const sy = ty(Math.max(yMin, Math.min(yMax, ya)));
+    i===0 ? ctx.moveTo(tx(t[i]), sy) : ctx.lineTo(tx(t[i]), sy);
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Axis labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let tv = 0; tv <= tMax; tv += 1) ctx.fillText(tv, tx(tv), m.top+ph+14);
+  ctx.fillText('Time [s]', m.left+pw/2, m.top+ph+30);
+
+  // Legend
+  ctx.fillStyle = '#4cc9f0'; ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left';
+  ctx.fillText('— Ideal H(s)=1', m.left+6, m.top+18);
+  ctx.fillStyle = '#f72585';
+  ctx.fillText('— Real H(s)=ω_s/(s+ω_s)', m.left+6, m.top+34);
+
+  ctx.restore();
+  return { yIdeal, yActual, t };
+}
+
+// ===================== Pole migration plot =====================
+function drawPoles(Kp, ws) {
+  const container = $('plotPoles');
+  const { w, h, dpr } = resizeCanvas(canvasPoles, container);
+  const ctx = ctxPoles;
+
+  ctx.save(); ctx.scale(dpr, dpr);
+  const cx = w/2, cy = h/2;
+  const scale = Math.min(w, h) / 14;
+
+  function px(re) { return cx + re * scale; }
+  function py(im) { return cy - im * scale; }
+
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid & axes
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  for (let i = -10; i <= 0; i += 2) {
+    const x = px(i);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let i = -8; i <= 8; i += 4) {
+    const y = py(i);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke(); // Re axis
+  ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke(); // Im axis
+
+  // Label
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let i = -10; i <= 0; i += 2) ctx.fillText(i, px(i), cy+14);
+
+  // Sweep Kp from 1 to current value, draw pole traces
+  const KpSteps = 100;
+  const idealPoles = [];
+  const actualRealPoles = [];
+
+  for (let j = 0; j <= KpSteps; j++) {
+    const k = 1 + (Kp - 1) * (j / KpSteps);
+    const { polesIdeal, polesActual } = computePoles(k, ws);
+
+    // Ideal poles (complex conjugate pair)
+    idealPoles.push(polesIdeal);
+
+    // Actual: collect real parts for tracing
+    const realParts = polesActual.map(p => p.re);
+    actualRealPoles.push(realParts);
+  }
+
+  // Draw ideal pole traces (locus as Kp increases)
+  ctx.strokeStyle = 'rgba(76,201,240,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  for (let j = 0; j < idealPoles.length; j++) {
+    const p = idealPoles[j][0]; // upper half
+    const sx = px(p.re), sy = py(p.im);
+    j===0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  // Mirror
+  ctx.beginPath();
+  for (let j = 0; j < idealPoles.length; j++) {
+    const p = idealPoles[j][0];
+    const sx = px(p.re), sy = py(-p.im);
+    j===0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Draw actual pole traces (3 poles)
+  const colors = ['#f72585', '#f77f00', '#ffd166'];
+  for (let poleIdx = 0; poleIdx < 3; poleIdx++) {
+    ctx.strokeStyle = colors[poleIdx]; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let j = 0; j < actualRealPoles.length; j++) {
+      const re = actualRealPoles[j][poleIdx];
+      // Skip if imaginary (complex pair gets both drawn by one pole)
+      const sx = px(re), sy = py(0);
+      j===0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+  }
+
+  // Mark current poles
+  const { polesIdeal, polesActual: currActual } = computePoles(Kp, ws);
+  for (const p of polesIdeal) {
+    ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(px(p.re)-6, py(p.im)-6); ctx.lineTo(px(p.re)+6, py(p.im)+6);
+    ctx.moveTo(px(p.re)+6, py(p.im)-6); ctx.lineTo(px(p.re)-6, py(p.im)+6);
+    ctx.stroke();
+  }
+  for (let i = 0; i < currActual.length; i++) {
+    const p = currActual[i];
+    ctx.strokeStyle = colors[i]; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(px(p.re), py(p.im), 6, 0, 2*Math.PI);
+    ctx.stroke();
+  }
+
+  // Legend
+  const lx = w - 130, ly = 12;
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx, ly-4); ctx.lineTo(lx+6, ly+2);
+  ctx.moveTo(lx+6, ly-4); ctx.lineTo(lx, ly+2); ctx.stroke();
+  ctx.fillStyle = '#4cc9f0'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'left'; ctx.fillText('Ideal poles (×)', lx+12, ly+4);
+
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = colors[i]; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(lx+3, ly+16+i*14, 4, 0, 2*Math.PI); ctx.stroke();
+    ctx.fillStyle = colors[i];
+    ctx.fillText('Real pole '+(i+1)+' (○)', lx+12, ly+20+i*14);
+  }
+
+  ctx.restore();
+}
+
+// ===================== Update =====================
+function updateAll() {
+  const Kp = parseFloat($('kp').value);
+  const ws = parseFloat($('ws').value);
+
+  $('kpVal').textContent = Kp.toFixed(1);
+  $('wsVal').textContent = ws.toFixed(0);
+
+  // Step response
+  const stepData = drawStep(Kp, ws);
+
+  // Pole map
+  drawPoles(Kp, ws);
+
+  // Margins
+  const { pmIdeal, pmActual, wcIdeal, wcActual } = estimatePM(Kp, ws);
+  $('pmIdeal').textContent = pmIdeal.toFixed(1) + '°';
+  $('pmActual').textContent = pmActual.toFixed(1) + '°';
+  $('bwIdeal').textContent = wcIdeal.toFixed(1) + ' r/s';
+
+  // Status
+  if (pmActual < 0) {
+    $('status').textContent = 'UNSTABLE';
+    $('status').style.color = 'var(--warn)';
+  } else if (pmActual < 30) {
+    $('status').textContent = 'Marginal';
+    $('status').style.color = 'var(--orange)';
+  } else {
+    $('status').textContent = 'Stable';
+    $('status').style.color = 'var(--green)';
+  }
+
+  // Insight
+  const msgs = [];
+  if (pmActual < 5) {
+    msgs.push(`PM=${pmActual.toFixed(0)}° — the real system is unstable. The sensor bandwidth ω_s=${ws} cannot support Kp=${Kp.toFixed(0)}.`);
+    msgs.push('The hidden positive feedback loop in G_eq(s) is amplifying high-frequency energy that the sensor cannot see.');
+  } else if (pmActual < 30) {
+    msgs.push(`PM=${pmActual.toFixed(0)}° — marginal. The sensor at ω_s=${ws} is eating ${(Math.atan2(wcActual,ws)*180/Math.PI).toFixed(0)}° of phase at the crossover.`);
+  } else {
+    const phaseLoss = (Math.atan2(wcActual, ws) * 180/Math.PI).toFixed(0);
+    msgs.push(`PM=${pmActual.toFixed(0)}° — healthy. Sensor bandwidth ω_s=${ws} is ${(ws/wcActual).toFixed(1)}× the crossover. Phase loss from sensor: ${phaseLoss}°.`);
+  }
+  if (Kp > ws) {
+    msgs.push(`⚠ Kp (${Kp.toFixed(0)}) > ω_s (${ws}) — the gain exceeds the sensor bandwidth. This is the danger zone.`);
+  }
+  $('insightText').textContent = msgs.join(' · ');
+}
+
+// ===================== Events =====================
+$('kp').addEventListener('input', updateAll);
+$('ws').addEventListener('input', updateAll);
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateAll, 100); });
+
+// ===================== Boot =====================
+updateAll();
+</script>
+</body>
+</html>
