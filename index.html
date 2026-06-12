@@ -382,6 +382,25 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+  <a href="sensor_bandwidth_explorer.html" class="card c-zero">
+    <div class="card-icon">&#x1F4E1;</div>
+    <span class="card-tag tag-zero">Sensor &middot; Bandwidth Limit &middot; Positive Feedback</span>
+    <h2>Sensor Bandwidth Explorer</h2>
+    <p>
+      What happens when your sensor is bandlimited? The feedback path
+      H(s) &ne; 1 introduces a hidden positive feedback loop. Slide K<sub>p</sub>
+      up or &omega;<sub>s</sub> down and watch the red trace diverge while the blue
+      trace stays stable &mdash; the sensor sets a hard ceiling.
+    </p>
+    <div class="card-features">
+      <span>ideal vs real sensor</span>
+      <span>step response</span>
+      <span>pole migration</span>
+      <span>PM &amp; BW readout</span>
+      <span>stability status</span>
+    </div>
+  </a>
+
 </div>
 
 <div style="text-align:center;padding:0 24px 0;max-width:1200px;margin:0 auto;">
@@ -573,6 +592,25 @@ footer a:hover { text-decoration: underline; }
       <span>Kalman optimality</span>
       <span>duality theorem</span>
       <span>separation principle</span>
+    </div>
+  </a>
+
+  <a href="sensor_bandwidth_limit.html" class="card c-lqr">
+    <div class="card-icon">&#x1F4E1;</div>
+    <span class="card-tag tag-lqr">Sensor &middot; Bandwidth &middot; Geq(s)</span>
+    <h2>Sensor Bandwidth: The Hard Ceiling</h2>
+    <p>
+      Every controller assumes it sees the truth. A bandlimited sensor introduces
+      a hidden positive feedback loop: G<sub>eq</sub>(s)=GC/(1+GC&middot;(H−1)).
+      Phase margin is the first casualty; the equivalent forward gain diverges
+      as GC→1 above &omega;<sub>s</sub>. If you can&#x27;t measure it, you can&#x27;t control it.
+    </p>
+    <div class="card-features">
+      <span>G<sub>eq</sub> derivation</span>
+      <span>positive feedback</span>
+      <span>phase margin ceiling</span>
+      <span>practical limits table</span>
+      <span>5 mitigations</span>
     </div>
   </a>
 
