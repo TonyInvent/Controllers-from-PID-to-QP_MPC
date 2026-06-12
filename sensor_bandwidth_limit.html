@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensor Bandwidth: The Hard Ceiling You Can&#x27;t Design Around</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@5.1.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #58a6ff;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --orange: #f0883e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.7;
+  min-height: 100vh;
+}
+
+.back-bar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.back-bar a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.back-bar a:hover { text-decoration: underline; }
+
+#content {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+#content h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.5px;
+}
+#content h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 28px 0 10px;
+  color: #f0f6fc;
+}
+#content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 22px 0 8px;
+  color: #c9d1d9;
+}
+#content p {
+  margin: 8px 0 14px;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+#content ul, #content ol {
+  margin: 8px 0 14px;
+  padding-left: 24px;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+#content li { margin: 4px 0; }
+#content strong { color: #f0f6fc; }
+#content em { color: #d2d9e0; }
+#content code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  background: var(--surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--orange);
+}
+#content pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 12px 0 18px;
+}
+#content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+#content blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 8px 16px;
+  margin: 12px 0 18px;
+  background: rgba(88,166,255,0.06);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+#content blockquote p { color: inherit; }
+#content a { color: var(--accent); text-decoration: none; }
+#content a:hover { text-decoration: underline; }
+#content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+#content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0 18px;
+  font-size: 0.85rem;
+}
+#content th, #content td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+#content th { background: var(--surface); font-weight: 600; }
+#content img { max-width: 100%; border-radius: 6px; }
+
+.loading {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-secondary);
+}
+</style>
+</head>
+<body>
+
+<div class="back-bar">
+  <a href="index.html">&larr; Back to simulators</a>
+</div>
+
+<div id="content">
+  <div class="loading">Loading&hellip;</div>
+</div>
+
+<script type="text/markdown" id="md-source">
+# Sensor Bandwidth: The Hard Ceiling You Can't Design Around
+
+**Every controller assumes it sees the truth. A bandlimited sensor sees a filtered version of reality. The gap between truth and measurement is not just a nuisance — it introduces a hidden positive feedback loop that puts an absolute, non-negotiable ceiling on achievable closed-loop bandwidth. If you can't measure it, you can't control it.**
+
+---
+
+## 1. The assumption you didn't know you were making
+
+The standard unity-feedback block diagram is:
+
+```
+    r ──→(+)──→ C(s) ──→ G(s) ──→ y
+          ↑                        │
+          └────────────────────────┘
+```
+
+Implicit in this picture: the feedback path has transfer function $H(s) = 1$. The sensor reports the true output $y(t)$ instantly, perfectly, at all frequencies.
+
+This assumption is wrong. Every real sensor is bandlimited. An incremental encoder misses high-frequency velocity fluctuations because it quantizes position in discrete counts and updates at a finite rate. An IMU's accelerometer rolls off above a few hundred Hz. A camera-based tracking system has a frame rate — a hard sampling limit. A thermocouple has a thermal time constant that low-pass-filters the true temperature.
+
+The more honest block diagram is:
+
+```
+    r ──→(+)──→ C(s) ──→ G(s) ──→ y
+          ↑                        │
+          └──── H(s) ◄─────────────┘
+```
+
+where $H(s)$ is the sensor dynamics. Conventionally we analyze $T(s) = \frac{GC}{1+GCH}$ and think "close enough to unity feedback as long as $H(s) \approx 1$ within the loop bandwidth." This is dangerously incomplete. The moment you ask *what happens when you try to push bandwidth beyond what the sensor can resolve*, a qualitatively different mechanism appears.
+
+---
+
+## 2. The derivation: a hidden positive feedback loop
+
+Start with the block diagram. The controller sees not the true error $e = r - y$, but the *measured* error $e_m = r - H(s) y$:
+
+$$u = C(s) \cdot e_m = C(s) \big(r - H(s) y\big)$$
+
+The plant responds:
+
+$$y = G(s) \cdot u = G(s) C(s) \big(r - H(s) y\big)$$
+
+Now rewrite the error signal in terms of the *true* output $y$:
+
+$$y = G C \big(r - y - (H-1)y\big) = G C (r - y) - G C (H-1) y$$
+
+The first term $G C (r-y)$ is the familiar negative feedback. The second term $- G C (H-1) y$ is what the sensor's imperfection injects. Rearranging to isolate $y$ in terms of the true error $E(s) = R(s) - Y(s)$:
+
+$$y = \frac{G C}{1 + G C (H-1)} \cdot (r - y) \triangleq G_{\text{eq}}(s) \cdot E(s)$$
+
+This is the key result. The equivalent forward-path transfer function $G_{\text{eq}}(s)$ that the true error "sees" is:
+
+$$\boxed{G_{\text{eq}}(s) = \frac{G C}{1 + G C \cdot (H(s) - 1)}}$$
+
+When $H(s) = 1$ (perfect sensor), $H-1 = 0$, and $G_{\text{eq}} = G C$ — the familiar open-loop transfer function. When $H(s) \neq 1$, the denominator contains a term that fundamentally alters the dynamics.
+
+---
+
+## 3. The low-pass sensor: where the ceiling comes from
+
+Now model the sensor as a first-order low-pass filter with bandwidth $\omega_s$:
+
+$$H(s) = \frac{\omega_s}{s + \omega_s}$$
+
+Then:
+
+$$H(s) - 1 = \frac{\omega_s}{s + \omega_s} - 1 = \frac{-s}{s + \omega_s}$$
+
+The term $H(s) - 1$ is a **high-pass filter** — negative of one, specifically. Substitute into $G_{\text{eq}}$:
+
+$$\boxed{G_{\text{eq}}(s) = \frac{G C}{1 - G C \cdot \frac{s}{s + \omega_s}}}$$
+
+Look at the denominator: $1 - G C \cdot (\text{high-pass})$. The **minus sign** is the critical detail. For $H(s)=1$, the denominator would be $1$. With a bandlimited sensor, the denominator becomes $1$ minus a term that grows with frequency. This is a **positive feedback loop** in the equivalent forward path.
+
+To see this clearly, consider a simple plant-controller pair where $G C$ is a pure gain $K$ at some frequency:
+
+- **Low frequencies** ($s \ll \omega_s$): the high-pass term $\frac{s}{s+\omega_s} \approx 0$. $G_{\text{eq}} \approx G C$. The sensor tracks perfectly. Normal feedback.
+- **At** $s = \omega_s$: $\frac{s}{s+\omega_s} = \frac{j\omega_s}{j\omega_s + \omega_s} = \frac{j}{1+j} = 0.5 + 0.5j$. The magnitude is $1/\sqrt{2} \approx 0.707$. $G_{\text{eq}} = \frac{K}{1 - 0.707 K}$. If $K > 1/0.707 \approx 1.41$, the denominator magnitude drops below 1 — effective gain increases.
+- **High frequencies** ($s \gg \omega_s$): $\frac{s}{s+\omega_s} \approx 1$. $G_{\text{eq}} \approx \frac{K}{1 - K}$. **If $K > 1$, the denominator becomes negative or vanishingly small.** The equivalent forward gain blows up. This is positive feedback: the controller pushes, sees nothing (sensor rolled off), pushes harder based on stale information, and the loop destabilizes.
+
+The sensor bandwidth $\omega_s$ is not a gradual roll-off you can compensate with more controller gain. It is a mathematical singularity: as $G C$ approaches 1 at frequencies above $\omega_s$, $G_{\text{eq}}$ approaches infinity. No amount of controller design can remove the $(1 - G C)$ term in the denominator — it is baked into the physics of measuring through a bandlimited channel.
+
+---
+
+## 4. Phase margin: the casualty you'll see first
+
+The positive feedback mechanism attacks phase margin before it attacks gain margin. Here's why.
+
+Write the loop transfer function with the sensor included, in standard feedback form. The closed-loop transfer function from reference to output is:
+
+$$T(s) = \frac{G C}{1 + G C H}$$
+
+At the gain crossover frequency $\omega_c$ where $|G C H| = 1$, the phase margin is:
+
+$$\text{PM} = 180^\circ + \angle (G C H)$$
+
+For a controller designed assuming $H=1$, the intended phase at crossover is $\angle(G C)$. With the sensor, the actual phase is $\angle(G C) + \angle(H)$. Since $H(s)$ is a low-pass filter, it contributes negative phase:
+
+$$\angle H(j\omega) = -\arctan(\omega / \omega_s)$$
+
+At frequencies approaching $\omega_s$, the sensor saps $45^\circ$ of phase margin. At $\omega = 2\omega_s$, it saps $63^\circ$. A controller designed for $60^\circ$ PM with a perfect sensor will have **negative phase margin** — it will oscillate — if the crossover is pushed anywhere near $\omega_s$.
+
+This means $\omega_s$ is an **absolute ceiling** on achievable crossover frequency. In practice, to maintain at least $45^\circ$ of phase margin, you must keep:
+
+$$\boxed{\omega_c \leq \frac{\omega_s}{2}}$$
+
+and even that assumes the sensor has no additional delay. If the sensor also has a transport delay (camera frame latency, communication bus), the ceiling drops further. For a sensor with bandwidth $\omega_s$ and delay $\tau$, the phase at frequency $\omega$ is:
+
+$$\angle H(j\omega) = -\arctan(\omega/\omega_s) - \omega \tau$$
+
+The delay term is linear in frequency — it kills phase margin at high frequencies far more aggressively than the low-pass roll-off alone.
+
+---
+
+## 5. The physical intuition: information theory meets control
+
+Claude Shannon taught us that a communication channel has a capacity — a maximum rate of information transmission. Norbert Wiener connected this to control decades earlier. The feedback path *is* a communication channel: it carries information about the plant's state to the controller. If the channel is bandlimited to $\omega_s$, the controller cannot receive state information above that frequency.
+
+When the controller injects energy above $\omega_s$, three things happen simultaneously:
+
+1. **The sensor doesn't see it.** The controller's own high-frequency output is invisible in the feedback signal. From the controller's perspective, the plant appears unresponsive — leading it to push harder.
+
+2. **The phase lag makes the controller push at the wrong time.** Even the attenuated high-frequency content that does reach the controller arrives with a phase delay. The controller responds to the *past* state, applying correction when it's too late — turning negative feedback into positive feedback.
+
+3. **The equivalent forward gain diverges.** As shown in §3, $G_{\text{eq}}$ grows without bound as $G C$ approaches 1 above $\omega_s$. The loop doesn't just become less stable — it becomes actively regenerative at those frequencies.
+
+This is why you cannot "design your way out" of a slow sensor. No control algorithm — PID, LQR, H∞, MPC, nonlinear MPC — can compensate for information that doesn't reach the controller. The sensor bandwidth is a fundamental limit, not an engineering trade-off.
+
+---
+
+## 6. Practical ceilings in real systems
+
+| Sensor type | Typical $\omega_s$ | Maximum $\omega_c$ (PM ≥ 45°) | Implication |
+|------------|-------------------|-------------------------------|-------------|
+| Motor encoder (incremental, 4096 CPR, 6000 RPM) | ~2 kHz via velocity estimation | ~1 kHz | Fine for most servo loops |
+| MEMS IMU (accelerometer) | 200–500 Hz (internal LPF) | 100–250 Hz | Limits aggressive drone attitude control |
+| MEMS IMU (gyroscope) | 100–250 Hz | 50–125 Hz | Yaw control bandwidth ceiling |
+| Camera tracking (60 fps) | ~30 Hz (Nyquist) + rendering delay | ~10 Hz | Visual servoing must run at very low bandwidth |
+| Camera tracking (30 fps) | ~15 Hz + delay | ~5 Hz | Barely usable for feedback; feedforward required |
+| Thermocouple (sheathed, τ ≈ 1s) | ~1 rad/s | ~0.5 rad/s | Temperature loops are slow by physics, not by choice |
+| Strain gauge load cell (with mechanical resonance) | ~5 kHz (mechanical) | ~1 kHz (must avoid exciting resonance) | Sensor dynamics and structural dynamics couple |
+
+In every case, the sensor — not the actuator, not the processor, not the control algorithm — sets the hard ceiling.
+
+---
+
+## 7. What you can do about it
+
+You can't break Shannon's law, but you can work within it.
+
+### 7.1 Model the sensor in the design
+
+Stop assuming $H(s) = 1$. Include the sensor transfer function in your loop analysis:
+
+$$T(s) = \frac{G C}{1 + G C H}$$
+
+Design the controller for the *actual* loop, not the idealized one. The sensor's phase lag becomes part of the plant from the controller's perspective. You'll get a lower achievable bandwidth, but the design will be honest — it won't oscillate at the crossover you thought was safe.
+
+### 7.2 Separate sensing for different loops
+
+Cascaded control provides a natural solution. The inner loop (current, velocity) uses a fast sensor (shunt resistor, encoder). The outer loop (position, visual tracking) uses a slower sensor (camera). The inner loop rejects disturbances at high frequency; the outer loop only corrects low-frequency drift. This is exactly why cascaded motor drives work — the position sensor can be slow because the velocity loop handles the fast stuff. See `cascaded_control.md` §6.6 for the discrete-time companion constraint.
+
+### 7.3 Use an observer to fuse multiple sensors
+
+A Kalman filter (or Luenberger observer) can combine a fast-but-noisy sensor with a slow-but-accurate one. The IMU provides high-rate acceleration; the camera provides low-rate absolute position. The observer estimates the state at the fast rate, using the slow measurement as a correction. The observer *predicts* between slow measurements using the plant model. This is standard in drone flight controllers and robot state estimation.
+
+### 7.4 Feedforward for high-frequency tracking
+
+If you know the reference trajectory in advance, feed it forward. The sensor doesn't need to track high frequencies because the feedback loop only corrects the error — and the error is small if the feedforward model is good. This is how CNC machines achieve micron-level tracking at high speed with relatively slow position encoders.
+
+### 7.5 Don't fight the physics
+
+Sometimes the right answer is: accept the bandwidth limit. A temperature control loop at 0.5 rad/s is not "bad control" — it's the correct control given a thermocouple with a 1-second time constant. Pushing harder produces oscillation, not faster response. The sensor bandwidth is not a suggestion. It is a law of nature.
+
+---
+
+## 8. Connection to this project
+
+| Doc | Connection |
+|-----|-----------|
+| `core_problems_controller_design.md` | Problem #1 (Measurement) — this doc dives deep on the specific case of bandlimited sensors and the hidden positive feedback they create |
+| `cascaded_control.md` | §6.6 explains the discrete-time sampling-rate constraint; this doc explains the continuous-time sensor-bandwidth constraint. They are dual limits from the same information-theoretic root |
+| `observer_design.md` | The solution to bandlimited sensing: estimate the state from partial/noisy measurements using a model. Kalman filters and Luenberger observers are the primary tools |
+| `system_identification.md` | Before you can build an observer, you need a model. System identification provides the model from the same (bandlimited) sensor data |
+| `bode_integral_waterbed.md` | Bode's integral says sensitivity suppression at one frequency must be paid for with amplification at another. The sensor bandwidth places a hard bound on where you can push the sensitivity dip |
+| `digital_control_sampling.md` | Sampling is the discrete-time cousin of the continuous bandwidth limit. Aliasing and the ZOH delay are the sampling-domain manifestations of the same underlying truth: you can't control what you can't measure |
+
+---
+
+## 9. Further reading
+
+- Shannon, C.E. (1948). "A Mathematical Theory of Communication." *Bell System Technical Journal*, 27(3), 379–423. — The original. While about communication, the connection to control (feedback as information channel) was noted by Wiener and formalized later.
+- Wiener, N. (1948). *Cybernetics: Or Control and Communication in the Animal and the Machine.* MIT Press. — Chapter 4 on feedback and oscillation. Wiener understood the sensor bandwidth problem before control theory had the language for it.
+- Åström, K.J. & Murray, R.M. (2021). *Feedback Systems*, 2nd ed. Princeton. — Chapter 8 covers the effect of sensor dynamics on closed-loop performance, including the sensor bandwidth limit.
+- Franklin, G.F., Powell, J.D., & Emami-Naeini, A. (2019). *Feedback Control of Dynamic Systems*, 8th ed. Pearson. — Chapter 6 covers sensor dynamics and noise in control loops.
+- Skogestad, S. & Postlethwaite, I. (2005). *Multivariable Feedback Control*, 2nd ed. Wiley. — Chapter 5 covers fundamental limitations, including sensor bandwidth constraints from Bode's integral.
+
+**Interactive exploration:** The `observer_explorer.html` in this project lets you design a Luenberger observer and see how sensor bandwidth and noise trade off against state estimation quality — the practical implementation of the theory in this document.
+
+</script>
+
+<script>
+const md = document.getElementById('md-source').textContent;
+var mathBlocks = [];
+var p = md;
+// Protect display math $$...$$ from markdown parsing
+p = p.replace(/\$\$([\s\S]*?)\$\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+// Protect inline math $...$
+p = p.replace(/\$([^$]+)\$/g, function(m) {
+  mathBlocks.push(m);
+  return '@@@MATH' + (mathBlocks.length - 1) + '@@@';
+});
+var html = marked.parse(p);
+// Restore math blocks
+html = html.replace(/@@@MATH(\d+)@@@/g, function(m, idx) {
+  return mathBlocks[parseInt(idx)];
+});
+document.getElementById('content').innerHTML = html;
+renderMathInElement(document.getElementById('content'), {
+  delimiters: [
+    {left: '$$', right: '$$', display: true},
+    {left: '$', right: '$', display: false}
+  ],
+  throwOnError: false
+});
+</script>
+
+</body>
+</html>
