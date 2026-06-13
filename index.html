@@ -401,6 +401,25 @@ footer a:hover { text-decoration: underline; }
     </div>
   </a>
 
+  <a href="adrc_explorer.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9EC;</div>
+    <span class="card-tag tag-lqr">ADRC &middot; ESO &middot; Disturbance Rejection</span>
+    <h2>ADRC vs PID Explorer</h2>
+    <p>
+      Active Disturbance Rejection Control — three knobs replace dozens of PID
+      parameters. An Extended State Observer estimates and cancels the total
+      disturbance in real time. Compare step response, disturbance rejection,
+      and parameter-shift robustness side-by-side.
+    </p>
+    <div class="card-features">
+      <span>&omega;<sub>c</sub>, &omega;<sub>o</sub>, b<sub>0</sub> tuning</span>
+      <span>ESO f̂(t) estimate</span>
+      <span>disturbance types</span>
+      <span>param shift test</span>
+      <span>ISE &amp; peak|u|</span>
+    </div>
+  </a>
+
 </div>
 
 <div style="text-align:center;padding:0 24px 0;max-width:1200px;margin:0 auto;">
@@ -647,6 +666,25 @@ footer a:hover { text-decoration: underline; }
       <span>hidden coupling trap</span>
       <span>bumpless transfer</span>
       <span>LPV upgrade path</span>
+    </div>
+  </a>
+
+  <a href="adrc_active_disturbance_rejection.html" class="card c-lqr">
+    <div class="card-icon">&#x1F9EC;</div>
+    <span class="card-tag tag-lqr">ADRC &middot; ESO &middot; Han &middot; Model-Free</span>
+    <h2>ADRC: The Controller That Doesn&#x27;t Need a Model</h2>
+    <p>
+      Jingqing Han&#x27;s radical idea: don&#x27;t model the plant, estimate the
+      <em>gap</em> between the plant and an integrator. The Extended State Observer
+      lumps all unknowns into f(t) and cancels them. Three knobs replace PID&#x27;s
+      dozen. In the voice of Richard Feynman.
+    </p>
+    <div class="card-features">
+      <span>ESO derivation</span>
+      <span>bandwidth tuning</span>
+      <span>PID &rarr; ADRC limit</span>
+      <span>PMSM &amp; F-16 apps</span>
+      <span>20-line C impl</span>
     </div>
   </a>
 
