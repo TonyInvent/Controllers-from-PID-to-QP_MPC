@@ -244,14 +244,30 @@ function simulate(tEnd, nPts) {
     }
     yADRC[k] = y1_adrc[0];
 
-    // ESO update — sub-stepped for numerical stability at high ωo.
+    // ESO update — RK4 for numerical stability at high ωo.
     // The measurement y1_adrc[0] is held constant (digital sample-and-hold).
     const e_eso = y1_adrc[0] - z_adrc[0];
-    for (let s = 0; s < 5; s++) {
-      const dtF = dt/5;
-      z_adrc[0] += (z_adrc[1] + l1*e_eso) * dtF;
-      z_adrc[1] += (z_adrc[2] + b0_adrc*u_adrc_clamped + l2*e_eso) * dtF;
-      z_adrc[2] += (l3*e_eso) * dtF;
+    const esoSub = 4;  // RK4 stages
+    const dtESO = dt / esoSub;
+    for (let s = 0; s < esoSub; s++) {
+      function esoDot(z) {
+        const ee = y1_adrc[0] - z[0];
+        return [
+          z[1] + l1*ee,
+          z[2] + b0_adrc*u_adrc_clamped + l2*ee,
+          l3*ee
+        ];
+      }
+      const k1 = esoDot(z_adrc);
+      const z2_ = [z_adrc[0]+0.5*dtESO*k1[0], z_adrc[1]+0.5*dtESO*k1[1], z_adrc[2]+0.5*dtESO*k1[2]];
+      const k2 = esoDot(z2_);
+      const z3_ = [z_adrc[0]+0.5*dtESO*k2[0], z_adrc[1]+0.5*dtESO*k2[1], z_adrc[2]+0.5*dtESO*k2[2]];
+      const k3 = esoDot(z3_);
+      const z4_ = [z_adrc[0]+dtESO*k3[0], z_adrc[1]+dtESO*k3[1], z_adrc[2]+dtESO*k3[2]];
+      const k4 = esoDot(z4_);
+      z_adrc[0] += (dtESO/6)*(k1[0]+2*k2[0]+2*k3[0]+k4[0]);
+      z_adrc[1] += (dtESO/6)*(k1[1]+2*k2[1]+2*k3[1]+k4[1]);
+      z_adrc[2] += (dtESO/6)*(k1[2]+2*k2[2]+2*k3[2]+k4[2]);
     }
   }
 
