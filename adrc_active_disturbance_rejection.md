@@ -91,7 +91,7 @@ $$\boxed{l_1 = 2\omega_o,\qquad l_2 = \omega_o^2}$$
 
 The error dynamics are now $\ddot{e}_1 + 2\omega_o \dot{e}_1 + \omega_o^2 e_1 = h$, a stable second-order filter driven by the unknown $\dot{f}$. Larger $\omega_o$ means faster convergence of $\hat{f} \to f$, at the cost of amplifying measurement noise through $l_1, l_2$.
 
-For an $n$th-order plant, the $n+1$-order ESO has gains:
+For a plant of order $n$, the ESO of order $n+1$ has gains:
 
 $$l_i = \binom{n+1}{i} \omega_o^i, \quad i = 1, \ldots, n+1$$
 
@@ -133,7 +133,7 @@ This is not feedback linearization. Feedback linearization requires you to know 
 
 ### 3.2 Dominate what's left
 
-After cancellation, $u_0$ controls a pure integrator chain. Any simple controller works. The standard choice for an $n$th-order ADRC is:
+After cancellation, $u_0$ controls a pure integrator chain. Any simple controller works. The standard choice for an order-$n$ ADRC is:
 
 $$u_0 = k_1 (r - \hat{x}_1) - k_2 \hat{x}_2 - \cdots - k_n \hat{x}_n$$
 
@@ -143,7 +143,7 @@ $$k_i = \binom{n}{i-1} \omega_c^{n-i+1}$$
 
 For $n=2$: $k_1 = \omega_c^2, k_2 = 2\omega_c$. The closed-loop poles are all at $s = -\omega_c$. One more knob.
 
-The entire ADRC controller for an $n$th-order plant is tuned by **three numbers:**
+The entire ADRC controller for an order-$n$ plant is tuned by **three numbers:**
 
 | Parameter | Meaning | Typical range |
 |-----------|---------|---------------|
