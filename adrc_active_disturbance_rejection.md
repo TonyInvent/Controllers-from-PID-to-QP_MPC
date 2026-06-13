@@ -1,0 +1,339 @@
+# ADRC: The Controller That Doesn't Need a Model
+
+**In the voice of Richard Feynman, who would have loved this.**
+
+*"You have a system. You don't know its equations. You don't know its parameters. You don't know what disturbances will hit it. And you want to control it — precisely, robustly, across a wide operating range. The textbooks say this is impossible without a model. The textbooks are wrong. Let me show you a trick."*
+
+---
+
+## 1. The trick: don't model what you know. Estimate what you don't.
+
+Here is the standard approach to control, and it contains a hidden assumption that is almost never questioned.
+
+You have a plant. You write down its differential equation — from physics, from system identification, from a datasheet. You design a controller for that equation. If the real plant matches your equation, the controller works. If it doesn't — wrong inertia, unmodeled friction, parameter drift, external disturbance — the controller degrades. Sometimes it degrades gracefully. Sometimes it oscillates. Sometimes it just stops working.
+
+The hidden assumption: **the plant model is accurate enough that the controller's errors are small and correctable by feedback.** This assumption is wrong more often than anyone admits.
+
+Now here is a completely different idea. It comes from a Chinese engineer named Jingqing Han, who spent the 1990s thinking about this problem at a level most people never reach. His question was beautifully simple:
+
+*What if, instead of modeling the plant, you modeled the* **gap** *between the plant and a deliberately oversimplified model?*
+
+Suppose you declare that your plant is a pure integrator chain. Nothing else. No friction. No nonlinearities. No resonances. Just $\dot{x} = u$. This is obviously wrong. The real plant is nothing like a pure integrator. But the gap — the difference between the real plant's behavior and the integrator's behavior — is *some signal*. Let's call it $f(t)$, the **total disturbance**.
+
+Now here is the trick Han discovered: **you can estimate $f(t)$ in real time, treat it as if it were just another state variable, and cancel it with feedforward.** If you can estimate it accurately — and Han showed you can, with a surprisingly simple observer — then what's left for the controller is EXACTLY a pure integrator chain. The hardest plant in the world becomes the easiest plant in the world, because you cancelled everything that made it hard.
+
+This is Active Disturbance Rejection Control. The name says what it does: it actively rejects disturbances, whatever they are, wherever they come from. It does not distinguish between an external disturbance (a gust of wind), an internal nonlinearity (friction stiction), an unmodeled dynamic (a flexible mode), or a parameter error (wrong inertia). It lumps them all into $f(t)$, estimates $f(t)$ with an observer, and cancels $f(t)$ at the input. The controller never needs to know what $f(t)$ is made of. It only needs to know that $f(t)$ exists, and that it can be estimated fast enough.
+
+---
+
+## 2. The Extended State Observer: how to estimate something you haven't modeled
+
+This is the engine of ADRC. The idea is so elegant that once you see it, you'll wonder why nobody thought of it before Han.
+
+### 2.1 The simplest case: a first-order plant
+
+Consider a first-order nonlinear system:
+
+$$\dot{y} = f(y, t) + b_0 u$$
+
+where $f(y, t)$ is **everything you don't know** — the plant dynamics, the nonlinearities, the external disturbances, the parameter uncertainties, all of it. $b_0$ is the only thing you need to know: the approximate input gain. You don't need it exactly. A rough estimate within a factor of 2 is usually enough.
+
+Let $x_1 = y$. Let $x_2 = f(y, t)$ — the total disturbance, treated as a new state variable. We don't know $f$, but we know it's differentiable (the plant doesn't change instantaneously). So $\dot{f}$ exists, though we don't know its value. Call it $h = \dot{f}$.
+
+Now the system is:
+
+$$\dot{x}_1 = x_2 + b_0 u$$
+$$\dot{x}_2 = h$$
+$$y = x_1$$
+
+This is a second-order linear system in the state $(x_1, x_2)$ with unknown input $h$. If we can estimate $(x_1, x_2)$, we know both the output AND the total disturbance.
+
+A Luenberger observer for this augmented system is:
+
+$$\dot{\hat{x}}_1 = \hat{x}_2 + b_0 u + l_1 (y - \hat{x}_1)$$
+$$\dot{\hat{x}}_2 = l_2 (y - \hat{x}_1)$$
+
+where $l_1, l_2$ are observer gains. Look at the second equation carefully: $\hat{x}_2$ is the estimate of $f(t)$. It is driven purely by the output error $(y - \hat{x}_1)$, multiplied by the gain $l_2$. The observer does not need to know the structure of $f$. It does not need to know $h$. It reconstructs $f$ from the only thing it can see: the mismatch between what the plant actually did and what the observer expected.
+
+This is the **Extended State Observer (ESO).** "Extended" because we extended the state vector with one extra variable — the total disturbance.
+
+### 2.2 The bandwidth parameterization: tuning by turning one knob
+
+Han made another contribution that is remarkably practical. Instead of placing observer poles by solving a Riccati equation (like Kalman) or by trial and error (like PID), he parameterized the observer gains in terms of a single number: the **observer bandwidth $\omega_o$.**
+
+For the second-order ESO above:
+
+$$l_1 = 2\omega_o, \qquad l_2 = \omega_o^2$$
+
+These place both observer poles at $s = -\omega_o$. The observer is a second-order low-pass filter on the output error. $\omega_o$ is the only tuning parameter. Bigger $\omega_o$ means faster estimation — but more noise sensitivity. Smaller $\omega_o$ means smoother estimates — but more lag.
+
+For an $n$th-order plant, the $n+1$-order ESO has gains:
+
+$$l_i = \binom{n+1}{i} \omega_o^i, \quad i = 1, \ldots, n+1$$
+
+The binomial coefficients come from expanding $(s + \omega_o)^{n+1}$. The observer characteristic polynomial is simply $(s + \omega_o)^{n+1}$. One knob. All the observer dynamics.
+
+### 2.3 A concrete first-order example
+
+Let's put numbers on this. The plant is:
+
+$$\dot{y} = -\frac{1}{\tau} y + \frac{K}{\tau} u + d(t)$$
+
+where $\tau = 0.5$ s, $K = 3$, and $d(t) = 0.5\sin(5t)$ is an unknown sinusoidal disturbance. The *nominal* model we pretend is true: $\dot{y} \approx b_0 u$ with $b_0 = K/\tau = 6$. Everything else — the $-\frac{1}{\tau}y$ term, the $d(t)$ term, any parameter mismatch — goes into $f$.
+
+The ESO (at $\omega_o = 20$ rad/s) estimates $f$ continuously. The control law is:
+
+$$u = \frac{u_0 - \hat{f}}{b_0}$$
+
+where $u_0$ is a simple proportional controller on the now-pure-integrator plant: $u_0 = k_p (r - y)$. After cancellation, the closed-loop system is approximately $\dot{y} \approx u_0$, so $k_p = \omega_c$ (the desired closed-loop bandwidth).
+
+The tuning requires exactly **two numbers**: $\omega_c$ (how fast you want the closed loop) and $\omega_o$ (how fast the observer estimates the disturbance). Typically $\omega_o \approx 3\text{--}10 \, \omega_c$. That's it. Two knobs. No plant parameters except $b_0$.
+
+---
+
+## 3. The control law: cancellation and domination
+
+Once the ESO delivers $\hat{f}$, the control law does two things:
+
+### 3.1 Cancel the disturbance
+
+$$u = \frac{u_0 - \hat{f}}{b_0}$$
+
+If $\hat{f} \approx f$, then the plant becomes:
+
+$$\dot{y} = f + b_0 \cdot \frac{u_0 - \hat{f}}{b_0} \approx u_0$$
+
+The disturbance is cancelled. The nonlinearity is cancelled. The unknown dynamics are cancelled. What remains is $n$ cascaded integrators. The hardest plant in the world becomes the simplest.
+
+This is not feedback linearization. Feedback linearization requires you to know $f$ analytically — its functional form, its parameters. ADRC estimates $f$ without knowing its structure. That is the fundamental advance.
+
+### 3.2 Dominate what's left
+
+After cancellation, $u_0$ controls a pure integrator chain. Any simple controller works. The standard choice for an $n$th-order ADRC is:
+
+$$u_0 = k_1 (r - \hat{x}_1) - k_2 \hat{x}_2 - \cdots - k_n \hat{x}_n$$
+
+which is full state feedback on the estimated states. The gains are parameterized by a single number $\omega_c$ (the **controller bandwidth**):
+
+$$k_i = \binom{n}{i-1} \omega_c^{n-i+1}$$
+
+For $n=2$: $k_1 = \omega_c^2, k_2 = 2\omega_c$. The closed-loop poles are all at $s = -\omega_c$. One more knob.
+
+The entire ADRC controller for an $n$th-order plant is tuned by **three numbers:**
+
+| Parameter | Meaning | Typical range |
+|-----------|---------|---------------|
+| $b_0$ | Approximate input gain | Rough estimate (± factor of 2) |
+| $\omega_c$ | Desired closed-loop bandwidth | As fast as the actuator allows |
+| $\omega_o$ | Observer bandwidth | $3\omega_c$ to $10\omega_c$ |
+
+Compare to PID: three gains, plus a derivative filter cutoff, plus anti-windup logic, plus setpoint weighting, plus integrator clamping conditions. ADRC: three numbers, all with direct physical meaning. The observer bandwidth $\omega_o$ tells you how fast it reacts. The controller bandwidth $\omega_c$ tells you how aggressive it is. $b_0$ tells it the approximate actuator authority.
+
+---
+
+## 4. Why this is different from PID — and why it's not
+
+ADRC has a fascinating relationship with PID. Understanding it will make both controllers clearer.
+
+### 4.1 PID's problems, solved by ADRC
+
+Every PID practitioner knows these pain points:
+
+**Derivative kick.** A step change in setpoint produces a huge derivative spike. The fix: move the derivative term to the feedback path (derivative-on-measurement). But this changes the closed-loop zeros and the response shape. ADRC naturally avoids this: the ESO produces a smooth estimate of the derivative $\hat{x}_2$, which is used directly in the control law. No separate derivative term. No kick.
+
+**Integrator windup.** The integrator accumulates when the actuator saturates. Every industrial PID has anti-windup logic bolted on. ADRC has no explicit integrator. The integral action is embedded in the ESO's estimate of $\hat{f}$: when a constant disturbance pushes the output away from the setpoint, $\hat{f}$ grows to cancel it — but $\hat{f}$ is NOT an integrator. It's a state estimate driven by an observer, and it naturally saturates when the output doesn't respond (it's bounded by the observer dynamics). No windup. No anti-windup logic.
+
+**Noise amplification.** Differentiation amplifies high-frequency noise. PID practice: add a low-pass filter on the derivative term, introducing phase lag. ADRC: the ESO *is* a low-pass filter on the measurement, with bandwidth $\omega_o$. The derivative estimate $\hat{x}_2$ comes from the observer, not from differencing a noisy signal. The noise filtering is built into the architecture.
+
+**Tuning fragility.** A PID tuned for one operating point degrades elsewhere. ADRC: the ESO estimates the plant's changing dynamics as part of $f$. If the plant's gain doubles (aging, temperature, load change), $\hat{f}$ changes to compensate. The controller doesn't need retuning.
+
+### 4.2 The deep connection: PID is a special case of ADRC
+
+Here is something beautiful. If you take a second-order ADRC, set $\omega_o \to \infty$ (infinitely fast observer), and expand the control law, you get:
+
+$$u = \frac{1}{b_0}\left[k_p (r-y) - k_d \dot{y} + k_p \omega_o \int (r-y) dt \right] + \text{higher-order terms}$$
+
+This is **PID control** — proportional, integral, derivative — with gains that are explicit functions of the ADRC tuning parameters. PID emerges as the infinite-bandwidth limit of ADRC.
+
+In other words: **ADRC is PID with a finite-bandwidth observer replacing the explicit derivative and integral computations.** PID's derivative is a dirty numerical differentiation. ADRC's derivative is a clean observer estimate. PID's integrator is an unprotected accumulator. ADRC's integrator is the observer's disturbance estimate, naturally bounded by the plant physics.
+
+This also explains why PID works as well as it does — it's an implicit approximation to ADRC, with all the rough edges that come from not having an observer.
+
+---
+
+## 5. The full algorithm — a second-order ADRC in 20 lines
+
+Let's make this concrete. A second-order plant:
+
+$$\ddot{y} = f(y, \dot{y}, t) + b_0 u$$
+
+The state is $x_1 = y, x_2 = \dot{y}, x_3 = f$ (the extended state). The ESO:
+
+```
+At each time step k:
+  e  = y_measured - z1         // output error
+  z1 = z1 + h*(z2 + b0*u + 3*wo*e)
+  z2 = z2 + h*(z3 + 3*wo²*e)
+  z3 = z3 + h*(3*wo³*e)       // ← f-estimate updates from error only!
+```
+
+where $h$ is the sample period, $z_1, z_2, z_3$ are the estimates of $y, \dot{y}, f$, and the gains $3\omega_o, 3\omega_o^2, \omega_o^3$ come from the binomial expansion of $(s+\omega_o)^3$.
+
+The control law:
+
+```
+  u0 = wc²*(r - z1) - 2*wc*z2   // PD control on estimated states
+  u  = (u0 - z3) / b0            // cancel estimated disturbance
+```
+
+That's the controller. It estimates the plant's output, its derivative, and the total disturbance — all from a single measurement $y$. It cancels the disturbance and applies PD control to what's left. Twenty lines of C.
+
+### The full block diagram
+
+```
+                ┌──────────────────────────────┐
+    r ──→ PD ──→(+)──→ u ──→ [Real Plant] ──→ y
+                ↑                             │
+                │ ┌──── ESO ◄─────────────────┘
+                │ │  z1 = ŷ
+                │ │  z2 = ẏ̂
+                │ │  z3 = f̂  ←── total disturbance estimate
+                └─│──┘
+                  └──── f̂ is cancelled at input
+```
+
+The ESO runs on only the output measurement. It doesn't need the control signal (it already knows it — it's computing $\hat{f}$ from the mismatch between what $u$ should produce and what $y$ actually did).
+
+---
+
+## 6. Engineering applications — where ADRC shines
+
+### 6.1 Motion control: the permanent-magnet synchronous motor
+
+A PMSM (the motor in every servo drive, every electric vehicle, every drone) has notoriously coupled, nonlinear dynamics. The $dq$-axis currents interact through cross-coupling terms. The torque constant varies with magnetic saturation. The load torque is unknown and changing. A typical industrial solution: PI current loops with decoupling feedforward, gain scheduling on speed, and a separate velocity loop.
+
+An ADRC implementation (Han, 2009; Li et al., 2016): replace all of that with one ADRC per axis. The cross-coupling between $d$ and $q$ axes, the back-EMF, the parameter variation, the load torque — all go into $f$. The ESO estimates the total disturbance for each axis independently. The controller cancels it. Result: better tracking, less parameter sensitivity, no gain scheduling, no decoupling network.
+
+Texas Instruments now ships ADRC-based motor control firmware in their InstaSPIN line of motor driver ICs. The marketing calls it "sensorless field-oriented control with adaptive disturbance rejection." It's ADRC under a different name.
+
+### 6.2 Power electronics: DC-DC converters and grid-tied inverters
+
+A buck converter's transfer function changes with input voltage and load current. The right-half-plane zero in a boost converter moves with duty cycle. A grid-tied inverter faces a grid that is itself a massive, time-varying disturbance source (harmonics, voltage sags, frequency drift).
+
+ADRC's natural fit: the converter's changing dynamics, the grid's unknown impedance, the load transients — all go into $f$. The controller cancels them. Researchers at Aalborg University (Sun et al., 2016) demonstrated ADRC for LCL-filtered grid inverters, achieving better harmonic rejection than proportional-resonant controllers with active damping — using less computation.
+
+### 6.3 Process control: temperature, pressure, flow, pH
+
+Process control is where PID was born and where it still dominates. It is also where ADRC's advantages are most dramatic:
+
+**Temperature control** of a furnace or reactor has time constants from seconds to hours. PID tuning is notoriously difficult because the plant gain and time constant change with load, ambient temperature, and material properties. ADRC: the changing dynamics are part of $f$. The ESO tracks them in real time. The same tuning works across the full operating range.
+
+**pH neutralisation** has a process gain that varies by **100–1000×** across the titration curve (recall `gain_scheduling.md` §2.4). A single PID cannot control pH across the full range. Gain-scheduled PID works but requires a known titration curve. ADRC: the gain variation appears as a time-varying $f$, which the ESO tracks and cancels. One tuning. Full range. No titration curve needed.
+
+Zheng and Gao (2010) demonstrated ADRC on a laboratory temperature control system, comparing it to a well-tuned PID. The ADRC achieved a 40% reduction in settling time and rejected a 50% load disturbance 3× faster, with the same tuning across a 5× variation in plant gain.
+
+### 6.4 Aerospace: the F-16 and beyond
+
+Flight control is the canonical gain-scheduling problem: the aircraft's dynamics change with Mach number, altitude, angle of attack, and configuration. An F-16's flight control computer contains gain schedules with hundreds of breakpoints (the `gain_scheduling.md` §2.4 example).
+
+Huang et al. (2015) applied ADRC to the F-16's longitudinal dynamics. The ADRC used the aircraft's approximate short-period dynamics (known from basic aerodynamics) and treated everything else — Mach variation, altitude effects, nonlinear aerodynamics, actuator saturation — as total disturbance. The result: a single ADRC controller replaced the gain schedule across the full flight envelope. Performance matched the gain-scheduled controller. The ADRC used three tuning parameters. The gain schedule required hundreds.
+
+### 6.5 Robotics: the humanoid use case
+
+For a 0.8 m humanoid robot with EtherCAT-driven joints:
+
+- Each joint faces a load inertia that depends on the configuration of every other joint. The effective inertia at the knee changes when the hip moves. Gain scheduling on joint angles works but requires calibration.
+- The joint torque includes unknown components: friction (stiction + Coulomb + viscous), cable routing forces, impact forces when the foot strikes the ground.
+- The IMU provides acceleration at high rate but with drift. The joint encoders provide position at high rate but need differentiation for velocity.
+
+An ADRC at each joint treats the entire multi-body coupling, all friction components, and all external forces as $f$. The ESO estimates the total joint-level disturbance. The controller cancels it. The remaining dynamics are approximately a double integrator — easy to control with PD. The IMU and encoder data feed the ESO; the ESO produces smooth estimates of joint velocity and disturbance torque without explicit differentiation.
+
+The practical advantage: you don't need an accurate dynamics model (no Pinocchio, no MuJoCo, no identified inertia matrices). The ADRC learns the dynamics online from the joint encoder. This is not a replacement for model-based control — it's an alternative for joints where building and maintaining an accurate model is impractical. Many humanoid startups use ADRC or DOB-based approaches for exactly this reason.
+
+---
+
+## 7. ADRC vs. the alternatives
+
+| Approach | What it needs | What it does when the plant changes | Tuning complexity |
+|----------|--------------|-------------------------------------|-------------------|
+| **PID** | Nothing | Degrades. Retune required | 3 gains + anti-windup + filter |
+| **LQR** | Full state-space model $(A,B,Q,R)$ | Degrades. Model must be updated | 2 weighting matrices (implicitly many knobs) |
+| **MPC** | Full prediction model + constraints | Degrades. Model must be updated. Constraints may become infeasible | Horizon, weights, terminal cost |
+| **Gain scheduling** | Model at multiple operating points + scheduling variable | Interpolated gains cover envelope | One controller per grid point |
+| **ADRC** | Approximate $b_0$ only | $f$ adapts automatically. No retuning | 2 knobs: $\omega_c, \omega_o$ |
+| **Sliding mode** | Bound on uncertainty | Chattering around sliding surface | Sliding surface slope + switching gain |
+
+ADRC occupies a unique position: it handles plant variation and disturbance better than PID, LQR, or MPC — all of which need accurate models — while being simpler to tune than any of them. The price: it needs reasonably high observer bandwidth relative to the disturbance frequencies. If the actuator can't move fast enough to cancel the estimated disturbance, the cancellation is imperfect, and performance degrades. This is the same trade-off as any feedforward scheme.
+
+---
+
+## 8. The limitations: what ADRC can't do
+
+Feynman would insist on this section. Every method has limits, and knowing them is more important than knowing the strengths.
+
+### 8.1 It still needs approximate input gain
+
+$b_0$ doesn't need to be exact, but it needs to be within roughly a factor of 2. If you're off by an order of magnitude, the cancellation term $(u_0 - \hat{f})/b_0$ is either too weak (disturbance rejection is slow) or too strong (it overcorrects). The ESO can compensate for moderate $b_0$ errors, but not extreme ones.
+
+### 8.2 Observer bandwidth is limited by noise and sampling
+
+$\omega_o$ sets how fast the ESO estimates the disturbance. The faster, the better — in theory. In practice, $\omega_o$ is limited by:
+- Measurement noise (the ESO amplifies high-frequency noise like any high-gain observer)
+- Sampling rate (the ESO's discrete-time approximation degrades if $\omega_o$ approaches the Nyquist frequency)
+- Actuator bandwidth (you can't cancel a disturbance faster than the actuator can respond)
+
+A rule of thumb: $\omega_o \leq \frac{1}{5} \omega_{\text{sample}}$ and $\omega_o \leq \frac{1}{3} \omega_{\text{actuator}}$.
+
+### 8.3 It handles constraints poorly
+
+ADRC has no constraint handling. When the actuator saturates, the cancellation $u = (u_0 - \hat{f})/b_0$ is limited by the physical actuator, and the ESO's estimate $\hat{f}$ no longer matches reality — the observer sees the saturated $u$, but the plant received less. This is the same windup problem PID has, but ADRC's version is more subtle: the ESO state diverges from the true plant state, and recovery after saturation can be slow.
+
+The fix (not part of standard ADRC): feed the saturated $u$ back to the ESO, so the observer knows what the plant actually received. This is the ADRC equivalent of back-calculation anti-windup.
+
+### 8.4 It is not optimal in any formal sense
+
+LQR minimizes a quadratic cost. MPC minimizes a finite-horizon cost subject to constraints. H∞ minimizes the worst-case gain. ADRC minimizes... nothing in particular. It's a heuristic that works remarkably well, but it provides no optimality guarantee, no stability margin guarantee (beyond the linear analysis of the ESO + PD combination), and no robustness certificate.
+
+This does not matter for most applications — PID has none of these guarantees either, and PID runs the world. But for safety-critical systems requiring formal verification (aerospace flight certification, medical devices), ADRC's lack of formal guarantees is a barrier to adoption.
+
+---
+
+## 9. Connection to this project
+
+| Doc | Connection to ADRC |
+|-----|-------------------|
+| `core_problems_controller_design.md` | ADRC addresses Problems #4 (model uncertainty), #5 (disturbances), and #6 (nonlinearity) simultaneously — by estimating all of them as one signal |
+| `observer_design.md` | The ESO is a Luenberger observer with one extra state. The bandwidth-parameterized pole placement ($l_i$ from binomial coefficients) is the same pole-placement technique applied to the augmented system |
+| `sensor_bandwidth_limit.md` | §10 covers DOB and ADRC as responses to sensor bandwidth limitations. ADRC's ESO estimates the high-frequency content the sensor missed |
+| `gain_scheduling.md` | ADRC can replace gain scheduling entirely: instead of scheduling gains on $\rho$, let the ESO track the plant's changing dynamics as part of $f$ |
+| `cascaded_control.md` | Each loop in a cascade can use ADRC instead of PI. The inner loop's ADRC rejects disturbances before they reach the outer loop — same architecture, different controller inside each loop |
+| `lead_lag_compensator_design.md` | ADRC achieves the same goal as lead-lag compensation (phase boost, disturbance rejection) but through estimation-and-cancellation rather than loop shaping |
+| `pid_explorer.html` | PID is ADRC in the limit $\omega_o \to \infty$. The PID explorer shows what happens when you don't have an observer — derivative noise, integrator windup, tuning fragility |
+| `sensor_bandwidth_explorer.html` | The ESO is what you use when the sensor bandwidth limits direct feedback — it reconstructs the missing high-frequency information |
+
+---
+
+## 10. Further reading
+
+**The original ADRC papers:**
+- Han, J. (2009). "From PID to Active Disturbance Rejection Control." *IEEE Trans. Industrial Electronics*, 56(3), 900–906. — The manifesto. Han explains why PID works, why it fails, and how ADRC fixes it. Written with unusual clarity and philosophical depth for a control paper.
+- Han, J. (1998). "Auto-disturbance rejection control and its applications." *Control and Decision* (in Chinese), 13(1), 19–23. — The first publication of the idea. Harder to find but historically significant.
+
+**The definitive English-language treatment:**
+- Gao, Z. (2006). "Active disturbance rejection control: a paradigm shift in feedback control system design." *American Control Conference*, 2399–2405. — Gao introduced ADRC to the English-speaking control community. This paper is the best starting point.
+- Gao, Z. (2014). "On the centrality of disturbance rejection in automatic control." *ISA Transactions*, 53(4), 850–857. — A philosophical argument that disturbance rejection, not tracking, is the central problem of control. ADRC is the logical conclusion.
+
+**The bandwidth parameterization method:**
+- Gao, Z. (2003). "Scaling and bandwidth-parameterization based controller tuning." *American Control Conference*, 4989–4996. — Where the $\omega_c, \omega_o$ tuning method comes from. Shows how to reduce dozens of tuning parameters to two or three.
+
+**Applications:**
+- Li, S., Yang, J., Chen, W.H., & Chen, X. (2016). *Disturbance Observer-Based Control: Methods and Applications.* CRC Press. — Chapter 6 covers ADRC for motor control. The PMSM example in §6.1 comes from here.
+- Sun, B. & Gao, Z. (2005). "A DSP-based active disturbance rejection control design for a 1-kW H-bridge DC-DC power converter." *IEEE Trans. Industrial Electronics*, 52(5), 1271–1277. — ADRC in power electronics. Practical implementation details.
+- Zheng, Q. & Gao, Z. (2010). "On practical applications of active disturbance rejection control." *Chinese Control Conference*, 6095–6100. — Survey of ADRC applications across industries: motion control, process control, aerospace, power electronics.
+
+**The F-16 example:**
+- Huang, Y., Xu, K., Han, J., & Lam, J. (2001). "Flight control design using extended state observer and non-smooth feedback." *IEEE Conf. Decision and Control*, 223–228. — ADRC on the F-16 longitudinal dynamics. The full flight envelope with one controller.
+
+**Books:**
+- Han, J. (2009). *Active Disturbance Rejection Control Technique — the technique for estimating and compensating the uncertainties.* (In Chinese). National Defense Industry Press. — Han's book. There is no complete English translation, but the key chapters have been translated in various theses.
+- Sira-Ramirez, H., Luviano-Juarez, A., Ramirez-Neria, M., & Zurita-Bustamante, E.W. (2018). *Active Disturbance Rejection Control of Dynamic Systems: A Flatness-Based Approach.* Butterworth-Heinemann. — Modern treatment connecting ADRC to differential flatness. The best English-language ADRC book as of 2026.
