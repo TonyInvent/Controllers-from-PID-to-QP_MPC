@@ -228,10 +228,7 @@ $$l_1 = 2\omega_o, \qquad l_2 = \omega_o^2$$
 
 These place both observer poles at $s = -\omega_o$. The observer is a second-order low-pass filter on the output error. $\omega_o$ is the only tuning parameter. Bigger $\omega_o$ means faster estimation — but more noise sensitivity. Smaller $\omega_o$ means smoother estimates — but more lag.
 
-<details>
-<summary><b>Derivation: where $l_1 = 2\omega_o, l_2 = \omega_o^2$ comes from</b></summary>
-
-Start with the plant model used inside the ESO and the observer equations side by side:
+**Where $l_1 = 2\omega_o, l_2 = \omega_o^2$ comes from.** Start with the plant model used inside the ESO and the observer equations side by side:
 
 $$\text{Plant model:} \quad \begin{aligned} \dot{x}_1 &= x_2 + b_0 u \\ \dot{x}_2 &= h \end{aligned} \qquad \text{Observer:} \quad \begin{aligned} \dot{\hat{x}}_1 &= \hat{x}_2 + b_0 u + l_1(y - \hat{x}_1) \\ \dot{\hat{x}}_2 &= l_2(y - \hat{x}_1) \end{aligned}$$
 
@@ -254,8 +251,6 @@ ADRC forces this polynomial to equal $(s + \omega_o)^2 = s^2 + 2\omega_o s + \om
 $$\boxed{l_1 = 2\omega_o,\qquad l_2 = \omega_o^2}$$
 
 The error dynamics are now $\ddot{e}_1 + 2\omega_o \dot{e}_1 + \omega_o^2 e_1 = h$, a stable second-order filter driven by the unknown $\dot{f}$. Larger $\omega_o$ means faster convergence of $\hat{f} \to f$, at the cost of amplifying measurement noise through $l_1, l_2$.
-
-</details>
 
 For an $n$th-order plant, the $n+1$-order ESO has gains:
 
