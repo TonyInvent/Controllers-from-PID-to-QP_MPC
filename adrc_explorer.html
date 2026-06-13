@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADRC vs PID Explorer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #222240; --border: #333360;
+  --text: #d0d0e0; --text-dim: #8888aa; --accent: #4cc9f0; --accent2: #06d6a0;
+  --warn: #f72585; --orange: #f77f00; --gold: #ffd166; --violet: #b388ff;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+.app { display: grid; grid-template-columns: 310px 1fr; grid-template-rows: 48px 1fr 1fr auto;
+       grid-template-areas: "header header" "sidebar main" "sidebar main" "sidebar insight";
+       height: 100vh; gap: 1px; background: var(--border); }
+.header { grid-area: header; background: var(--surface); display: flex; align-items: center;
+          padding: 0 20px; gap: 10px; font-size: 15px; font-weight: 600; }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.sidebar { grid-area: sidebar; background: var(--surface); overflow-y: auto; padding: 14px;
+           display: flex; flex-direction: column; gap: 10px; }
+.main { grid-area: main; display: flex; flex-direction: column; gap: 1px; background: var(--border); min-height: 0; }
+.plot-box { flex: 1; position: relative; background: var(--surface); min-height: 0; }
+.plot-box canvas { width: 100%; height: 100%; display: block; }
+.plot-label { position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--text-dim);
+              letter-spacing: 0.5px; pointer-events: none; z-index: 2; }
+.insight { grid-area: insight; background: var(--surface2); padding: 10px 20px; font-size: 13px;
+           color: var(--text-dim); display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 4px; }
+.param-group { background: var(--surface2); border-radius: 8px; padding: 10px 12px; }
+.param-row { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+.param-row label { font-size: 11px; width: 42px; flex-shrink: 0; color: var(--text-dim); }
+.param-row input[type="range"] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+.param-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; background: var(--accent); border: 2px solid var(--surface); }
+.param-row .val { width: 44px; text-align: right; font-size: 11px; font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+.param-row select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-family: var(--font); font-size: 11px; outline: none; }
+.readout { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.readout .item { background: var(--surface2); border-radius: 5px; padding: 6px 7px; text-align: center; }
+.readout .item .rv { font-size: 0.95rem; font-weight: 700; font-family: var(--mono); }
+.readout .item .rl { font-size: 8px; color: var(--text-dim); text-transform: uppercase; }
+
+@media (max-width: 800px) {
+  html, body { height: auto; overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto; grid-template-areas: "header" "sidebar" "main" "insight"; height: auto; }
+  .plot-box { height: min(50vw, 320px); min-height: 220px; }
+  .param-row input[type="range"] { height: 6px; min-height: 28px; }
+  .param-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header"><div class="dot"></div>ADRC vs PID Explorer — same plant, two controllers, one disturbance</div>
+
+  <div class="sidebar">
+    <div class="param-group">
+      <div class="section-title">Plant — 2nd order</div>
+      <div class="param-row">
+        <label>&omega;<sub>n</sub></label>
+        <input type="range" id="wn" min="2" max="20" step="0.5" value="10">
+        <span class="val" id="wnVal">10</span>
+      </div>
+      <div class="param-row">
+        <label>&zeta;</label>
+        <input type="range" id="zeta" min="0.05" max="2" step="0.05" value="0.3">
+        <span class="val" id="zetaVal">0.3</span>
+      </div>
+      <div class="param-row">
+        <label>b<sub>0</sub></label>
+        <input type="range" id="b0" min="20" max="400" step="5" value="100">
+        <span class="val" id="b0Val">100</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">Disturbance</div>
+      <div class="param-row">
+        <label>Type</label>
+        <select id="distType">
+          <option value="step">Step at t=1s</option>
+          <option value="sine">Sine 5 rad/s</option>
+          <option value="ramp" selected>Ramp + step</option>
+          <option value="pulse">Pulse train</option>
+        </select>
+      </div>
+      <div class="param-row">
+        <label>Amp</label>
+        <input type="range" id="distAmp" min="5" max="80" step="1" value="30">
+        <span class="val" id="distAmpVal">30</span>
+      </div>
+      <div class="param-row">
+        <label>Param shift</label>
+        <input type="range" id="paramShift" min="0" max="80" step="1" value="0">
+        <span class="val" id="paramShiftVal">0%</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">ADRC tuning</div>
+      <div class="param-row">
+        <label>&omega;<sub>c</sub></label>
+        <input type="range" id="wc" min="2" max="60" step="1" value="15">
+        <span class="val" id="wcVal">15</span>
+      </div>
+      <div class="param-row">
+        <label>&omega;<sub>o</sub></label>
+        <input type="range" id="wo" min="5" max="200" step="5" value="60">
+        <span class="val" id="woVal">60</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="section-title">PID tuning</div>
+      <div class="param-row">
+        <label>K<sub>p</sub></label>
+        <input type="range" id="kp" min="1" max="40" step="0.5" value="8">
+        <span class="val" id="kpVal">8</span>
+      </div>
+      <div class="param-row">
+        <label>K<sub>d</sub></label>
+        <input type="range" id="kd" min="0" max="10" step="0.1" value="1.5">
+        <span class="val" id="kdVal">1.5</span>
+      </div>
+      <div class="param-row">
+        <label>K<sub>i</sub></label>
+        <input type="range" id="ki" min="0" max="80" step="1" value="20">
+        <span class="val" id="kiVal">20</span>
+      </div>
+    </div>
+
+    <div class="readout">
+      <div class="item"><div class="rv" id="adrcISE" style="color:var(--accent2)">—</div><div class="rl">ADRC ISE</div></div>
+      <div class="item"><div class="rv" id="pidISE" style="color:var(--warn)">—</div><div class="rl">PID ISE</div></div>
+      <div class="item"><div class="rv" id="adrcPeak" style="color:var(--accent2)">—</div><div class="rl">ADRC max|u|</div></div>
+      <div class="item"><div class="rv" id="pidPeak" style="color:var(--warn)">—</div><div class="rl">PID max|u|</div></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="plot-box" id="plotOutput">
+      <div class="plot-label">Output y(t) — <span style="color:#06d6a0">ADRC</span> vs <span style="color:#f72585">PID</span></div>
+      <canvas id="canvasOutput"></canvas>
+    </div>
+    <div class="plot-box" id="plotDisturbance">
+      <div class="plot-label">Disturbance — true d(t) vs ADRC estimate f̂(t)</div>
+      <canvas id="canvasDist"></canvas>
+    </div>
+    <div class="plot-box" id="plotControl">
+      <div class="plot-label">Control signal u(t)</div>
+      <canvas id="canvasControl"></canvas>
+    </div>
+  </div>
+
+  <div class="insight" id="insightBar">
+    <span>💡</span> <span id="insightText">Both controllers tuned for the nominal plant. ADRC estimates and cancels the disturbance; PID relies on its integrator.</span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvasOutput = $('canvasOutput'), canvasDist = $('canvasDist'), canvasControl = $('canvasControl');
+const ctxOut = canvasOutput.getContext('2d'), ctxDist = canvasDist.getContext('2d'), ctxCtrl = canvasControl.getContext('2d');
+
+// ===================== Simulation =====================
+function simulate(tEnd, nPts) {
+  const wn = parseFloat($('wn').value);
+  const zeta = parseFloat($('zeta').value);
+  const b0_plant = parseFloat($('b0').value);
+  const distType = $('distType').value;
+  const distAmp = parseFloat($('distAmp').value);
+  const paramShift = parseFloat($('paramShift').value) / 100; // fraction
+  const wc = parseFloat($('wc').value);
+  const wo = parseFloat($('wo').value);
+  const Kp = parseFloat($('kp').value);
+  const Kd = parseFloat($('kd').value);
+  const Ki = parseFloat($('ki').value);
+
+  const dt = tEnd / (nPts - 1);
+  const t = new Float64Array(nPts);
+  for (let i = 0; i < nPts; i++) t[i] = i * dt;
+
+  // True plant parameters (shifted at paramShift time)
+  const shiftTime = 1.5;
+  function plantParams(tv) {
+    if (tv < shiftTime) return { wn, zeta };
+    const factor = 1 + paramShift;
+    return { wn: wn * Math.sqrt(factor), zeta: zeta / Math.sqrt(factor) };
+  }
+
+  // Disturbance
+  function d(tv) {
+    if (distType === 'step') return tv >= 1 ? distAmp : 0;
+    if (distType === 'sine') return tv >= 0.5 ? distAmp * Math.sin(5 * tv) : 0;
+    if (distType === 'ramp') {
+      if (tv < 1) return 0;
+      if (tv < 3) return distAmp * (tv - 1) / 2;
+      return distAmp;
+    }
+    if (distType === 'pulse') {
+      const phase = (tv % 2);
+      return phase < 0.4 ? distAmp : 0;
+    }
+    return 0;
+  }
+
+  // ====== ADRC (2nd-order ESO) ======
+  const z_adrc = new Float64Array(3); // z1=ŷ, z2=ẏ̂, z3=f̂
+  const yADRC = new Float64Array(nPts);
+  const uADRC = new Float64Array(nPts);
+  const fHat = new Float64Array(nPts);
+  const fTrue = new Float64Array(nPts);
+  const y1_adrc = new Float64Array(2); // plant state: y, ẏ
+  // ESO gains: binomial(3,i) * wo^i = 3*wo, 3*wo², wo³
+  const l1 = 3*wo, l2 = 3*wo*wo, l3 = wo*wo*wo;
+  // Control gains: binomial(2,i-1) * wc^(3-i) = wc², 2*wc
+  const k1 = wc*wc, k2 = 2*wc;
+
+  for (let k = 0; k < nPts; k++) {
+    const tv = t[k];
+    const ref = 1; // unit step
+
+    // ADRC control
+    const u_adrc = (k1*(ref - z_adrc[0]) - k2*z_adrc[1] - z_adrc[2]) / b0_plant;
+    // Clamp for realism
+    const u_adrc_clamped = Math.max(-50, Math.min(50, u_adrc));
+    uADRC[k] = u_adrc_clamped;
+    fTrue[k] = -(2*zeta*wn*y1_adrc[1] + wn*wn*y1_adrc[0]) + d(tv); // actual f
+    fHat[k] = z_adrc[2];
+
+    // Integrate plant with ADRC control
+    const pp = plantParams(tv);
+    const a0 = pp.wn*pp.wn, a1 = 2*pp.zeta*pp.wn;
+    for (let s = 0; s < 5; s++) {
+      const dtF = dt/5;
+      // Plant: ÿ = -a1 ẏ - a0 y + b0 u + d
+      const dy1 = y1_adrc[1];
+      const dy2 = -a1*y1_adrc[1] - a0*y1_adrc[0] + b0_plant*u_adrc_clamped + d(tv + s*dtF);
+      y1_adrc[0] += dy1 * dtF;
+      y1_adrc[1] += dy2 * dtF;
+    }
+    yADRC[k] = y1_adrc[0];
+
+    // ESO update
+    if (k < nPts - 1) {
+      for (let s = 0; s < 5; s++) {
+        const dtF = dt/5;
+        const e = y1_adrc[0] - z_adrc[0];
+        z_adrc[0] += (z_adrc[1] + b0_plant*u_adrc_clamped + l1*e) * dtF;
+        z_adrc[1] += (z_adrc[2] + l2*e) * dtF;
+        z_adrc[2] += (l3*e) * dtF;
+      }
+    }
+  }
+
+  // ====== PID (with derivative-on-measurement + anti-windup + derivative LPF) ======
+  const yPID = new Float64Array(nPts);
+  const uPID = new Float64Array(nPts);
+  const y1_pid = new Float64Array(2); // plant state
+  let integ = 0;
+  let derivFilt = 0; // filtered derivative
+  const tauF = 0.01; // derivative LPF time constant
+  const Tt = Math.sqrt(1/(Ki+1e-6)); // anti-windup tracking time constant
+
+  for (let k = 0; k < nPts; k++) {
+    const tv = t[k];
+    const ref = 1;
+    const e = ref - y1_pid[0];
+
+    // PID
+    const pTerm = Kp * e;
+    // Derivative-on-measurement with LPF: H_d(s) = s/(tauF s + 1)
+    // discretised:  d_filt[k] ≈ (d_filt[k-1] + (y[k] - y[k-1])/dt * ... )
+    // Use Tustin on Kd*s/(tauF*s+1) → simpler: Euler
+    const dRaw = -(y1_pid[0] - (k>0 ? yPID[k-1] : 0)) / Math.max(dt, 1e-6); // -ẏ
+    // LPF: τF * ḋ_filt + d_filt = Kd * dRaw
+    const dTerm = derivFilt;
+    const iTerm = integ;
+
+    let u_pid = pTerm + dTerm + iTerm;
+
+    // Clamp + anti-windup
+    const u_max = 50, u_min = -50;
+    const u_pid_clamped = Math.max(u_min, Math.min(u_max, u_pid));
+    uPID[k] = u_pid_clamped;
+
+    // Back-calculation anti-windup
+    if (k < nPts - 1) {
+      integ += (Ki*e - (u_pid - u_pid_clamped)/Tt) * dt;
+      derivFilt += ((Kd*dRaw - derivFilt) / tauF) * dt;
+    }
+
+    // Integrate plant with PID control
+    const pp = plantParams(tv);
+    const a0 = pp.wn*pp.wn, a1 = 2*pp.zeta*pp.wn;
+    for (let s = 0; s < 5; s++) {
+      const dtF = dt/5;
+      const dy1 = y1_pid[1];
+      const dy2 = -a1*y1_pid[1] - a0*y1_pid[0] + b0_plant*u_pid_clamped + d(tv + s*dtF);
+      y1_pid[0] += dy1 * dtF;
+      y1_pid[1] += dy2 * dtF;
+    }
+    yPID[k] = y1_pid[0];
+  }
+
+  // ====== Metrics ======
+  let iseADRC = 0, isePID = 0;
+  let peakU_ADRC = 0, peakU_PID = 0;
+  for (let k = 0; k < nPts; k++) {
+    const eA = 1 - yADRC[k], eP = 1 - yPID[k];
+    iseADRC += eA*eA * dt;
+    isePID += eP*eP * dt;
+    peakU_ADRC = Math.max(peakU_ADRC, Math.abs(uADRC[k]));
+    peakU_PID = Math.max(peakU_PID, Math.abs(uPID[k]));
+  }
+
+  return { t, yADRC, yPID, uADRC, uPID, fHat, fTrue, d: t.map(d),
+    iseADRC, isePID, peakU_ADRC, peakU_PID };
+}
+
+// ===================== Canvas helpers =====================
+function resizeCanvas(canvas, container) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = container.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr) {
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  }
+  return { w, h, dpr };
+}
+
+function drawLinePlot(canvasId, containerId, traces, yLabel, opts) {
+  const container = $(containerId);
+  const canvas = $(canvasId);
+  const { w, h, dpr } = resizeCanvas(canvas, container);
+  const ctx = canvas.getContext('2d');
+
+  opts = opts || {};
+  const tMax = opts.tMax || 6;
+  const yMin = opts.yMin !== undefined ? opts.yMin : -0.5;
+  const yMax = opts.yMax !== undefined ? opts.yMax : 2;
+  const m = { top: 26, right: 16, bottom: 32, left: 48 };
+
+  ctx.save(); ctx.scale(dpr, dpr);
+  const pw = w - m.left - m.right, ph = h - m.top - m.bottom;
+  function tx(tv) { return m.left + (tv/tMax)*pw; }
+  function ty(yv) { return m.top + ph - ((yv-yMin)/(yMax-yMin))*ph; }
+
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = '#2a2a48'; ctx.lineWidth = 0.5;
+  for (let tv = 0; tv <= tMax; tv += 1) {
+    ctx.beginPath(); ctx.moveTo(tx(tv), m.top); ctx.lineTo(tx(tv), m.top+ph); ctx.stroke();
+  }
+  // y=1 dashed
+  if (yMin < 1 && yMax > 1) {
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 1; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(m.left, ty(1)); ctx.lineTo(m.left+pw, ty(1)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Axes
+  ctx.strokeStyle = '#555577'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(m.left, m.top); ctx.lineTo(m.left, m.top+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(m.left, m.top+ph); ctx.lineTo(m.left+pw, m.top+ph); ctx.stroke();
+
+  // Traces
+  for (const trace of traces) {
+    ctx.strokeStyle = trace.color; ctx.lineWidth = trace.lw || 2;
+    if (trace.glow) { ctx.shadowColor = trace.color; ctx.shadowBlur = 2; }
+    if (trace.dash) ctx.setLineDash(trace.dash);
+    ctx.beginPath();
+    for (let i = 0; i < trace.t.length; i++) {
+      const sx = tx(trace.t[i]), sy = ty(Math.max(yMin, Math.min(yMax, trace.y[i])));
+      i===0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0; ctx.setLineDash([]);
+  }
+
+  // Labels
+  ctx.fillStyle = '#8888aa'; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+  for (let tv = 0; tv <= tMax; tv += 1) ctx.fillText(tv, tx(tv), m.top+ph+14);
+  ctx.fillText('Time [s]', m.left+pw/2, m.top+ph+28);
+
+  // Legend
+  if (opts.legend) {
+    let ly = m.top + 8;
+    for (const item of opts.legend) {
+      ctx.fillStyle = item.color; ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+      ctx.textAlign = 'left';
+      ctx.fillText(item.label, m.left+6, ly);
+      ly += 14;
+    }
+  }
+
+  ctx.restore();
+}
+
+// ===================== Update =====================
+function updateAll() {
+  const tEnd = 6, nPts = 600;
+  const sim = simulate(tEnd, nPts);
+
+  // Readouts
+  $('wnVal').textContent = parseFloat($('wn').value).toFixed(1);
+  $('zetaVal').textContent = parseFloat($('zeta').value).toFixed(2);
+  $('b0Val').textContent = parseFloat($('b0').value);
+  $('distAmpVal').textContent = parseFloat($('distAmp').value);
+  $('paramShiftVal').textContent = parseFloat($('paramShift').value)+'%';
+  $('wcVal').textContent = parseFloat($('wc').value);
+  $('woVal').textContent = parseFloat($('wo').value);
+  $('kpVal').textContent = parseFloat($('kp').value).toFixed(1);
+  $('kdVal').textContent = parseFloat($('kd').value).toFixed(1);
+  $('kiVal').textContent = parseFloat($('ki').value);
+
+  $('adrcISE').textContent = sim.iseADRC.toFixed(3);
+  $('pidISE').textContent = sim.isePID.toFixed(3);
+  $('adrcPeak').textContent = sim.peakU_ADRC.toFixed(1);
+  $('pidPeak').textContent = sim.peakU_PID.toFixed(1);
+
+  // Color the better one
+  $('adrcISE').style.color = sim.iseADRC < sim.isePID ? 'var(--accent2)' : 'var(--text-dim)';
+  $('pidISE').style.color = sim.isePID < sim.iseADRC ? 'var(--warn)' : 'var(--text-dim)';
+  $('adrcPeak').style.color = sim.peakU_ADRC < sim.peakU_PID ? 'var(--accent2)' : 'var(--text-dim)';
+  $('pidPeak').style.color = sim.peakU_PID < sim.peakU_ADRC ? 'var(--warn)' : 'var(--text-dim)';
+
+  // Output plot
+  drawLinePlot('canvasOutput', 'plotOutput', [
+    { t: sim.t, y: sim.yADRC, color: '#06d6a0', lw: 2.5, glow: true },
+    { t: sim.t, y: sim.yPID, color: '#f72585', lw: 2, glow: true },
+  ], 'y(t)', {
+    tMax: tEnd, yMin: -0.3, yMax: 1.8,
+    legend: [
+      { color: '#06d6a0', label: '— ADRC' },
+      { color: '#f72585', label: '— PID' },
+    ]
+  });
+
+  // Disturbance plot
+  drawLinePlot('canvasDist', 'plotDist', [
+    { t: sim.t, y: sim.fTrue, color: '#8b949e', lw: 1.5 },
+    { t: sim.t, y: sim.fHat, color: '#ffd166', lw: 2, glow: true },
+  ], 'f(t)', {
+    tMax: tEnd,
+    yMin: Math.min(-10, sim.fTrue.reduce((a,b)=>Math.min(a,b))-5),
+    yMax: Math.max(60, sim.fTrue.reduce((a,b)=>Math.max(a,b))+10),
+    legend: [
+      { color: '#8b949e', label: '— True f(t)' },
+      { color: '#ffd166', label: '— ADRC estimate f̂(t)' },
+    ]
+  });
+
+  // Control plot
+  drawLinePlot('canvasControl', 'plotControl', [
+    { t: sim.t, y: sim.uADRC, color: '#06d6a0', lw: 2, glow: true },
+    { t: sim.t, y: sim.uPID, color: '#f72585', lw: 2, glow: true },
+  ], 'u(t)', {
+    tMax: tEnd, yMin: -55, yMax: 55,
+    legend: [
+      { color: '#06d6a0', label: '— ADRC u(t)' },
+      { color: '#f72585', label: '— PID u(t)' },
+    ]
+  });
+
+  // Insight
+  const msgs = [];
+  if (sim.iseADRC < sim.isePID * 0.7) {
+    msgs.push('ADRC tracks significantly better — its ESO estimates the disturbance and cancels it before the output deviates.');
+  } else if (sim.isePID < sim.iseADRC * 0.7) {
+    msgs.push('PID wins here — the integrator is sufficient for this disturbance. ADRC may be over-tuned.');
+  } else {
+    msgs.push('ADRC and PID perform comparably on this scenario. Try increasing the disturbance amplitude or adding a parameter shift.');
+  }
+  const paramShift = parseFloat($('paramShift').value);
+  if (paramShift > 30) {
+    msgs.push(`Parameter shift ${paramShift}%: PID was tuned for the old plant — it degrades. ADRC treats the shift as part of f and adapts automatically.`);
+  }
+  if (parseFloat($('distAmp').value) > 50) {
+    msgs.push('Large disturbance: PID integrator may wind up. ADRC estimates and cancels without accumulation.');
+  }
+  $('insightText').textContent = msgs.join(' · ');
+}
+
+// ===================== Events =====================
+['wn','zeta','b0','distAmp','paramShift','wc','wo','kp','kd','ki'].forEach(id => {
+  $(id).addEventListener('input', updateAll);
+});
+$('distType').addEventListener('change', updateAll);
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateAll, 100); });
+updateAll();
+</script>
+</body>
+</html>
