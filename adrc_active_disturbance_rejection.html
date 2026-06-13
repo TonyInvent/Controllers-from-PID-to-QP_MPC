@@ -266,7 +266,9 @@ $$\dot{y} = -\frac{1}{\tau} y + \frac{K}{\tau} u + d(t)$$
 
 where $\tau = 0.5$ s, $K = 3$, and $d(t) = 0.5\sin(5t)$ is an unknown sinusoidal disturbance. The *nominal* model we pretend is true: $\dot{y} \approx b_0 u$ with $b_0 = K/\tau = 6$. Everything else — the $-\frac{1}{\tau}y$ term, the $d(t)$ term, any parameter mismatch — goes into $f$.
 
-**Where the control law $u = (u_0 - \hat{f})/b_0$ comes from.** Start from the ADRC plant equation $\dot{y} = f + b_0 u$. ADRC introduces a **virtual control** $u_0$ — the control you *want* the plant to feel after the disturbance is cancelled. The desired nominal dynamics are a pure integrator:
+The ESO, tuned to $\omega_o = 20$ rad/s, now tracks $f$ in real time. It continuously outputs $\hat{f}$, an estimate of the total disturbance. **But having $\hat{f}$ is only half the story.** The other half is using it. How? By cancelling it at the input.
+
+Start from the ADRC plant equation $\dot{y} = f + b_0 u$. ADRC introduces a **virtual control** $u_0$ — the control you *want* the plant to feel after the disturbance is cancelled. The desired nominal dynamics are a pure integrator:
 
 $$\dot{y} \approx u_0$$
 
