@@ -180,7 +180,7 @@ function simulate(tEnd, nPts) {
   const Ki = parseFloat($('ki').value);
 
   const dt = tEnd / (nPts - 1);
-  const t = new Array(nPts);
+  const t = new Array(nPts).fill(0);
   for (let i = 0; i < nPts; i++) t[i] = i * dt;
 
   // True plant parameters (shifted at paramShift time)
@@ -209,10 +209,10 @@ function simulate(tEnd, nPts) {
 
   // ====== ADRC (2nd-order ESO) ======
   const z_adrc = [0, 0, 0]; // z1=ŷ, z2=ẏ̂, z3=f̂
-  const yADRC = new Array(nPts);
-  const uADRC = new Array(nPts);
-  const fHat = new Array(nPts);
-  const fTrue = new Array(nPts);
+  const yADRC = new Array(nPts).fill(0);
+  const uADRC = new Array(nPts).fill(0);
+  const fHat = new Array(nPts).fill(0);
+  const fTrue = new Array(nPts).fill(0);
   const y1_adrc = [0, 0]; // plant state: y, ẏ
   // ESO gains: binomial(3,i) * wo^i = 3*wo, 3*wo², wo³
   const l1 = 3*wo, l2 = 3*wo*wo, l3 = wo*wo*wo;
@@ -256,8 +256,8 @@ function simulate(tEnd, nPts) {
   }
 
   // ====== PID (with derivative-on-measurement + anti-windup + derivative LPF) ======
-  const yPID = new Array(nPts);
-  const uPID = new Array(nPts);
+  const yPID = new Array(nPts).fill(0);
+  const uPID = new Array(nPts).fill(0);
   const y1_pid = [0, 0]; // plant state
   let integ = 0;
   let derivFilt = 0; // filtered derivative
@@ -441,13 +441,11 @@ function updateAll() {
   });
 
   // Disturbance plot
-  drawLinePlot('canvasDist', 'plotDist', [
+  drawLinePlot('canvasDist', 'plotDisturbance', [
     { t: sim.t, y: sim.fTrue, color: '#8b949e', lw: 1.5 },
     { t: sim.t, y: sim.fHat, color: '#ffd166', lw: 2, glow: true },
   ], 'f(t)', {
-    tMax: tEnd,
-    yMin: Math.min(-10, sim.fTrue.reduce((a,b)=>Math.min(a,b))-5),
-    yMax: Math.max(60, sim.fTrue.reduce((a,b)=>Math.max(a,b))+10),
+    tMax: tEnd, yMin: -40, yMax: 40,
     legend: [
       { color: '#8b949e', label: '— True f(t)' },
       { color: '#ffd166', label: '— ADRC estimate f̂(t)' },
@@ -459,7 +457,7 @@ function updateAll() {
     { t: sim.t, y: sim.uADRC, color: '#06d6a0', lw: 2, glow: true },
     { t: sim.t, y: sim.uPID, color: '#f72585', lw: 2, glow: true },
   ], 'u(t)', {
-    tMax: tEnd, yMin: -55, yMax: 55,
+    tMax: tEnd, yMin: -35, yMax: 35,
     legend: [
       { color: '#06d6a0', label: '— ADRC u(t)' },
       { color: '#f72585', label: '— PID u(t)' },
