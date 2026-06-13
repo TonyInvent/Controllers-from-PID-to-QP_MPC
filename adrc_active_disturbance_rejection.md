@@ -67,6 +67,35 @@ $$l_1 = 2\omega_o, \qquad l_2 = \omega_o^2$$
 
 These place both observer poles at $s = -\omega_o$. The observer is a second-order low-pass filter on the output error. $\omega_o$ is the only tuning parameter. Bigger $\omega_o$ means faster estimation — but more noise sensitivity. Smaller $\omega_o$ means smoother estimates — but more lag.
 
+<details>
+<summary><b>Derivation: where $l_1 = 2\omega_o, l_2 = \omega_o^2$ comes from</b></summary>
+
+Start with the plant model used inside the ESO and the observer equations side by side:
+
+$$\text{Plant model:} \quad \begin{aligned} \dot{x}_1 &= x_2 + b_0 u \\ \dot{x}_2 &= h \end{aligned} \qquad \text{Observer:} \quad \begin{aligned} \dot{\hat{x}}_1 &= \hat{x}_2 + b_0 u + l_1(y - \hat{x}_1) \\ \dot{\hat{x}}_2 &= l_2(y - \hat{x}_1) \end{aligned}$$
+
+Define the estimation errors $e_1 = x_1 - \hat{x}_1$ and $e_2 = x_2 - \hat{x}_2$. Differentiate:
+
+$$\begin{aligned} \dot{e}_1 &= \dot{x}_1 - \dot{\hat{x}}_1 = (x_2 + b_0 u) - \big(\hat{x}_2 + b_0 u + l_1(y - \hat{x}_1)\big) \\ &= (x_2 - \hat{x}_2) - l_1 e_1 = e_2 - l_1 e_1 \\[4pt] \dot{e}_2 &= \dot{x}_2 - \dot{\hat{x}}_2 = h - l_2 e_1 \end{aligned}$$
+
+The $b_0 u$ terms cancel exactly — this is why the observer doesn't need to know $f$'s structure.
+
+Drop the forcing term $h$ to get the **homogeneous error dynamics** — the part that governs how fast estimation errors decay to zero:
+
+$$\begin{bmatrix} \dot{e}_1 \\ \dot{e}_2 \end{bmatrix} = \underbrace{\begin{bmatrix} -l_1 & 1 \\ -l_2 & 0 \end{bmatrix}}_{A} \begin{bmatrix} e_1 \\ e_2 \end{bmatrix}$$
+
+The characteristic polynomial determines the decay rates:
+
+$$\det(sI - A) = \det\begin{bmatrix} s + l_1 & -1 \\ l_2 & s \end{bmatrix} = (s + l_1)s + l_2 = s^2 + l_1 s + l_2$$
+
+ADRC forces this polynomial to equal $(s + \omega_o)^2 = s^2 + 2\omega_o s + \omega_o^2$, placing both poles at $s = -\omega_o$. Matching coefficients:
+
+$$\boxed{l_1 = 2\omega_o,\qquad l_2 = \omega_o^2}$$
+
+The error dynamics are now $\ddot{e}_1 + 2\omega_o \dot{e}_1 + \omega_o^2 e_1 = h$, a stable second-order filter driven by the unknown $\dot{f}$. Larger $\omega_o$ means faster convergence of $\hat{f} \to f$, at the cost of amplifying measurement noise through $l_1, l_2$.
+
+</details>
+
 For an $n$th-order plant, the $n+1$-order ESO has gains:
 
 $$l_i = \binom{n+1}{i} \omega_o^i, \quad i = 1, \ldots, n+1$$
