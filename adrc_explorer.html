@@ -57,21 +57,16 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
   <div class="sidebar">
     <div class="param-group">
-      <div class="section-title">Plant — 2nd order</div>
+      <div class="section-title">Plant — 2nd order  G(s) = b<sub>0</sub> / (s² + 2&zeta;&omega;<sub>n</sub>s + &omega;<sub>n</sub>²)</div>
       <div class="param-row">
         <label>&omega;<sub>n</sub></label>
-        <input type="range" id="wn" min="2" max="20" step="0.5" value="10">
-        <span class="val" id="wnVal">10</span>
+        <input type="range" id="wn" min="0.5" max="20" step="0.5" value="2">
+        <span class="val" id="wnVal">2</span>
       </div>
       <div class="param-row">
         <label>&zeta;</label>
-        <input type="range" id="zeta" min="0.05" max="2" step="0.05" value="0.3">
-        <span class="val" id="zetaVal">0.3</span>
-      </div>
-      <div class="param-row">
-        <label>b<sub>0</sub></label>
-        <input type="range" id="b0" min="20" max="400" step="5" value="100">
-        <span class="val" id="b0Val">100</span>
+        <input type="range" id="zeta" min="0.05" max="2" step="0.05" value="0.7">
+        <span class="val" id="zetaVal">0.70</span>
       </div>
     </div>
 
@@ -99,16 +94,21 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     </div>
 
     <div class="param-group">
-      <div class="section-title">ADRC tuning</div>
+      <div class="section-title">ADRC — 3 knobs: &omega;<sub>c</sub>, &omega;<sub>o</sub>, b<sub>0</sub></div>
       <div class="param-row">
         <label>&omega;<sub>c</sub></label>
-        <input type="range" id="wc" min="2" max="60" step="1" value="15">
+        <input type="range" id="wc" min="2" max="60" step="1" value="4">
         <span class="val" id="wcVal">15</span>
       </div>
       <div class="param-row">
         <label>&omega;<sub>o</sub></label>
-        <input type="range" id="wo" min="5" max="200" step="5" value="60">
+        <input type="range" id="wo" min="5" max="200" step="5" value="20">
         <span class="val" id="woVal">60</span>
+      </div>
+      <div class="param-row">
+        <label>b<sub>0</sub></label>
+        <input type="range" id="b0adrc" min="1" max="400" step="5" value="4">
+        <span class="val" id="b0adrcVal">100</span>
       </div>
     </div>
 
@@ -116,17 +116,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="section-title">PID tuning</div>
       <div class="param-row">
         <label>K<sub>p</sub></label>
-        <input type="range" id="kp" min="1" max="40" step="0.5" value="8">
+        <input type="range" id="kp" min="1" max="40" step="0.5" value="6">
         <span class="val" id="kpVal">8</span>
       </div>
       <div class="param-row">
         <label>K<sub>d</sub></label>
-        <input type="range" id="kd" min="0" max="10" step="0.1" value="1.5">
+        <input type="range" id="kd" min="0" max="10" step="0.1" value="1">
         <span class="val" id="kdVal">1.5</span>
       </div>
       <div class="param-row">
         <label>K<sub>i</sub></label>
-        <input type="range" id="ki" min="0" max="80" step="1" value="20">
+        <input type="range" id="ki" min="0" max="80" step="1" value="8">
         <span class="val" id="kiVal">20</span>
       </div>
     </div>
@@ -168,7 +168,8 @@ const ctxOut = canvasOutput.getContext('2d'), ctxDist = canvasDist.getContext('2
 function simulate(tEnd, nPts) {
   const wn = parseFloat($('wn').value);
   const zeta = parseFloat($('zeta').value);
-  const b0_plant = parseFloat($('b0').value);
+  const b0_plant = wn * wn;  // true plant: G(s) = ωn²/(s²+2ζωns+ωn²)
+  const b0_adrc = parseFloat($('b0adrc').value); // ADRC's estimate of input gain
   const distType = $('distType').value;
   const distAmp = parseFloat($('distAmp').value);
   const paramShift = parseFloat($('paramShift').value) / 100; // fraction
@@ -179,7 +180,7 @@ function simulate(tEnd, nPts) {
   const Ki = parseFloat($('ki').value);
 
   const dt = tEnd / (nPts - 1);
-  const t = new Float64Array(nPts);
+  const t = new Array(nPts);
   for (let i = 0; i < nPts; i++) t[i] = i * dt;
 
   // True plant parameters (shifted at paramShift time)
@@ -207,12 +208,12 @@ function simulate(tEnd, nPts) {
   }
 
   // ====== ADRC (2nd-order ESO) ======
-  const z_adrc = new Float64Array(3); // z1=ŷ, z2=ẏ̂, z3=f̂
-  const yADRC = new Float64Array(nPts);
-  const uADRC = new Float64Array(nPts);
-  const fHat = new Float64Array(nPts);
-  const fTrue = new Float64Array(nPts);
-  const y1_adrc = new Float64Array(2); // plant state: y, ẏ
+  const z_adrc = [0, 0, 0]; // z1=ŷ, z2=ẏ̂, z3=f̂
+  const yADRC = new Array(nPts);
+  const uADRC = new Array(nPts);
+  const fHat = new Array(nPts);
+  const fTrue = new Array(nPts);
+  const y1_adrc = [0, 0]; // plant state: y, ẏ
   // ESO gains: binomial(3,i) * wo^i = 3*wo, 3*wo², wo³
   const l1 = 3*wo, l2 = 3*wo*wo, l3 = wo*wo*wo;
   // Control gains: binomial(2,i-1) * wc^(3-i) = wc², 2*wc
@@ -220,22 +221,22 @@ function simulate(tEnd, nPts) {
 
   for (let k = 0; k < nPts; k++) {
     const tv = t[k];
-    const ref = 1; // unit step
+    const ref = 1;
 
-    // ADRC control
-    const u_adrc = (k1*(ref - z_adrc[0]) - k2*z_adrc[1] - z_adrc[2]) / b0_plant;
-    // Clamp for realism
-    const u_adrc_clamped = Math.max(-50, Math.min(50, u_adrc));
+    // ADRC control — uses latest ESO estimates
+    const u_adrc = (k1*(ref - z_adrc[0]) - k2*z_adrc[1] - z_adrc[2]) / b0_adrc;
+    const u_adrc_clamped = Math.max(-30, Math.min(30, u_adrc));
     uADRC[k] = u_adrc_clamped;
-    fTrue[k] = -(2*zeta*wn*y1_adrc[1] + wn*wn*y1_adrc[0]) + d(tv); // actual f
-    fHat[k] = z_adrc[2];
 
-    // Integrate plant with ADRC control
+    // True total disturbance (for display only)
     const pp = plantParams(tv);
     const a0 = pp.wn*pp.wn, a1 = 2*pp.zeta*pp.wn;
+    fTrue[k] = -(a1*y1_adrc[1] + a0*y1_adrc[0]) + d(tv);
+    fHat[k] = z_adrc[2];
+
+    // Integrate plant forward with sub-stepping (plant dynamics are stiff)
     for (let s = 0; s < 5; s++) {
       const dtF = dt/5;
-      // Plant: ÿ = -a1 ẏ - a0 y + b0 u + d
       const dy1 = y1_adrc[1];
       const dy2 = -a1*y1_adrc[1] - a0*y1_adrc[0] + b0_plant*u_adrc_clamped + d(tv + s*dtF);
       y1_adrc[0] += dy1 * dtF;
@@ -243,22 +244,21 @@ function simulate(tEnd, nPts) {
     }
     yADRC[k] = y1_adrc[0];
 
-    // ESO update
-    if (k < nPts - 1) {
-      for (let s = 0; s < 5; s++) {
-        const dtF = dt/5;
-        const e = y1_adrc[0] - z_adrc[0];
-        z_adrc[0] += (z_adrc[1] + b0_plant*u_adrc_clamped + l1*e) * dtF;
-        z_adrc[1] += (z_adrc[2] + l2*e) * dtF;
-        z_adrc[2] += (l3*e) * dtF;
-      }
+    // ESO update — sub-stepped for numerical stability at high ωo.
+    // The measurement y1_adrc[0] is held constant (digital sample-and-hold).
+    const e_eso = y1_adrc[0] - z_adrc[0];
+    for (let s = 0; s < 5; s++) {
+      const dtF = dt/5;
+      z_adrc[0] += (z_adrc[1] + l1*e_eso) * dtF;
+      z_adrc[1] += (z_adrc[2] + b0_adrc*u_adrc_clamped + l2*e_eso) * dtF;
+      z_adrc[2] += (l3*e_eso) * dtF;
     }
   }
 
   // ====== PID (with derivative-on-measurement + anti-windup + derivative LPF) ======
-  const yPID = new Float64Array(nPts);
-  const uPID = new Float64Array(nPts);
-  const y1_pid = new Float64Array(2); // plant state
+  const yPID = new Array(nPts);
+  const uPID = new Array(nPts);
+  const y1_pid = [0, 0]; // plant state
   let integ = 0;
   let derivFilt = 0; // filtered derivative
   const tauF = 0.01; // derivative LPF time constant
@@ -271,18 +271,16 @@ function simulate(tEnd, nPts) {
 
     // PID
     const pTerm = Kp * e;
-    // Derivative-on-measurement with LPF: H_d(s) = s/(tauF s + 1)
-    // discretised:  d_filt[k] ≈ (d_filt[k-1] + (y[k] - y[k-1])/dt * ... )
-    // Use Tustin on Kd*s/(tauF*s+1) → simpler: Euler
-    const dRaw = -(y1_pid[0] - (k>0 ? yPID[k-1] : 0)) / Math.max(dt, 1e-6); // -ẏ
-    // LPF: τF * ḋ_filt + d_filt = Kd * dRaw
-    const dTerm = derivFilt;
+    // Derivative-on-measurement: use the velocity state directly (−Kd·ẏ)
+    // then low-pass filter to suppress noise.  No finite-difference needed.
+    const dRaw = -Kd * y1_pid[1];  // velocity is the 2nd plant state
+    const dTerm = derivFilt;       // filtered derivative from previous step
     const iTerm = integ;
 
     let u_pid = pTerm + dTerm + iTerm;
 
     // Clamp + anti-windup
-    const u_max = 50, u_min = -50;
+    const u_max = 30, u_min = -30;
     const u_pid_clamped = Math.max(u_min, Math.min(u_max, u_pid));
     uPID[k] = u_pid_clamped;
 
@@ -410,11 +408,11 @@ function updateAll() {
   // Readouts
   $('wnVal').textContent = parseFloat($('wn').value).toFixed(1);
   $('zetaVal').textContent = parseFloat($('zeta').value).toFixed(2);
-  $('b0Val').textContent = parseFloat($('b0').value);
   $('distAmpVal').textContent = parseFloat($('distAmp').value);
   $('paramShiftVal').textContent = parseFloat($('paramShift').value)+'%';
   $('wcVal').textContent = parseFloat($('wc').value);
   $('woVal').textContent = parseFloat($('wo').value);
+  $('b0adrcVal').textContent = parseFloat($('b0adrc').value);
   $('kpVal').textContent = parseFloat($('kp').value).toFixed(1);
   $('kdVal').textContent = parseFloat($('kd').value).toFixed(1);
   $('kiVal').textContent = parseFloat($('ki').value);
@@ -488,7 +486,7 @@ function updateAll() {
 }
 
 // ===================== Events =====================
-['wn','zeta','b0','distAmp','paramShift','wc','wo','kp','kd','ki'].forEach(id => {
+['wn','zeta','distAmp','paramShift','wc','wo','b0adrc','kp','kd','ki'].forEach(id => {
   $(id).addEventListener('input', updateAll);
 });
 $('distType').addEventListener('change', updateAll);
