@@ -105,11 +105,31 @@ $$\dot{y} = -\frac{1}{\tau} y + \frac{K}{\tau} u + d(t)$$
 
 where $\tau = 0.5$ s, $K = 3$, and $d(t) = 0.5\sin(5t)$ is an unknown sinusoidal disturbance. The *nominal* model we pretend is true: $\dot{y} \approx b_0 u$ with $b_0 = K/\tau = 6$. Everything else — the $-\frac{1}{\tau}y$ term, the $d(t)$ term, any parameter mismatch — goes into $f$.
 
-The ESO (at $\omega_o = 20$ rad/s) estimates $f$ continuously. The control law is:
+**Where the control law $u = (u_0 - \hat{f})/b_0$ comes from.** Start from the ADRC plant equation $\dot{y} = f + b_0 u$. ADRC introduces a **virtual control** $u_0$ — the control you *want* the plant to feel after the disturbance is cancelled. The desired nominal dynamics are a pure integrator:
 
-$$u = \frac{u_0 - \hat{f}}{b_0}$$
+$$\dot{y} \approx u_0$$
 
-where $u_0$ is a simple proportional controller on the now-pure-integrator plant: $u_0 = k_p (r - y)$. After cancellation, the closed-loop system is approximately $\dot{y} \approx u_0$, so $k_p = \omega_c$ (the desired closed-loop bandwidth).
+To make this happen, set the actual plant equal to the desired dynamics:
+
+$$f + b_0 u = u_0$$
+
+Now solve for the physical control $u$:
+
+$$u = \frac{u_0 - f}{b_0}$$
+
+$f$ is unknown, but the ESO provides its estimate $\hat{f}$. Substitute:
+
+$$\boxed{u = \frac{u_0 - \hat{f}}{b_0}}$$
+
+If $\hat{f} \approx f$, the cancellation is nearly perfect:
+
+$$\dot{y} = f + b_0 \cdot \frac{u_0 - \hat{f}}{b_0} = u_0 + (f - \hat{f}) \approx u_0$$
+
+The complicated, nonlinear, uncertain real plant has been transformed into an approximate integrator. From here, any simple controller works. For a first-order plant, proportional control suffices: $u_0 = k_p (r - y)$. After cancellation the closed loop is approximately $\dot{y} \approx k_p (r-y)$, so choosing $k_p = \omega_c$ gives a first-order response with bandwidth $\omega_c$:
+
+$$T(s) \approx \frac{\omega_c}{s + \omega_c}$$
+
+The ESO (at $\omega_o = 20$ rad/s) estimates $f$ continuously, the control law cancels it, and the proportional controller tracks the reference.
 
 The tuning requires exactly **two numbers**: $\omega_c$ (how fast you want the closed loop) and $\omega_o$ (how fast the observer estimates the disturbance). Typically $\omega_o \approx 3\text{--}10 \, \omega_c$. That's it. Two knobs. No plant parameters except $b_0$.
 
