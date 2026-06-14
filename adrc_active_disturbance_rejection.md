@@ -284,17 +284,25 @@ Flight control is the canonical gain-scheduling problem: the aircraft's dynamics
 
 Huang et al. (2015) applied ADRC to the F-16's longitudinal dynamics. The ADRC used the aircraft's approximate short-period dynamics (known from basic aerodynamics) and treated everything else — Mach variation, altitude effects, nonlinear aerodynamics, actuator saturation — as total disturbance. The result: a single ADRC controller replaced the gain schedule across the full flight envelope. Performance matched the gain-scheduled controller. The ADRC used three tuning parameters. The gain schedule required hundreds.
 
-### 6.5 Robotics: the humanoid use case
+### 6.5 Robotics: when the disturbance moves faster than the observer
 
-For a 0.8 m humanoid robot with EtherCAT-driven joints:
+A natural question: can ADRC control a walking robot's joints — where the effective inertia changes with every step, impact forces hit at foot strike, and multi-body coupling torques shift at 50+ Hz? The answer is more nuanced than a simple yes or no, and understanding why reveals ADRC's true boundary.
 
-- Each joint faces a load inertia that depends on the configuration of every other joint. The effective inertia at the knee changes when the hip moves. Gain scheduling on joint angles works but requires calibration.
-- The joint torque includes unknown components: friction (stiction + Coulomb + viscous), cable routing forces, impact forces when the foot strikes the ground.
-- The IMU provides acceleration at high rate but with drift. The joint encoders provide position at high rate but need differentiation for velocity.
+**What ADRC actually needs from the disturbance.** The ESO does not require $f$ to be static or slowly-varying. It requires $f$ to be *differentiable* — to have a finite rate of change — and for the observer bandwidth $\omega_o$ to be fast enough to track that rate. This is fundamentally different from PID's integrator, which must *wait for error to accumulate* before reacting. The ESO anticipates: it estimates $f$ from the mismatch between what the plant model predicted and what the sensor measured, and cancels it at the input before the disturbance has time to produce a large tracking error.
 
-An ADRC at each joint treats the entire multi-body coupling, all friction components, and all external forces as $f$. The ESO estimates the total joint-level disturbance. The controller cancels it. The remaining dynamics are approximately a double integrator — easy to control with PD. The IMU and encoder data feed the ESO; the ESO produces smooth estimates of joint velocity and disturbance torque without explicit differentiation.
+The real constraint is not the ADRC algorithm. It is the hardware:
 
-The practical advantage: you don't need an accurate dynamics model (no Pinocchio, no MuJoCo, no identified inertia matrices). The ADRC learns the dynamics online from the joint encoder. This is not a replacement for model-based control — it's an alternative for joints where building and maintaining an accurate model is impractical. Many humanoid startups use ADRC or DOB-based approaches for exactly this reason.
+- **Control loop rate.** The ESO runs at the loop frequency $f_s$. For $\omega_o$ to track a disturbance at frequency $\omega_d$, you need $\omega_o \geq 3\text{--}5\,\omega_d$, and for Euler or RK4 integration you need $f_s \geq 10\,\omega_o$. A disturbance at 50 Hz demands $\omega_o \geq 250$ rad/s and $f_s \geq 2.5$ kHz. This is achievable on modern EtherCAT-driven servo drives (1–4 kHz are standard).
+- **Sensor noise.** High $\omega_o$ amplifies measurement noise. The ESO's gains grow as $\omega_o, \omega_o^2, \omega_o^3$ — the $f$-estimate channel sees a noise gain of $\omega_o^3$. Encoder quantization and vibration feed directly into $\hat{f}$. At some $\omega_o$, the noise in $\hat{f}$ exceeds the disturbance you're trying to cancel, and further increasing $\omega_o$ makes things worse.
+- **Actuator bandwidth.** You can't cancel a disturbance faster than the motor can produce torque. If the current loop bandwidth is 2 kHz and the disturbance has components at 500 Hz, the ESO may estimate them correctly but the actuator can't cancel them. The cancellation saturates, and the ESO's internal model diverges from reality — the same windup-like failure mode described in §8.3.
+
+**Where ADRC fits in robotics.** For joints where the dominant disturbance is *kinematic* — gravitational loading that changes as the limb moves, friction that varies with velocity and temperature, cable-routing forces — ADRC works well. These disturbances evolve at the timescale of joint motion (1–20 Hz), well within the tracking bandwidth of a properly-tuned ESO.
+
+For joints where the dominant disturbance is *impact* — foot-strike transients with frequency content into the hundreds of Hz — a pure ADRC may struggle. The ESO estimates the impact *as it happens*, but the cancellation is limited by the actuator's torque bandwidth. The residual impact force passes through to the joint, producing a transient tracking error. The ESO recovers quickly (it doesn't wind up), but it cannot prevent the initial deviation.
+
+The practical compromise used by several legged-robot startups: run ADRC or DOB on the joint-level torque loop (fast, 1–4 kHz, handles friction and gravity), and use a model-based whole-body controller (MPC or WBC) at a slower rate (100–500 Hz) for impact anticipation and multi-body coordination. The ADRC cleans up what the model misses; the model predicts what ADRC can't react to fast enough. They are complementary, not competing.
+
+**The summary.** The objection "ADRC can't handle fast disturbances" confuses the algorithm with the platform it runs on. The ESO can track anything the hardware lets it track. The real question for a given robotic joint is: can you push $\omega_o$ high enough before sensor noise or actuator saturation forces you to stop? If yes, ADRC works — and many robots use it. If no, you need a model to predict what the ESO can't see in time.
 
 ---
 
