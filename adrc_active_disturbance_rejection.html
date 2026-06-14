@@ -445,25 +445,39 @@ Flight control is the canonical gain-scheduling problem: the aircraft's dynamics
 
 Huang et al. (2015) applied ADRC to the F-16's longitudinal dynamics. The ADRC used the aircraft's approximate short-period dynamics (known from basic aerodynamics) and treated everything else — Mach variation, altitude effects, nonlinear aerodynamics, actuator saturation — as total disturbance. The result: a single ADRC controller replaced the gain schedule across the full flight envelope. Performance matched the gain-scheduled controller. The ADRC used three tuning parameters. The gain schedule required hundreds.
 
-### 6.5 Robotics: when the disturbance moves faster than the observer
+### 6.5 Robotics: useful, but not where the current fashion points
 
-A natural question: can ADRC control a walking robot's joints — where the effective inertia changes with every step, impact forces hit at foot strike, and multi-body coupling torques shift at 50+ Hz? The answer is more nuanced than a simple yes or no, and understanding why reveals ADRC's true boundary.
+Robotics sounds like the perfect home for ADRC. A robot joint is full of things that engineers hate modeling exactly: gear friction, cable compliance, temperature-dependent motor constants, unmodeled link coupling, payload changes, and contact impulses from the floor or the world. The usual rigid-body equation says:
 
-**What ADRC actually needs from the disturbance.** The ESO does not require $f$ to be static or slowly-varying. It requires $f$ to be *differentiable* — to have a finite rate of change — and for the observer bandwidth $\omega_o$ to be fast enough to track that rate. This is fundamentally different from PID's integrator, which must *wait for error to accumulate* before reacting. The ESO anticipates: it estimates $f$ from the mismatch between what the plant model predicted and what the sensor measured, and cancels it at the input before the disturbance has time to produce a large tracking error.
+$$M(q)\ddot{q} + C(q,\dot{q})\dot{q} + g(q) + \tau_f + \tau_{\text{contact}} = \tau$$
 
-The real constraint is not the ADRC algorithm. It is the hardware:
+If you are controlling one joint, almost everything on the left-hand side is "someone else's problem." The coupling torque from the other joints, the gravity term, the unknown payload, the floor impact — all of it can be lumped into $f$. This is exactly the ADRC move: estimate the joint's total disturbance with an ESO, cancel it, and leave a simple double integrator for the outer position loop. This is why ADRC papers in robotics are not hard to find: robot manipulators, mobile robots, aerial manipulators, quadrotors, and flexible-joint systems all benefit from a controller that does not ask for a perfect dynamics model.
 
-- **Control loop rate.** The ESO runs at the loop frequency $f_s$. For $\omega_o$ to track a disturbance at frequency $\omega_d$, you need $\omega_o \geq 3\text{--}5\,\omega_d$, and for Euler or RK4 integration you need $f_s \geq 10\,\omega_o$. A disturbance at 50 Hz demands $\omega_o \geq 250$ rad/s and $f_s \geq 2.5$ kHz. This is achievable on modern EtherCAT-driven servo drives (1–4 kHz are standard).
-- **Sensor noise.** High $\omega_o$ amplifies measurement noise. The ESO's gains grow as $\omega_o, \omega_o^2, \omega_o^3$ — the $f$-estimate channel sees a noise gain of $\omega_o^3$. Encoder quantization and vibration feed directly into $\hat{f}$. At some $\omega_o$, the noise in $\hat{f}$ exceeds the disturbance you're trying to cancel, and further increasing $\omega_o$ makes things worse.
-- **Actuator bandwidth.** You can't cancel a disturbance faster than the motor can produce torque. If the current loop bandwidth is 2 kHz and the disturbance has components at 500 Hz, the ESO may estimate them correctly but the actuator can't cancel them. The cancellation saturates, and the ESO's internal model diverges from reality — the same windup-like failure mode described in §8.3.
+So why don't modern legged and humanoid robots simply run ADRC at every joint?
 
-**Where ADRC fits in robotics.** For joints where the dominant disturbance is *kinematic* — gravitational loading that changes as the limb moves, friction that varies with velocity and temperature, cable-routing forces — ADRC works well. These disturbances evolve at the timescale of joint motion (1–20 Hz), well within the tracking bandwidth of a properly-tuned ESO.
+Because the dominant learned-locomotion stack has already made a different bargain. In public sim-to-real systems such as `legged_gym` and Humanoid-Gym, the learned policy usually runs at a lower rate than the motor servo and outputs an action that is interpreted as a joint target or target offset. A high-rate low-level controller then converts that target into torque:
 
-For joints where the dominant disturbance is *impact* — foot-strike transients with frequency content into the hundreds of Hz — a pure ADRC may struggle. The ESO estimates the impact *as it happens*, but the cancellation is limited by the actuator's torque bandwidth. The residual impact force passes through to the joint, producing a transient tracking error. The ESO recovers quickly (it doesn't wind up), but it cannot prevent the initial deviation.
+$$\tau = K_p(q_{\text{des}} - q) - K_d\dot{q}$$
 
-The practical compromise used by several legged-robot startups: run ADRC or DOB on the joint-level torque loop (fast, 1–4 kHz, handles friction and gravity), and use a model-based whole-body controller (MPC or WBC) at a slower rate (100–500 Hz) for impact anticipation and multi-body coordination. The ADRC cleans up what the model misses; the model predicts what ADRC can't react to fast enough. They are complementary, not competing.
+sometimes with velocity targets, torque actions, or residual/feedforward terms depending on the implementation. The important point is not the exact formula. The important point is the interface: the learning system is trained together with a simple, predictable impedance layer. The PD loop is not merely an old-fashioned placeholder. It is part of the plant that the policy learns to use.
 
-**The summary.** The objection "ADRC can't handle fast disturbances" confuses the algorithm with the platform it runs on. The ESO can track anything the hardware lets it track. The real question for a given robotic joint is: can you push $\omega_o$ high enough before sensor noise or actuator saturation forces you to stop? If yes, ADRC works — and many robots use it. If no, you need a model to predict what the ESO can't see in time.
+That changes the role of ADRC. If an ESO is inserted underneath the policy, it does not just "improve the joint controller." It changes the closed-loop actuator seen by the policy. The policy was trained against a particular impedance, saturation behavior, delay, and contact response. ADRC may reject disturbances better in the classical servo sense, but it may also remove exactly the compliant error dynamics that the learned gait uses for balance. In walking, a foot strike is not merely a disturbance to erase; it is also information and energy exchange with the environment.
+
+There are three practical frictions.
+
+**1. The policy already learned through the low-level controller.** In position-action RL, the neural network does not output a desired motor voltage or current. It outputs something like "make this joint a little more flexed," and the PD layer turns that into physical impedance. Domain randomization then teaches the policy to survive mass variation, friction variation, latency, pushes, and terrain. ADRC would estimate some of those variations as $f$ and cancel them, but the policy may already have learned a behavior that assumes the uncancelled residual dynamics.
+
+**2. Contact is not a smooth disturbance.** ADRC works best when the total disturbance is observable and changes within the observer's bandwidth. Robot contact often violates that assumption. Foot impacts, stick-slip, backlash, torque limits, and ground transitions can be discontinuous or constraint-dominated. Raising $\omega_o$ helps tracking, but it also amplifies encoder noise and collision transients. In a saturated actuator, the cancellation term cannot actually be applied, and the ESO must be carefully fed the saturated torque to avoid observer windup.
+
+**3. Statefulness is expensive at the policy boundary.** A PD layer is nearly memoryless: given the latest target, position, and velocity, it produces a torque. An ADRC layer carries observer states $(\hat{q}, \dot{\hat{q}}, \hat{f})$. Those states need initialization, reset behavior after falls or impacts, and consistent treatment during mode switches. That is manageable in an industrial servo. It is more awkward in a learned locomotion stack where thousands of randomized simulations train the policy to exploit a very specific low-level actuator model.
+
+This does not mean ADRC is bad robotics control. It means the best insertion point matters.
+
+ADRC is attractive when the robot is doing **classical servo work**: a manipulator joint tracking a trajectory under unknown payload, a mobile robot rejecting slope and slip, a quadrotor rejecting wind and arm-coupled disturbances, or an industrial axis whose friction and load vary across the day. There the reference is smooth, the actuator model is stable, and the objective is exactly what ADRC is good at: make the plant look simple despite uncertainty.
+
+ADRC is less obviously attractive as a drop-in replacement for the low-level PD layer in modern RL locomotion. The learned policy and the PD actuator form one trained object. Replacing PD with ADRC after training changes the actuator dynamics that the policy was optimized against; a stronger classical servo is not automatically a better policy interface.
+
+The honest conclusion is nuanced: **ADRC belongs in robotics, but not automatically at every joint of every humanoid.** It shines when disturbance rejection is the main job. In current sim-to-real locomotion, the main job of the joint controller is often different: provide a simple, repeatable, compliant actuator interface for a policy trained around that interface.
 
 ---
 
@@ -545,6 +559,11 @@ This does not matter for most applications — PID has none of these guarantees 
 - Li, S., Yang, J., Chen, W.H., & Chen, X. (2016). *Disturbance Observer-Based Control: Methods and Applications.* CRC Press. — Chapter 6 covers ADRC for motor control. The PMSM example in §6.1 comes from here.
 - Sun, B. & Gao, Z. (2005). "A DSP-based active disturbance rejection control design for a 1-kW H-bridge DC-DC power converter." *IEEE Trans. Industrial Electronics*, 52(5), 1271–1277. — ADRC in power electronics. Practical implementation details.
 - Zheng, Q. & Gao, Z. (2010). "On practical applications of active disturbance rejection control." *Chinese Control Conference*, 6095–6100. — Survey of ADRC applications across industries: motion control, process control, aerospace, power electronics.
+- Fareh, R., Khadraoui, S., Abdallah, M.Y., Baziyad, M., & Bettayeb, M. (2021). "Active disturbance rejection control for robotic systems: A review." *Mechatronics*, 80. — Survey of ADRC applications in robot manipulators, mobile robots, and aerial robots.
+
+**Robotics and learned locomotion context:**
+- Rudin, N., Hoeller, D., Reist, P., & Hutter, M. (2022). "Learning to Walk in Minutes Using Massively Parallel Deep Reinforcement Learning." *Conference on Robot Learning.* — The `legged_gym` lineage: massively parallel sim-to-real legged locomotion with a learned policy and low-level actuator model.
+- Gu, X., Wang, Y.J., & Chen, J. (2024). "Humanoid-Gym: Reinforcement Learning for Humanoid Robot with Zero-Shot Sim2Real Transfer." *arXiv:2404.05695.* — Humanoid locomotion framework built on the same sim-to-real idea, verified on XBot-S and XBot-L.
 
 **The F-16 example:**
 - Huang, Y., Xu, K., Han, J., & Lam, J. (2001). "Flight control design using extended state observer and non-smooth feedback." *IEEE Conf. Decision and Control*, 223–228. — ADRC on the F-16 longitudinal dynamics. The full flight envelope with one controller.
