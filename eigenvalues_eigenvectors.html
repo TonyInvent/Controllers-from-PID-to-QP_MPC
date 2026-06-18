@@ -1158,6 +1158,44 @@ Modern control theory is built on eigenvalues and eigenvectors because the essen
 
 > Find the system's own modes. Judge whether they're stable. Use inputs to move bad modes to good locations. Use sensors to estimate hidden modes.
 
+---
+
+## References
+
+### Foundational papers
+
+1. **R. E. Kalman**, "A New Approach to Linear Filtering and Prediction Problems," *Transactions of the ASME — Journal of Basic Engineering*, vol. 82, no. 1, pp. 35–45, 1960. DOI: [10.1115/1.3662552](https://doi.org/10.1115/1.3662552).  
+   The paper that introduced the Kalman filter — the statistically optimal state estimator. Section 23 of this document discusses its eigenvalue structure.
+
+2. **D. G. Luenberger**, "Observing the State of a Linear System," *IEEE Transactions on Military Electronics*, vol. 8, no. 2, pp. 74–80, April 1964. DOI: [10.1109/TME.1964.4323124](https://doi.org/10.1109/TME.1964.4323124).  
+   The paper that introduced the Luenberger observer. Section 18 derives the error dynamics $\dot{e} = (A-LC)e$ that this paper first formulated.
+
+3. **W. M. Wonham**, "On Pole Assignment in Multi-Input Controllable Linear Systems," *IEEE Transactions on Automatic Control*, vol. 12, no. 6, pp. 660–665, December 1967. DOI: [10.1109/TAC.1967.1098739](https://doi.org/10.1109/TAC.1967.1098739).  
+   Proved that controllability is equivalent to arbitrary pole assignability via state feedback — the theorem that justifies Sections 13–15 of this document.
+
+4. **M. L. J. Hautus**, "Controllability and Observability Conditions of Linear Autonomous Systems," *Nederlandse Akademie van Wetenschappen, Proceedings, Series A*, vol. 72, no. 5, pp. 443–448, 1969. Zbl: [0188.46801](https://zbmath.org/?q=an%3A0188.46801).  
+   The PBH (Popov–Belevitch–Hautus) test. Sections 17 and 20 use this eigenvector-based test to determine which modes are controllable or observable.
+
+5. **J. Ackermann**, "Der Entwurf linearer Regelungssysteme im Zustandsraum," *Regelungstechnik*, vol. 20, no. 1–12, pp. 297–300, 1972. DOI: [10.1524/auto.1972.20.112.297](https://doi.org/10.1524/auto.1972.20.112.297).  
+   Ackermann's formula for single-input pole placement — an alternative to the coefficient-matching approach used in Section 15.
+
+### Textbooks
+
+6. **T. Kailath**, *Linear Systems*, Prentice-Hall, 1980. ISBN: 0-13-536961-4.  
+   The canonical graduate-level text on state-space methods, controllability/observability, state feedback, and observers. The diagonalization and modal decomposition in Section 12 follows Kailath's treatment.
+
+7. **H. Kwakernaak and R. Sivan**, *Linear Optimal Control Systems*, Wiley Interscience, 1972. ISBN: 0-471-51110-2.  
+   The definitive text on LQR and Kalman filtering. The duality table in Section 23 (LQR ↔ Kalman filter) is drawn from this book's unified treatment.
+
+8. **K. Ogata**, *Modern Control Engineering*, 5th ed., Prentice-Hall, 2010. ISBN: 978-0-13-615673-4.  
+   The standard undergraduate introduction to state-space control, pole placement, and observer design. The worked pole-placement example in Section 15 follows the pedagogical style of Ogata's exposition.
+
+9. **G. Strang**, *Introduction to Linear Algebra*, 5th ed., Wellesley-Cambridge Press, 2016. ISBN: 978-0-9802327-7-6.  
+   The geometric intuition in Sections 1–3 — matrix as transformation, eigenvector as invariant direction — is Strang's signature approach.
+
+10. **B. Friedland**, *Control System Design: An Introduction to State-Space Methods*, McGraw-Hill, 1986 (Dover reprint, 2005). ISBN: 0-486-44278-0.  
+    An accessible bridge between classical and modern control, with clear treatments of pole placement, observers, and the separation principle (Section 21).
+
 </script>
 
 <script>
