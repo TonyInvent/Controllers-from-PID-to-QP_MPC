@@ -4,3 +4,4 @@ __pycache__/
 .claude/
 *.png
 !assets/servo-motor-controllers-slides/*.png
+node_modules/
