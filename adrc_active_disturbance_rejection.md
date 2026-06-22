@@ -408,5 +408,5 @@ This does not matter for most applications — PID has none of these guarantees 
 - Huang, Y., Xu, K., Han, J., & Lam, J. (2001). "Flight control design using extended state observer and non-smooth feedback." *IEEE Conf. Decision and Control*, 223–228. — ADRC on the F-16 longitudinal dynamics. The full flight envelope with one controller.
 
 **Books:**
-- Han, J. (2009). *Active Disturbance Rejection Control Technique — the technique for estimating and compensating the uncertainties.* (In Chinese). National Defense Industry Press. — Han's book. There is no complete English translation, but the key chapters have been translated in various theses.
+- Han, J. (2008). *Active Disturbance Rejection Control Technique — the technique for estimating and compensating the uncertainties.* (In Chinese). Beijing: National Defense Industry Press. — Han's book. There is no complete English translation, but the key chapters have been translated in various theses.
 - Sira-Ramirez, H., Luviano-Juarez, A., Ramirez-Neria, M., & Zurita-Bustamante, E.W. (2018). *Active Disturbance Rejection Control of Dynamic Systems: A Flatness-Based Approach.* Butterworth-Heinemann. — Modern treatment connecting ADRC to differential flatness. The best English-language ADRC book as of 2026.
