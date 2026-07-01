@@ -472,6 +472,134 @@ This is also why integrators in fixed-point DSP code are implemented with double
 
 **The unifying picture.** Section 6.1–6.5 gave the continuous-time rule: $\omega_{\text{in}} \geq 3\omega_{\text{out}}$ for damping. Section 6.6 gives the discrete-time companion: $T_{s,\text{out}} \geq (3\text{--}10) \times T_{s,\text{in}}$ for numerical stability. Together they constrain the design in two dimensions — bandwidth ratio and sample-rate ratio. A well-designed cascade satisfies both.
 
+### 6.7 The state-space perspective: when $u = -Kx$ meets the cascade
+
+**A concrete motivation: aircraft pitch control.** Before presenting the solutions, ground the discussion in a real problem. Consider the longitudinal (pitch) control of an aircraft:
+
+- **Fast state — pitch rate $q$:** Measured directly by the gyroscope at 1+ kHz. This is the inner loop — rate damping to suppress the short-period mode.
+- **Slow state — pitch angle $\theta$:** Estimated by a Kalman filter fusing accelerometer and gyroscope data, updated at ~100 Hz. This is the outer loop — attitude hold.
+
+The linearized short-period dynamics are:
+
+$$\begin{bmatrix} \dot{\theta} \\ \dot{q} \end{bmatrix} = \begin{bmatrix} 0 & 1 \\ M_\alpha & M_q \end{bmatrix} \begin{bmatrix} \theta \\ q \end{bmatrix} + \begin{bmatrix} 0 \\ M_\delta \end{bmatrix} \delta_e$$
+
+where $\delta_e$ is elevator deflection, and $M_\alpha, M_q, M_\delta$ are the dimensional stability and control derivatives.
+
+In classical flight control, this is two nested loops: an inner rate damper (PI on $q$) and an outer attitude-hold loop (P on $\theta$). Each runs at its own rate — the inner loop fast, the outer loop slow. This is exactly the cascaded architecture of §1–6.
+
+Now switch to state-space design. LQR or pole placement on the short-period dynamics produces:
+
+$$\delta_e = -Kx = -[k_\theta \quad k_q] \begin{bmatrix} \theta \\ q \end{bmatrix} = -k_\theta \theta - k_q q$$
+
+**This is structurally identical to the cascade.** The term $-k_q q$ is the inner-loop rate damper. The term $-k_\theta \theta$ is the outer-loop attitude correction. The full-state feedback matrix $K$ simultaneously encodes both loops — just as the cascade does with two PI controllers.
+
+**The problem that forces us to think deeper.** The derivation $u = -Kx$ assumes all states are available *at the same instant, at every sample*. But reality disagrees:
+
+| State | Source | Update rate | Latency |
+|-------|--------|-------------|---------|
+| $q$ (pitch rate) | Gyroscope | 1000 Hz | < 1 ms |
+| $\theta$ (pitch angle) | Kalman filter (accel + gyro fusion) | 100 Hz | ~10 ms |
+
+If you run the full-state feedback at 1000 Hz to capture $q$, then for 9 out of 10 samples $\theta$ is stale — it's being held at the last Kalman estimate. The $K$ matrix was designed for instantaneous full-state feedback, but the implementation is effectively $u[k] = -k_\theta \hat{\theta}_{\text{held}}[k] - k_q q[k]$, where $\hat{\theta}_{\text{held}}$ is a zero-order-hold of the slow Kalman output. This mismatch between the design model (all states at $T_s$) and the implementation (stale slow states) introduces unmodeled dynamics.
+
+If you instead run everything at 100 Hz to match $\theta$, you throw away 90% of the gyroscope information and add an average delay of $T_s/2 = 5$ ms to the rate loop — eroding the phase margin that the fast inner loop was supposed to provide.
+
+**The deeper issue: it's not just a timing mismatch.** The real problem is the one diagnosed in §6.6: if you *do* run everything at the fast rate (to be mathematically "correct"), the slow state's $z$-domain pole clusters at $z \approx 0.999$, the state transition matrix $G \approx I$, and the LQR gains become hypersensitive to floating-point rounding. The controller that was proven stable on paper diverges on the flight computer.
+
+This reveals something fundamental: **the cascaded architecture with different loop rates is not a compromise — it is a structurally necessary response to the fact that physical systems have widely separated timescales, and our digital representations of those timescales have finite precision.** The question is not *whether* to separate the rates, but *how* to do it with mathematical rigor.
+
+Three approaches follow. Each attacks the problem from a different angle, and each illuminates a different facet of the relationship between continuous-time physics and discrete-time computation.
+
+#### Approach 1 (mathematical fix): The Delta ($\delta$) operator — change the representation
+
+This is the most elegant solution in digital control theory. The root cause identified in §6.6 is topological: the standard $z$-transform maps the entire left half $s$-plane into the unit circle, and as $T_s \to 0$, slow poles collapse onto $z = 1$ because $z = e^{sT_s} \approx 1 + sT_s$. The Delta operator fixes this by re-centering the discrete representation:
+
+$$\delta = \frac{z - 1}{T_s}$$
+
+In the time domain, $\delta$ is a forward difference:
+
+$$\delta x[k] = \frac{x[k+1] - x[k]}{T_s}$$
+
+Take the standard discrete state-space equation $x[k+1] = G x[k] + H u[k]$ and rewrite in the $\delta$-domain:
+
+$$\delta x[k] = A_\delta x[k] + B_\delta u[k]$$
+
+where:
+
+$$A_\delta = \frac{G - I}{T_s}, \qquad B_\delta = \frac{H}{T_s}$$
+
+**The miracle.** As $T_s \to 0$:
+
+$$A_\delta = \frac{e^{A T_s} - I}{T_s} \to A$$
+
+The $\delta$-domain state matrix converges to the continuous-time $A$ matrix. The poles in the $\delta$-plane converge to the $s$-plane poles — they do **not** collapse toward a single point. Even at 10 kHz or 100 kHz, a $\delta$-operator controller running $u = -Kx$ in 32-bit single-precision floating point remains numerically well-conditioned. The finite-word-length catastrophe of §6.6 is completely avoided because the representation itself no longer forces slow poles to the stability boundary.
+
+The cost is conceptual: every textbook tool must be re-derived. Stability in $\delta$ means poles in a circle of radius $1/T_s$ centered at $-1/T_s$, not the unit circle. Bode plots use a different frequency warping. But the numerical payoff — immunity to pole clustering at arbitrarily high sample rates — is decisive when the alternative is an unstable aircraft.
+
+**Where it's used.** High-performance military flight control systems have run inner loops in the $\delta$-domain since the 1990s. The technique is less common in industrial drives (where the 3–5× rate separation of §6.6 is usually sufficient) but becomes essential when a single controller must span timescales differing by $10^3$ or more — exactly the situation in aerospace.
+
+#### Approach 2 (architectural fix): Multi-rate state-space and Lifting — decouple the timescales rigorously
+
+If Approach 1 changes the *representation* of time, Approach 2 changes the *architecture* of the controller itself. **Multi-rate digital control** with the **Lifting Technique** provides a rigorous mathematical framework for designing controllers where different states update at different rates.
+
+Split the state vector into fast and slow components:
+
+$$x = \begin{bmatrix} x_f \\ x_s \end{bmatrix}, \quad x_f = q \text{ (fast, 1 kHz)}, \quad x_s = \theta \text{ (slow, 100 Hz)}$$
+
+Let the fast sample period be $T$ and the slow period be $NT$ (with $N = 10$). The lifting technique constructs an augmented state vector that operates at the *slow* clock $NT$:
+
+$$\tilde{x}[m] = \begin{bmatrix} x_f[mN] \\ x_f[mN+1] \\ \vdots \\ x_f[mN+N-1] \\ x_s[m] \end{bmatrix}$$
+
+This packs $N$ fast-rate samples and 1 slow-rate sample into a single vector at the slow clock. The original system is "lifted" into a higher-dimensional single-rate system to which standard LQR or pole placement can be applied.
+
+The full-state feedback $u = -Kx$ is then deconstructed into:
+
+$$u[k] = -K_f x_f[k] - K_s x_s[m], \qquad k = mN + i, \quad i = 0, 1, \dots, N-1$$
+
+where $k$ is the fast clock tick, $m$ is the slow clock tick, and $i$ indexes within the slow period. The fast gain $K_f$ operates at every fast sample; the slow gain $K_s$ updates only at the slow samples. The lifting technique computes both gains from a single optimal control problem on the lifted system — not by ad-hoc "inner loop first, then outer loop" tuning.
+
+**The price and the payoff.** The lifted system is $N \cdot \dim(x_f) + \dim(x_s)$ in dimension, and the design involves solving a Riccati equation at that size. But the result is a controller that is *provably optimal under the multi-rate constraint*, with guaranteed numerical conditioning because slow states are never represented at the fast clock. This is the rigorous answer to "how do I do $u = -Kx$ when my states arrive at different rates?"
+
+#### Approach 3 (pragmatic fix): Asynchronous update with Zero-Order Hold — the engineering compromise
+
+In most open-source flight controllers (PX4, ArduPilot) and many industrial systems, the solution is simpler and works remarkably well:
+
+**Fast loop (1000 Hz):** Read gyroscope → get $q$. Execute:
+
+$$u = -K_1 \hat{\theta}_{\text{last}} - K_2 q$$
+
+where $\hat{\theta}_{\text{last}}$ is the most recent attitude estimate from the Kalman filter.
+
+**Slow loop (100 Hz):** Run the full Kalman filter (fusing accelerometer, magnetometer, GPS) → produce a new optimal attitude estimate $\hat{\theta}_{\text{new}}$. Update $\hat{\theta}_{\text{last}} \leftarrow \hat{\theta}_{\text{new}}$.
+
+From a mathematical standpoint, this is inserting a **Zero-Order Hold (ZOH)** on the slow state $\theta$ within the full-state feedback law. The gain matrix $K = [K_1, K_2]$ is still designed in continuous-time (or at one reference discrete rate) via LQR. The implementation simply holds $\hat{\theta}$ constant between Kalman filter updates.
+
+**Why this works.** The ZOH introduces an effective delay of $T_{\text{slow}}/2$. At a slow-loop rate of 100 Hz, that's 5 ms — corresponding to only $1.8^\circ$ of phase lag at a 1 Hz attitude crossover. As long as the slow loop's update rate is well above the closed-loop bandwidth it controls ($\omega_{\text{slow-loop}} \gg \omega_{\text{bandwidth},\,\theta}$), the phase loss is negligible. Meanwhile:
+
+- The fast rate loop runs unencumbered at full gyroscope bandwidth.
+- The Kalman filter avoids the covariance matrix ill-conditioning that would plague a 1000 Hz implementation.
+- The pole-clustering problem of §6.6 is avoided because the slow state's dynamics are never represented at the fast clock — they're held constant between Kalman updates.
+
+This is the *de facto* standard approach in embedded flight control, and it represents a clean separation: design in the continuous-time domain (where timescale separation is a bandwidth problem), implement in the discrete-time domain (where timescale separation is a numerical conditioning problem), and bridge them with a ZOH whose phase cost is negligible at the relevant frequencies.
+
+#### The connecting insight: from engineering instinct to mathematical structure
+
+The arc from "slow down the outer loop" (§6.6's practical rule) to these three solutions traces a genuine intellectual progression:
+
+| Stage | Question asked | Answer | Limitation |
+|-------|---------------|--------|------------|
+| **Engineering intuition** | "Why does the outer loop feel unstable at high rates?" | "Sensor noise. Averaging helps." | Purely empirical; doesn't explain the mechanism |
+| **Numerical diagnosis** (§6.6) | "What exactly breaks in the computation?" | "The pole at $z = 0.9990005$ loses 3–4 digits of precision in 32-bit float." | Gives the *why*; the fix is brute-force (reduce $T_s$) |
+| **Mathematical resolution** (Approach 1) | "Is the $z$-transform itself the problem?" | "Yes. Use $\delta = (z-1)/T_s$ — poles converge to $s$-plane, not $z=1$." | Requires rewriting the entire discrete-control framework |
+| **Architectural resolution** (Approach 2) | "Can we preserve the timescale separation in the controller design itself?" | "Yes. Lift the multi-rate system into an equivalent single-rate one, solve, then deconstruct." | Computationally expensive; mathematically sophisticated |
+| **Practical synthesis** (Approach 3) | "Can we get 95% of the benefit with 5% of the complexity?" | "Design LQR in continuous-time. Implement with ZOH on slow states. The phase loss is noise." | Requires the discipline to verify that $\omega_{\text{update}} \gg \omega_{\text{bandwidth}}$ |
+
+Each step connects an engineering observation ("different loops need different speeds") to a deeper mathematical structure. The pole-clustering problem of §6.6 is not just a numerical nuisance to be worked around — it is a *signal* that the $z$-transform representation of dynamics has a fundamental mismatch with the physics of widely separated timescales. The delta operator, lifting, and asynchronous ZOH are three different answers to the same question:
+
+$$\boxed{\text{How do we represent a multi-timescale physical system in a digital computer with finite precision?}}$$
+
+The question itself — moving from "the outer loop should be slower" (an empirical observation) to "the $z$-domain representation has a topological defect at high sample rates" (a mathematical diagnosis) to "here are three rigorous frameworks for fixing it" — is a case study in how control engineering advances: phenomena observed at the bench drive theoretical innovation, which in turn produces better controllers.
+
 ---
 
 ## 7. Tuning the cascade: inside-out
@@ -616,6 +744,15 @@ The cascade is an example of something deep: **optimality is not the only design
 
 **Advanced: MPC as cascade replacement:**
 - Bolognani, S., Bolognani, S., Peretti, L., & Zigliotto, M. (2009). "Design and Implementation of Model Predictive Control for Electrical Motor Drives." *IEEE Trans. Industrial Electronics*, 56(6), 1925–1936. — Shows when MPC can replace the entire cascade, and why the cascade remains more popular in practice.
+
+**Delta operator and high-speed digital control:**
+- Middleton, R.H. & Goodwin, G.C. (1990). *Digital Control and Estimation: A Unified Approach*. Prentice Hall. — The definitive textbook on the delta ($\delta$) operator. Chapters 2–3 derive the $\delta$-domain state-space representation and prove convergence to the continuous-time model as $T_s \to 0$. Chapter 7 covers LQR and LQG design in the $\delta$-domain. This is the mathematical foundation for §6.7 Approach 1.
+
+**Multi-rate control and lifting:**
+- Chen, T. & Francis, B.A. (1995). *Optimal Sampled-Data Control Systems*. Springer. — Chapters 8–9 develop the lifting technique for multi-rate systems: packing fast and slow samples into an augmented single-rate representation, designing the optimal controller on the lifted system, and deconstructing it into separate fast and slow gains. This is the mathematical foundation for §6.7 Approach 2.
+
+**Flight control implementation:**
+- Stevens, B.L., Lewis, F.L., & Johnson, E.N. (2015). *Aircraft Control and Simulation*, 3rd ed. Wiley. — Chapter 4 on aircraft longitudinal dynamics (the short-period model used in §6.7). Chapters 6–7 cover classical and modern flight control design, including the inner-rate/outer-attitude cascade architecture.
 
 </script>
 
